@@ -9,6 +9,7 @@ let server: RunningServer;
 interface RawResponse {
   status: number;
   headers: http.IncomingHttpHeaders;
+  body: string;
 }
 
 function request(
@@ -19,9 +20,12 @@ function request(
     const req = http.request(
       { host: "127.0.0.1", port: server.port, path, headers },
       (res) => {
-        res.resume();
+        let body = "";
+        res.on("data", (chunk: Buffer) => {
+          body += chunk.toString();
+        });
         res.on("end", () => {
-          resolve({ status: res.statusCode ?? 0, headers: res.headers });
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body });
         });
       },
     );
@@ -192,6 +196,65 @@ describe("WebSocket", () => {
     };
     expect(message.type).toBe("snapshot");
     expect(message.snapshot.sessions).toHaveLength(1);
+  });
+});
+
+describe("Content Security Policy", () => {
+  it("allows only local resources and the server's own WebSocket", async () => {
+    const cookie = await login();
+    const policy = (await request("/", { cookie })).headers[
+      "content-security-policy"
+    ];
+
+    expect(policy).toContain("default-src 'none'");
+    expect(policy).toContain("script-src 'self'");
+    expect(policy).toContain("style-src 'self'");
+    expect(policy).toContain(
+      `connect-src ws://127.0.0.1:${String(server.port)}`,
+    );
+    expect(policy).toContain("base-uri 'none'");
+    expect(policy).toContain("form-action 'none'");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).not.toContain("unsafe");
+  });
+
+  it("gives the page a nonce that the policy accepts for styles only", async () => {
+    const cookie = await login();
+    const { headers, body } = await request("/", { cookie });
+
+    const match = /<meta property="csp-nonce" nonce="([0-9a-f]{32})"/.exec(
+      body,
+    );
+    expect(match).not.toBeNull();
+    const policy = String(headers["content-security-policy"]);
+    expect(policy).toContain(`style-src 'self' 'nonce-${match?.[1] ?? ""}'`);
+    expect(policy).toContain("script-src 'self';");
+  });
+
+  it("does not reveal the nonce to requests that aren't signed in", async () => {
+    const { headers, body } = await request("/");
+    expect(body).not.toContain("csp-nonce");
+    expect(String(headers["content-security-policy"])).not.toContain("nonce");
+  });
+
+  it("uses a different nonce on each run", async () => {
+    const pageNonce = async () => {
+      const { headers } = await request("/", { cookie: await login() });
+      return /'nonce-[0-9a-f]+'/.exec(
+        String(headers["content-security-policy"]),
+      )?.[0];
+    };
+    const first = await pageNonce();
+    await server.close();
+    server = await startServer({ preferredPort: 0 });
+
+    expect(first).toBeTruthy();
+    expect(await pageNonce()).not.toBe(first);
+  });
+
+  it("is also sent on rejected requests", async () => {
+    const { headers } = await request("/");
+    expect(headers["content-security-policy"]).toBeTruthy();
   });
 });
 

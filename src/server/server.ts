@@ -87,6 +87,7 @@ export async function startServer(
     options.webDir ?? fileURLToPath(new URL("../web", import.meta.url));
   const assets = loadAssets(webDir);
   const sessionSecret = randomBytes(32).toString("hex");
+  const styleNonce = randomBytes(16).toString("hex");
   const clients = new Set<WSContext>();
   let loginToken: string | null = randomBytes(32).toString("hex");
   const issuedToken = loginToken;
@@ -95,6 +96,16 @@ export async function startServer(
 
   const cookieName = () => `ccsm_session_${String(port)}`;
   const expectedHost = () => `${LOOPBACK}:${String(port)}`;
+  const contentSecurityPolicy = (styleSource = "'self'") =>
+    [
+      "default-src 'none'",
+      "script-src 'self'",
+      `style-src ${styleSource}`,
+      `connect-src ws://${expectedHost()}`,
+      "base-uri 'none'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+    ].join("; ");
   const toMessage = (snapshot: Snapshot) =>
     JSON.stringify({ type: "snapshot", snapshot } satisfies SnapshotMessage);
 
@@ -104,13 +115,20 @@ export async function startServer(
   });
 
   app.use("*", async (c, next) => {
+    await next();
+    if (!c.res.headers.has("Content-Security-Policy")) {
+      c.header("Content-Security-Policy", contentSecurityPolicy());
+    }
+    c.header("Cache-Control", "no-store");
+    c.header("Referrer-Policy", "no-referrer");
+    c.header("X-Content-Type-Options", "nosniff");
+  });
+
+  app.use("*", async (c, next) => {
     if (c.req.header("host") !== expectedHost()) {
       return c.text("Forbidden", 403);
     }
     await next();
-    c.header("Cache-Control", "no-store");
-    c.header("Referrer-Policy", "no-referrer");
-    c.header("X-Content-Type-Options", "nosniff");
     return undefined;
   });
 
@@ -173,6 +191,20 @@ export async function startServer(
         : c.text("Not found", 404);
     }
     const type = CONTENT_TYPES[extname(file)] ?? "application/octet-stream";
+    if (path === "/index.html") {
+      // React Aria reads this nonce for the one inline style it adds.
+      const meta = `<meta property="csp-nonce" nonce="${styleNonce}" />`;
+      const page = readFileSync(file, "utf8").replace(
+        "<head>",
+        `<head>${meta}`,
+      );
+      return c.body(page, 200, {
+        "Content-Type": type,
+        "Content-Security-Policy": contentSecurityPolicy(
+          `'self' 'nonce-${styleNonce}'`,
+        ),
+      });
+    }
     return c.body(readFileSync(file), 200, { "Content-Type": type });
   });
 

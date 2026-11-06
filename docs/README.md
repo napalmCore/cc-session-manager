@@ -32,3 +32,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0007](decisions/0007-iteration-1-architecture.md)      | Iteration 1 architecture                            | Accepted                  |
 | [0008](decisions/0008-development-setup.md)             | Development setup                                   | Accepted                  |
 | [0009](decisions/0009-dashboard-ui.md)                  | Dashboard UI                                        | Accepted                  |
+| [0010](decisions/0010-style-nonce.md)                   | Per-run style nonce                                 | Accepted                  |
