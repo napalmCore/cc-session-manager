@@ -1,35 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPoller, parseSessions } from "./poller.js";
+import { createPoller } from "./poller.js";
 import type { Snapshot } from "../shared/protocol.js";
-
-describe("parseSessions", () => {
-  it("keeps only allow-listed fields", () => {
-    const output = JSON.stringify([
-      {
-        cwd: "C:/work",
-        kind: "interactive",
-        startedAt: 1,
-        status: "busy",
-        secret: "do-not-copy",
-        message: { content: "private text" },
-      },
-    ]);
-
-    const [session] = parseSessions(output);
-
-    expect(session).toEqual({
-      cwd: "C:/work",
-      kind: "interactive",
-      startedAt: 1,
-      status: "busy",
-    });
-  });
-
-  it("rejects output that is not a JSON array", () => {
-    expect(() => parseSessions("{}")).toThrow();
-    expect(() => parseSessions("not json")).toThrow();
-  });
-});
 
 describe("createPoller", () => {
   beforeEach(() => {
@@ -103,6 +74,25 @@ describe("createPoller", () => {
     poller.stop();
 
     expect(snapshots.at(-1)?.error).toBeNull();
+  });
+
+  it("applies session rules and passes on parsing warnings", async () => {
+    const snapshots: Snapshot[] = [];
+    const poller = createPoller({
+      run: () =>
+        Promise.resolve(
+          JSON.stringify([{ kind: "background", state: "blocked" }]),
+        ),
+      intervalMs: 10,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    poller.stop();
+
+    expect(snapshots[0]?.sessions[0]?.needsAttention).toBe(true);
+    expect(snapshots[0]?.warnings).not.toHaveLength(0);
   });
 
   it("only reports a snapshot when something changed", async () => {
