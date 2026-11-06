@@ -75,7 +75,8 @@ export function App() {
               <th scope="col">Status</th>
               <th scope="col">Needs you</th>
               <th scope="col">Started</th>
-              <th scope="col">Running for</th>
+              <th scope="col">Ran for</th>
+              <th scope="col">Ended (approximate)</th>
             </tr>
           </thead>
           <tbody>
@@ -92,9 +93,17 @@ export function App() {
                     : new Date(session.startedAt).toLocaleString()}
                 </td>
                 <td>
-                  {session.startedAt === undefined || session.finished
+                  {session.startedAt === undefined ||
+                  (session.finished && session.finishedAt === undefined)
                     ? ""
-                    : formatDuration(now - session.startedAt)}
+                    : formatDuration(
+                        (session.finishedAt ?? now) - session.startedAt,
+                      )}
+                </td>
+                <td>
+                  {session.finishedAt === undefined
+                    ? ""
+                    : new Date(session.finishedAt).toLocaleString()}
                 </td>
               </tr>
             ))}
