@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
 import { createPoller, runClaudeAgents } from "./poller.js";
 import { startServer } from "./server.js";
+import { createFileStore } from "./store.js";
+import { createSessionTracker } from "./tracker.js";
 
 function browserCommand(url: string): [string, string[]] {
   if (process.platform === "win32")
@@ -13,10 +15,12 @@ function browserCommand(url: string): [string, string[]] {
 }
 
 const server = await startServer({ preferredPort: DEFAULT_PORT });
+const tracker = createSessionTracker({ store: createFileStore() });
 const poller = createPoller({
   run: runClaudeAgents,
   intervalMs: POLL_INTERVAL_MS,
   onSnapshot: server.publish,
+  track: tracker.update,
 });
 poller.start();
 

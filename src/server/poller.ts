@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import type { SessionView, Snapshot } from "../shared/protocol.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
+import type { TrackedSessions } from "./tracker.js";
 
 const POLL_FAILED =
   "Could not read sessions from Claude Code. Showing the last known data.";
@@ -34,6 +35,7 @@ export interface PollerOptions {
   run: () => Promise<string>;
   intervalMs: number;
   onSnapshot: (snapshot: Snapshot) => void;
+  track?: (current: SessionView[]) => TrackedSessions;
 }
 
 export interface Poller {
@@ -45,6 +47,7 @@ export function createPoller({
   run,
   intervalMs,
   onSnapshot,
+  track,
 }: PollerOptions): Poller {
   let timer: NodeJS.Timeout | undefined;
   let running = false;
@@ -63,8 +66,10 @@ export function createPoller({
   const tick = async () => {
     try {
       const parsed = parseSessions(await run());
-      sessions = parsed.sessions.map(toSessionView);
-      warnings = parsed.warnings;
+      const views = parsed.sessions.map(toSessionView);
+      const tracked = track?.(views) ?? { sessions: views, warnings: [] };
+      sessions = tracked.sessions;
+      warnings = [...parsed.warnings, ...tracked.warnings];
       if (running) report(null);
     } catch {
       if (running) report(POLL_FAILED);

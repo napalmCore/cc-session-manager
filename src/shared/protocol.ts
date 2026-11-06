@@ -16,6 +16,11 @@ export interface SessionView extends Session {
   attentionReason: string | null;
   finished: boolean;
   statusLabel: string;
+  finishedAt?: number;
+}
+
+export interface FinishedSession extends SessionView {
+  finishedAt: number;
 }
 
 export interface Snapshot {

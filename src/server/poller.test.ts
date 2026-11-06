@@ -95,6 +95,49 @@ describe("createPoller", () => {
     expect(snapshots[0]?.warnings).not.toHaveLength(0);
   });
 
+  it("merges tracked sessions and warnings into the snapshot", async () => {
+    const snapshots: Snapshot[] = [];
+    const poller = createPoller({
+      run: () => Promise.resolve("[]"),
+      intervalMs: 10,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+      track: () => ({
+        sessions: [
+          {
+            needsAttention: false,
+            attentionReason: null,
+            finished: true,
+            statusLabel: "finished",
+          },
+        ],
+        warnings: ["store problem"],
+      }),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    poller.stop();
+
+    expect(snapshots[0]?.sessions).toHaveLength(1);
+    expect(snapshots[0]?.warnings).toEqual(["store problem"]);
+  });
+
+  it("does not track sessions when a poll fails", async () => {
+    const track = vi.fn(() => ({ sessions: [], warnings: [] }));
+    const poller = createPoller({
+      run: () => Promise.reject(new Error("failed")),
+      intervalMs: 10,
+      onSnapshot: vi.fn(),
+      track,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(30);
+    poller.stop();
+
+    expect(track).not.toHaveBeenCalled();
+  });
+
   it("only reports a snapshot when something changed", async () => {
     const onSnapshot = vi.fn();
     const poller = createPoller({

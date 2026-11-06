@@ -74,6 +74,8 @@ Finished sessions are saved in the tool's own data folder, never under `~/.claud
 
 The file holds session names and project paths, but no message text.
 
+Records stay in the file while the CLI still lists a session, even after 24 hours, so a completed background session doesn't look newly finished on the next poll. A completed background session first seen by the tool, including on its first run, is treated as finishing at that moment, because the CLI doesn't report end times.
+
 ## Failure handling
 
 | Failure                                       | Behavior                                                            |
