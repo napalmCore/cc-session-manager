@@ -49,6 +49,20 @@ describe("createFileStore", () => {
     expect(store.load()).toEqual({ records: [record], notice: null });
   });
 
+  it("keeps transcript metadata in saved sessions", () => {
+    const store = createFileStore(dir);
+    const withMetadata = {
+      ...record,
+      gitBranch: "main",
+      model: "m",
+      lastActivityAt: 3,
+    };
+
+    store.save([withMetadata]);
+
+    expect(store.load().records).toEqual([withMetadata]);
+  });
+
   it("leaves no temporary files behind", () => {
     createFileStore(dir).save([record]);
     expect(readdirSync(dir)).toEqual(["finished-sessions.json"]);

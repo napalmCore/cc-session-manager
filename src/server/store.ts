@@ -35,6 +35,9 @@ const recordSchema = z.object({
   finished: z.boolean(),
   statusLabel: z.string(),
   finishedAt: z.number(),
+  gitBranch: z.string().optional(),
+  model: z.string().optional(),
+  lastActivityAt: z.number().optional(),
 });
 const fileSchema = z.object({
   version: z.literal(1),

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPoller } from "./poller.js";
-import type { Snapshot } from "../shared/protocol.js";
+import type { SessionView, Snapshot } from "../shared/protocol.js";
 
 describe("createPoller", () => {
   beforeEach(() => {
@@ -120,6 +120,32 @@ describe("createPoller", () => {
 
     expect(snapshots[0]?.sessions).toHaveLength(1);
     expect(snapshots[0]?.warnings).toEqual(["store problem"]);
+  });
+
+  it("adds metadata before tracking, so finished sessions keep it", async () => {
+    const seenByTracker: SessionView[][] = [];
+    const snapshots: Snapshot[] = [];
+    const poller = createPoller({
+      run: () => Promise.resolve(JSON.stringify([{ kind: "interactive" }])),
+      intervalMs: 10,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+      enrich: (current) =>
+        Promise.resolve({
+          sessions: current.map((session) => ({ ...session, model: "m" })),
+          warnings: ["format warning"],
+        }),
+      track: (current) => {
+        seenByTracker.push(current);
+        return { sessions: current, warnings: [] };
+      },
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    poller.stop();
+
+    expect(seenByTracker[0]?.[0]?.model).toBe("m");
+    expect(snapshots[0]?.warnings).toContain("format warning");
   });
 
   it("does not track sessions when a poll fails", async () => {

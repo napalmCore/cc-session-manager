@@ -17,6 +17,9 @@ export interface SessionView extends Session {
   finished: boolean;
   statusLabel: string;
   finishedAt?: number;
+  gitBranch?: string;
+  model?: string;
+  lastActivityAt?: number;
 }
 
 export interface FinishedSession extends SessionView {
