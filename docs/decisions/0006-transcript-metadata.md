@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-06
 - **Amends:** [0002](0002-product-direction.md)
+- **Amended by:** [0011](0011-testing-bug-fixes.md), which treats a branch value of `HEAD` as unavailable
 
 ## Context
 

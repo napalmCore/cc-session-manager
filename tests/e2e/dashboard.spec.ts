@@ -259,6 +259,56 @@ test.describe("live updates", () => {
   });
 });
 
+test.describe("screen reader announcements", () => {
+  const announcement = (page: Page, text: string) =>
+    page.getByRole("status").filter({ hasText: text });
+
+  test("announces a session that starts needing attention", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ sessions: [] }));
+
+    server.publish(
+      snapshot({
+        sessions: [
+          toSessionView({
+            name: "newly-blocked",
+            sessionId: "n",
+            status: "waiting",
+            waitingFor: "permission prompt",
+          }),
+        ],
+      }),
+    );
+
+    await expect(
+      announcement(page, "newly-blocked needs you: permission prompt."),
+    ).toBeAttached();
+    await expect(page).toHaveTitle("(1) Claude Code sessions");
+  });
+
+  test("does not announce sessions already waiting when the page opens", async ({
+    page,
+  }) => {
+    await open(page);
+    await expect(page.getByText("prompting").first()).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "needs you:" }),
+    ).toHaveCount(0);
+  });
+
+  test("keeps the announcement region out of the visible layout", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ sessions: [] }));
+    const region = page.locator("[data-announcer]");
+
+    await expect(region).toHaveAttribute("role", "status");
+    const box = await region.boundingBox();
+    expect(box?.width ?? 0).toBeLessThanOrEqual(1);
+  });
+});
+
 test.describe("banners", () => {
   test("expands warning details", async ({ page }) => {
     await open(page, snapshot({ warnings: [WARNING] }));

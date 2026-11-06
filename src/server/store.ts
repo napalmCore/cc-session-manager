@@ -18,7 +18,10 @@ const LOAD_PROBLEM =
 const SAVE_PROBLEM =
   "Finished sessions could not be saved, and may be lost when the tool stops.";
 
-/** An explicit allow-list: anything else is dropped on both load and save. */
+/**
+ * An explicit allow-list: anything else is dropped on both load and save. It leaves
+ * out `name`, because the CLI uses a prompt as the name until a title is generated.
+ */
 const recordSchema = z.object({
   cwd: z.string().optional(),
   kind: z.string().optional(),
@@ -29,7 +32,6 @@ const recordSchema = z.object({
   status: z.string().optional(),
   waitingFor: z.string().optional(),
   sessionId: z.string().optional(),
-  name: z.string().optional(),
   needsAttention: z.boolean(),
   attentionReason: z.string().nullable(),
   finished: z.boolean(),

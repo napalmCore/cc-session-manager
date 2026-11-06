@@ -17,7 +17,6 @@ const record: FinishedSession = {
   kind: "interactive",
   cwd: "C:/work",
   startedAt: 1,
-  name: "demo",
   needsAttention: false,
   attentionReason: null,
   finished: true,
@@ -61,6 +60,29 @@ describe("createFileStore", () => {
     store.save([withMetadata]);
 
     expect(store.load().records).toEqual([withMetadata]);
+  });
+
+  it("never writes session names, which can hold prompt text", () => {
+    createFileStore(dir).save([{ ...record, name: "my secret prompt" }]);
+
+    const raw = readFileSync(join(dir, "finished-sessions.json"), "utf8");
+    expect(raw).not.toContain("my secret prompt");
+    expect(raw).not.toContain('"name"');
+  });
+
+  it("drops names already in an older file when loading", () => {
+    writeFileSync(
+      join(dir, "finished-sessions.json"),
+      JSON.stringify({
+        version: 1,
+        sessions: [{ ...record, name: "my secret prompt" }],
+      }),
+    );
+
+    const { records } = createFileStore(dir).load();
+
+    expect(records).toHaveLength(1);
+    expect(JSON.stringify(records)).not.toContain("my secret prompt");
   });
 
   it("leaves no temporary files behind", () => {

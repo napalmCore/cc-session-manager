@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Disclosure,
   DisclosurePanel,
   Heading,
 } from "react-aria-components";
+import { attentionKeys, newAttentionMessage } from "../shared/announcements.js";
 import { formatDuration } from "../shared/format.js";
 import type { SessionView } from "../shared/protocol.js";
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
@@ -28,6 +29,7 @@ const styles = cssClasses as Record<
   | "status"
   | "summary"
   | "title"
+  | "visuallyHidden"
   | "warnings",
   string
 >;
@@ -220,9 +222,27 @@ export function App() {
     document.title = pageTitle(attentionCount);
   }, [attentionCount]);
 
+  const [announcement, setAnnouncement] = useState("");
+  const previousAttention = useRef<Set<string> | null>(null);
+  const attentionSignature = [...attentionKeys(groups.needsYou)].join("\n");
+  const loaded = snapshot !== null;
+
+  useEffect(() => {
+    if (!loaded) return;
+    const previous = previousAttention.current;
+    previousAttention.current = attentionKeys(groups.needsYou);
+    // Sessions already waiting when the page opens are read from the page itself.
+    if (previous) {
+      setAnnouncement(newAttentionMessage(previous, groups.needsYou));
+    }
+  }, [loaded, attentionSignature]);
+
   return (
     <main className={styles.page}>
       <h1 className={styles.title}>Claude Code sessions</h1>
+      <div role="status" data-announcer className={styles.visuallyHidden}>
+        {announcement}
+      </div>
       <Banners
         connected={connected}
         error={snapshot?.error ?? null}
