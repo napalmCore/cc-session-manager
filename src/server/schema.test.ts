@@ -80,7 +80,8 @@ describe("parseSessions", () => {
   });
 
   it("does not require status on a background session whose process has exited", () => {
-    expect(parse([background]).warnings).toEqual([]);
+    const listing = JSON.stringify([background]);
+    expect(parseSessions(listing, new Set(["abc"])).warnings).toEqual([]);
   });
 
   it("warns when a background session has no state", () => {
@@ -109,6 +110,44 @@ describe("parseSessions", () => {
       expect(parse([without(interactive, "status")]).warnings).toEqual([
         expect.stringContaining("status"),
       ]);
+    });
+  });
+
+  describe("on a first listing", () => {
+    const first = { ...interactive, sessionId: "a" };
+
+    it("still warns about a waiting session with no reason", () => {
+      expect(parse([{ ...first, status: "waiting" }]).warnings).toEqual([
+        expect.stringContaining("waitingFor"),
+      ]);
+    });
+
+    it("still warns about a wrongly typed status", () => {
+      expect(parse([{ ...first, status: 5 }]).warnings).toEqual([
+        expect.stringContaining("status"),
+      ]);
+    });
+  });
+
+  describe("session identity", () => {
+    const noStatus = without(interactive, "status");
+    const known = (entry: unknown, identities: string[]) =>
+      parseSessions(JSON.stringify([entry]), new Set(identities)).warnings;
+
+    it("recognizes a known session by its session ID when it has both IDs", () => {
+      const entry = { ...noStatus, sessionId: "a", id: "b" };
+      expect(known(entry, ["a"])).toHaveLength(1);
+      expect(known(entry, ["b"])).toEqual([]);
+    });
+
+    it("recognizes a known session by its short ID when that's all it has", () => {
+      expect(known({ ...noStatus, id: "b" }, ["b"])).toHaveLength(1);
+      expect(known({ ...noStatus, id: "b" }, [])).toEqual([]);
+    });
+
+    it("lists a session with both IDs under its session ID", () => {
+      const { listed } = parse([{ ...noStatus, sessionId: "a", id: "b" }]);
+      expect([...listed]).toEqual(["a"]);
     });
   });
 

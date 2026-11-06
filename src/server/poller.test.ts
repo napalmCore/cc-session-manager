@@ -250,6 +250,15 @@ describe("createPoller", () => {
       expect(results[2]).toEqual([]);
     });
 
+    it("forgets a session that was absent from the last poll", async () => {
+      const results = await warningsPerPoll([
+        [listing("a")],
+        [],
+        [noStatus("a")],
+      ]);
+      expect(results[2]).toEqual([]);
+    });
+
     it("remembers known sessions across a failed poll", async () => {
       const results = await warningsPerPoll([
         [noStatus("a")],

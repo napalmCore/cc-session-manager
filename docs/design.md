@@ -19,16 +19,16 @@ finished-sessions.json <------+
 
 ## Components
 
-| Component              | Responsibility                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| CLI entry point        | Chooses a port, creates the token, starts the server, and opens the browser.                         |
-| Session poller         | Runs one `claude agents --json --all` at a time, on the server, whatever the number of browser tabs. |
-| Schema layer           | Uses tolerant Zod schemas that ignore unknown fields and report missing ones.                        |
-| Metadata reader        | Reads the end of a transcript only when its modified time changes, and caches the result.            |
-| Finished-session store | Keeps finished sessions in a JSON file and removes them after 24 hours.                              |
-| Auth layer             | Handles the one-time token, the session cookie, and the checks on incoming connections.              |
-| Dashboard              | Shows the session list using React, React Aria, and CSS Modules, built with Vite and served locally. |
-| Announcer              | Tells screen readers about sessions that newly need the user, through a polite live region.          |
+| Component              | Responsibility                                                                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| CLI entry point        | Chooses a port, creates the token, starts the server, and opens the browser.                                                      |
+| Session poller         | Runs one `claude agents --json --all` at a time, on the server, whatever the number of browser tabs.                              |
+| Schema layer           | Uses tolerant Zod schemas that ignore unknown fields and report missing ones.                                                     |
+| Metadata reader        | Reads the end of a transcript only when its modified time changes, and caches the result.                                         |
+| Finished-session store | Keeps finished sessions in a JSON file and removes them after 24 hours, or as soon as the CLI stops listing a background session. |
+| Auth layer             | Handles the one-time token, the session cookie, and the checks on incoming connections.                                           |
+| Dashboard              | Shows the session list using React, React Aria, and CSS Modules, built with Vite and served locally.                              |
+| Announcer              | Tells screen readers about sessions that newly need the user, through a polite live region.                                       |
 
 ## Data flow
 
@@ -80,14 +80,14 @@ Records stay in the file while the CLI still lists a session, even after 24 hour
 
 ## Failure handling
 
-| Failure                                       | Behavior                                                                                                                                                                          |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying.                                                                                                                          |
-| Output can't be parsed                        | Keep the last good data, mark it as out of date, and show a banner.                                                                                                               |
-| A field is missing                            | Mark it as unavailable and show a banner. The exception is a missing `status` on an interactive session's first listing, which only warns if it's still missing on the next poll. |
-| Transcript is missing or unreadable           | Show the session without metadata.                                                                                                                                                |
-| Store file is corrupt                         | Set it aside, start with an empty list, and show a notice.                                                                                                                        |
-| Default port is busy                          | Try the next free port.                                                                                                                                                           |
+| Failure                                       | Behavior                                                                                                                                                                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying.                                                                                                                                                     |
+| Output can't be parsed                        | Keep the last good data, mark it as out of date, and show a banner.                                                                                                                                          |
+| A field is missing                            | Mark it as unavailable and show a banner. The exception is a missing `status` on an interactive session not listed in the previous successful poll, which only warns if it's still missing on the next poll. |
+| Transcript is missing or unreadable           | Show the session without metadata.                                                                                                                                                                           |
+| Store file is corrupt                         | Set it aside, start with an empty list, and show a notice.                                                                                                                                                   |
+| Default port is busy                          | Try the next free port.                                                                                                                                                                                      |
 
 ## Requirements coverage
 
@@ -104,7 +104,7 @@ Records stay in the file while the CLI still lists a session, even after 24 hour
 
 ## Build plan
 
-Each step is a separate pull request, approved by an independent agent before merge, as decision 0012 sets out.
+Each step is a separate pull request. The owner approved steps 1 to 7, and since decision 0012, an independent agent approves pull requests before merge.
 
 | Step | Pull request                                                                | Covers                   |
 | ---- | --------------------------------------------------------------------------- | ------------------------ |
