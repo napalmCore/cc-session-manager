@@ -19,15 +19,15 @@ finished-sessions.json <------+
 
 ## Components
 
-| Component | Responsibility |
-|---|---|
-| CLI entry point | Chooses a port, creates the token, starts the server, and opens the browser. |
-| Session poller | Runs one `claude agents --json --all` at a time, on the server, whatever the number of browser tabs. |
-| Schema layer | Uses tolerant Zod schemas that ignore unknown fields and report missing ones. |
-| Metadata reader | Reads the end of a transcript only when its modified time changes, and caches the result. |
-| Finished-session store | Keeps finished sessions in a JSON file and removes them after 24 hours. |
-| Auth layer | Handles the one-time token, the session cookie, and the checks on incoming connections. |
-| Dashboard | Shows the session list using React, React Aria, and CSS Modules, built with Vite and served locally. |
+| Component              | Responsibility                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| CLI entry point        | Chooses a port, creates the token, starts the server, and opens the browser.                         |
+| Session poller         | Runs one `claude agents --json --all` at a time, on the server, whatever the number of browser tabs. |
+| Schema layer           | Uses tolerant Zod schemas that ignore unknown fields and report missing ones.                        |
+| Metadata reader        | Reads the end of a transcript only when its modified time changes, and caches the result.            |
+| Finished-session store | Keeps finished sessions in a JSON file and removes them after 24 hours.                              |
+| Auth layer             | Handles the one-time token, the session cookie, and the checks on incoming connections.              |
+| Dashboard              | Shows the session list using React, React Aria, and CSS Modules, built with Vite and served locally. |
 
 ## Data flow
 
@@ -39,13 +39,13 @@ finished-sessions.json <------+
 
 ## Session rules
 
-| Case | Rule |
-|---|---|
-| Needs attention | `status` is `waiting`, or `state` is `blocked`. |
-| Reason | Use `waitingFor` when present, otherwise show "needs input". |
-| Finished background session | `state` is `done`, `failed`, or `stopped`. |
-| Finished interactive session | It was seen earlier and is no longer listed. |
-| End time | The CLI doesn't provide one, so use the time the tool first sees the session as finished, shown as approximate. |
+| Case                         | Rule                                                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Needs attention              | `status` is `waiting`, or `state` is `blocked`.                                                                 |
+| Reason                       | Use `waitingFor` when present, otherwise show "needs input".                                                    |
+| Finished background session  | `state` is `done`, `failed`, or `stopped`.                                                                      |
+| Finished interactive session | It was seen earlier and is no longer listed.                                                                    |
+| End time                     | The CLI doesn't provide one, so use the time the tool first sees the session as finished, shown as approximate. |
 
 ## Transcript metadata
 
@@ -56,17 +56,17 @@ finished-sessions.json <------+
 
 ## Security
 
-| Area | Design |
-|---|---|
-| Network | Listen on the loopback interface only (NFR-1). |
-| Token | Create a random token on each run, and exchange it once through the opening URL. |
-| Cookie | Use an `HttpOnly`, `SameSite=Strict` session cookie, then remove the token from the address bar. |
-| Requests | Reject requests without a valid cookie. Check the `Host` header to block DNS rebinding. |
-| WebSocket | Check the cookie and `Origin` when the connection opens to block cross-site connections. In iteration 1, the server ignores messages from the browser. |
-| Browser policy | Set a strict Content Security Policy that only allows local assets (NFR-3). |
-| Logs | Never log the token, cookie, or transcript content. |
-| Forbidden files | Never read `.credentials.json` or `.key` files (C-2). |
-| Rendering | Rely on React's text escaping, and don't inject raw HTML. |
+| Area            | Design                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Network         | Listen on the loopback interface only (NFR-1).                                                                                                         |
+| Token           | Create a random token on each run, and exchange it once through the opening URL.                                                                       |
+| Cookie          | Use an `HttpOnly`, `SameSite=Strict` session cookie, then remove the token from the address bar.                                                       |
+| Requests        | Reject requests without a valid cookie. Check the `Host` header to block DNS rebinding.                                                                |
+| WebSocket       | Check the cookie and `Origin` when the connection opens to block cross-site connections. In iteration 1, the server ignores messages from the browser. |
+| Browser policy  | Set a strict Content Security Policy that only allows local assets (NFR-3).                                                                            |
+| Logs            | Never log the token, cookie, or transcript content.                                                                                                    |
+| Forbidden files | Never read `.credentials.json` or `.key` files (C-2).                                                                                                  |
+| Rendering       | Rely on React's text escaping, and don't inject raw HTML.                                                                                              |
 
 ## Storage
 
@@ -76,41 +76,41 @@ The file holds session names and project paths, but no message text.
 
 ## Failure handling
 
-| Failure | Behavior |
-|---|---|
-| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying. |
-| Output can't be parsed | Keep the last good data, mark it as out of date, and show a banner. |
-| A field is missing | Mark it as unavailable and show a banner. |
-| Transcript is missing or unreadable | Show the session without metadata. |
-| Store file is corrupt | Set it aside, start with an empty list, and show a notice. |
-| Default port is busy | Try the next free port. |
+| Failure                                       | Behavior                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying.            |
+| Output can't be parsed                        | Keep the last good data, mark it as out of date, and show a banner. |
+| A field is missing                            | Mark it as unavailable and show a banner.                           |
+| Transcript is missing or unreadable           | Show the session without metadata.                                  |
+| Store file is corrupt                         | Set it aside, start with an empty list, and show a notice.          |
+| Default port is busy                          | Try the next free port.                                             |
 
 ## Requirements coverage
 
-| Requirement | Covered by |
-|---|---|
-| FR-1, FR-3, FR-4 | Session poller, schema layer, dashboard |
-| FR-2 | Finished-session store |
-| FR-5, FR-7, FR-8 | Session rules, dashboard |
-| FR-6 | Metadata reader |
-| FR-9 | Session poller, WebSocket |
-| NFR-1, NFR-2, NFR-3 | Security |
-| NFR-4 | Schema layer, failure handling |
-| NFR-5 | React Aria, accessibility testing |
+| Requirement         | Covered by                              |
+| ------------------- | --------------------------------------- |
+| FR-1, FR-3, FR-4    | Session poller, schema layer, dashboard |
+| FR-2                | Finished-session store                  |
+| FR-5, FR-7, FR-8    | Session rules, dashboard                |
+| FR-6                | Metadata reader                         |
+| FR-9                | Session poller, WebSocket               |
+| NFR-1, NFR-2, NFR-3 | Security                                |
+| NFR-4               | Schema layer, failure handling          |
+| NFR-5               | React Aria, accessibility testing       |
 
 ## Build plan
 
 Each step is a separate pull request, approved by the owner before merge.
 
-| Step | Pull request | Covers |
-|---|---|---|
-| 1 | Project scaffold: TypeScript, linting, tests, Node version pin, and CI | Foundation |
-| 2 | Thin end-to-end slice: CLI to poller to secured WebSocket to a basic page | FR-1, FR-9, NFR-1, NFR-2 |
-| 3 | Session rules and tolerant parsing | FR-3, FR-4, FR-5, NFR-4 |
-| 4 | Finished-session store | FR-2 |
-| 5 | Transcript metadata reader | FR-6, C-4 |
-| 6 | Dashboard UI: attention sorting, tab count, and banners | FR-7, FR-8, NFR-4 |
-| 7 | Hardening: Content Security Policy, browser tests, and accessibility checks | NFR-3, NFR-5 |
+| Step | Pull request                                                                | Covers                   |
+| ---- | --------------------------------------------------------------------------- | ------------------------ |
+| 1    | Project scaffold: TypeScript, linting, tests, Node version pin, and CI      | Foundation               |
+| 2    | Thin end-to-end slice: CLI to poller to secured WebSocket to a basic page   | FR-1, FR-9, NFR-1, NFR-2 |
+| 3    | Session rules and tolerant parsing                                          | FR-3, FR-4, FR-5, NFR-4  |
+| 4    | Finished-session store                                                      | FR-2                     |
+| 5    | Transcript metadata reader                                                  | FR-6, C-4                |
+| 6    | Dashboard UI: attention sorting, tab count, and banners                     | FR-7, FR-8, NFR-4        |
+| 7    | Hardening: Content Security Policy, browser tests, and accessibility checks | NFR-3, NFR-5             |
 
 ## Open items
 

@@ -14,15 +14,15 @@ The product should eventually cover four capabilities for a public open-source a
 
 An evaluation on 2026-11-06 found no tool described as covering all four, though each is partly covered. It was based on documentation, tool descriptions, and GitHub metadata. No community tool was installed or tested, and their Windows support is unconfirmed.
 
-| Tool | Stars | Last push | Coverage as described |
-|---|---|---|---|
-| Claude Code `claude agents` | Built in | n/a | Background session monitoring, control, peek and reply |
-| [ccusage](https://github.com/ccusage/ccusage) | 19,342 | 2026-11-06 | Cost reports |
-| [phuryn/claude-usage](https://github.com/phuryn/claude-usage) | 2,288 | 2026-07-10 | Usage charts and cost estimates |
-| [ccboard](https://github.com/FlorianBruniaux/ccboard) | 101 | 2026-09-01 | Monitoring and analytics |
-| [seunggabi/claude-dashboard](https://github.com/seunggabi/claude-dashboard) | 38 | 2026-03-27 | Monitoring and control, requires tmux |
-| [Stargx/claude-code-dashboard](https://github.com/stargx/claude-code-dashboard) | 17 | 2026-11-03 | Monitoring with tokens and cost |
-| [panoptes](https://github.com/ivan-brko/panoptes) | 4 | 2026-09-23 | Monitoring, including waiting for input |
+| Tool                                                                            | Stars    | Last push  | Coverage as described                                  |
+| ------------------------------------------------------------------------------- | -------- | ---------- | ------------------------------------------------------ |
+| Claude Code `claude agents`                                                     | Built in | n/a        | Background session monitoring, control, peek and reply |
+| [ccusage](https://github.com/ccusage/ccusage)                                   | 19,342   | 2026-11-06 | Cost reports                                           |
+| [phuryn/claude-usage](https://github.com/phuryn/claude-usage)                   | 2,288    | 2026-07-10 | Usage charts and cost estimates                        |
+| [ccboard](https://github.com/FlorianBruniaux/ccboard)                           | 101      | 2026-09-01 | Monitoring and analytics                               |
+| [seunggabi/claude-dashboard](https://github.com/seunggabi/claude-dashboard)     | 38       | 2026-03-27 | Monitoring and control, requires tmux                  |
+| [Stargx/claude-code-dashboard](https://github.com/stargx/claude-code-dashboard) | 17       | 2026-11-03 | Monitoring with tokens and cost                        |
+| [panoptes](https://github.com/ivan-brko/panoptes)                               | 4        | 2026-09-23 | Monitoring, including waiting for input                |
 
 ## Options considered
 
