@@ -91,7 +91,7 @@ export async function startServer(
   let loginToken: string | null = randomBytes(32).toString("hex");
   const issuedToken = loginToken;
   let port = 0;
-  let latest: Snapshot = { sessions: [], error: null };
+  let latest: Snapshot = { sessions: [], error: null, warnings: [] };
 
   const cookieName = () => `ccsm_session_${String(port)}`;
   const expectedHost = () => `${LOOPBACK}:${String(port)}`;

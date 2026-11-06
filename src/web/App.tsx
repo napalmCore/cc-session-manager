@@ -1,11 +1,23 @@
 import { useEffect, useState } from "react";
+import { formatDuration } from "../shared/format.js";
 import type { Snapshot, SnapshotMessage } from "../shared/protocol.js";
 
 const RECONNECT_MS = 2000;
+const CLOCK_MS = 30_000;
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const clock = window.setInterval(() => {
+      setNow(Date.now());
+    }, CLOCK_MS);
+    return () => {
+      window.clearInterval(clock);
+    };
+  }, []);
 
   useEffect(() => {
     let socket: WebSocket | undefined;
@@ -40,6 +52,19 @@ export function App() {
       <h1>Claude Code sessions</h1>
       {!connected && <p role="status">Not connected to the local server.</p>}
       {snapshot?.error && <p role="alert">{snapshot.error}</p>}
+      {snapshot && snapshot.warnings.length > 0 && (
+        <div role="status">
+          <p>
+            Claude Code&apos;s output has changed, so some details may be
+            missing or inaccurate.
+          </p>
+          <ul>
+            {snapshot.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {snapshot && (
         <table>
           <thead>
@@ -48,6 +73,9 @@ export function App() {
               <th scope="col">Project</th>
               <th scope="col">Kind</th>
               <th scope="col">Status</th>
+              <th scope="col">Needs you</th>
+              <th scope="col">Started</th>
+              <th scope="col">Running for</th>
             </tr>
           </thead>
           <tbody>
@@ -56,7 +84,18 @@ export function App() {
                 <td>{session.name ?? "Unnamed"}</td>
                 <td>{session.cwd ?? "Unknown"}</td>
                 <td>{session.kind ?? "Unknown"}</td>
-                <td>{session.status ?? session.state ?? "Unknown"}</td>
+                <td>{session.finished ? "Finished" : session.statusLabel}</td>
+                <td>{session.attentionReason ?? ""}</td>
+                <td>
+                  {session.startedAt === undefined
+                    ? "Unknown"
+                    : new Date(session.startedAt).toLocaleString()}
+                </td>
+                <td>
+                  {session.startedAt === undefined || session.finished
+                    ? ""
+                    : formatDuration(now - session.startedAt)}
+                </td>
               </tr>
             ))}
           </tbody>

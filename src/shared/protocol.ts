@@ -11,9 +11,17 @@ export interface Session {
   name?: string;
 }
 
+export interface SessionView extends Session {
+  needsAttention: boolean;
+  attentionReason: string | null;
+  finished: boolean;
+  statusLabel: string;
+}
+
 export interface Snapshot {
-  sessions: Session[];
+  sessions: SessionView[];
   error: string | null;
+  warnings: string[];
 }
 
 export interface SnapshotMessage {

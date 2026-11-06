@@ -1,42 +1,11 @@
 import { exec } from "node:child_process";
 import { homedir } from "node:os";
-import type { Session, Snapshot } from "../shared/protocol.js";
-
-const STRING_FIELDS = [
-  "cwd",
-  "kind",
-  "id",
-  "state",
-  "status",
-  "waitingFor",
-  "sessionId",
-  "name",
-] as const;
-const NUMBER_FIELDS = ["startedAt", "pid"] as const;
+import type { SessionView, Snapshot } from "../shared/protocol.js";
+import { toSessionView } from "./rules.js";
+import { parseSessions } from "./schema.js";
 
 const POLL_FAILED =
   "Could not read sessions from Claude Code. Showing the last known data.";
-
-export function parseSessions(output: string): Session[] {
-  const parsed: unknown = JSON.parse(output);
-  if (!Array.isArray(parsed)) {
-    throw new Error("Expected a JSON array");
-  }
-
-  return parsed.map((entry: unknown) => {
-    const source = (entry ?? {}) as Record<string, unknown>;
-    const session: Session = {};
-    for (const field of STRING_FIELDS) {
-      const value = source[field];
-      if (typeof value === "string") session[field] = value;
-    }
-    for (const field of NUMBER_FIELDS) {
-      const value = source[field];
-      if (typeof value === "number") session[field] = value;
-    }
-    return session;
-  });
-}
 
 /**
  * Runs through a shell because npm installs `claude` as a .cmd file on Windows.
@@ -79,11 +48,12 @@ export function createPoller({
 }: PollerOptions): Poller {
   let timer: NodeJS.Timeout | undefined;
   let running = false;
-  let sessions: Session[] = [];
+  let sessions: SessionView[] = [];
+  let warnings: string[] = [];
   let lastReported: string | undefined;
 
   const report = (error: string | null) => {
-    const snapshot: Snapshot = { sessions, error };
+    const snapshot: Snapshot = { sessions, error, warnings };
     const serialized = JSON.stringify(snapshot);
     if (serialized === lastReported) return;
     lastReported = serialized;
@@ -92,7 +62,9 @@ export function createPoller({
 
   const tick = async () => {
     try {
-      sessions = parseSessions(await run());
+      const parsed = parseSessions(await run());
+      sessions = parsed.sessions.map(toSessionView);
+      warnings = parsed.warnings;
       if (running) report(null);
     } catch {
       if (running) report(POLL_FAILED);

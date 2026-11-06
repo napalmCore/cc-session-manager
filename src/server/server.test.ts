@@ -1,6 +1,7 @@
 import http from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import { toSessionView } from "./rules.js";
 import { startServer, type RunningServer } from "./server.js";
 
 let server: RunningServer;
@@ -62,9 +63,15 @@ beforeEach(async () => {
   server = await startServer({ preferredPort: 0 });
   server.publish({
     sessions: [
-      { cwd: "C:/work", kind: "interactive", startedAt: 1, status: "busy" },
+      toSessionView({
+        cwd: "C:/work",
+        kind: "interactive",
+        startedAt: 1,
+        status: "busy",
+      }),
     ],
     error: null,
+    warnings: [],
   });
 });
 
