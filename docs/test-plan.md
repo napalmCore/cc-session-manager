@@ -76,10 +76,10 @@ Not yet seen live: a permission prompt in an interactive session, a normal inter
 
 ## Manual checks
 
-| ID  | Check                                                                 | Expected                                                                           | Result                                    |
-| --- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------- |
-| M1  | Use the page with only the keyboard: Tab, Shift+Tab, Enter, and Space | Every control can be reached and used, and focus is always visible                 | Passed by automation in headless Chromium |
-| M2  | With NVDA, follow the script below                                    | Headings, counts, reasons, and expanded state are announced, and alerts are spoken | Not run, needs the owner                  |
+| ID  | Check                                                                 | Expected                                                                                    | Result                                    |
+| --- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| M1  | Use the page with only the keyboard: Tab, Shift+Tab, Enter, and Space | Every control can be reached and used, and focus is always visible                          | Passed by automation in headless Chromium |
+| M2  | With NVDA, follow the script below                                    | Headings, counts, reasons, and expanded state are announced, and new attention is announced | Not run, needs the owner                  |
 
 ### M2 script
 
@@ -97,20 +97,22 @@ Across 6 measured live changes, the slowest upper bound was 2309 ms. Across 94 p
 
 ## Bugs
 
-| ID     | Severity          | Bug                                                                                                                            | Status                                    |
-| ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| BUG-1  | High              | Branch shows `HEAD`, with no warning                                                                                           | Fixed by decision 0011, awaiting re-check |
-| BUG-2  | High              | Prompt text used as `name` is stored                                                                                           | Fixed by decision 0011, awaiting re-check |
-| BUG-3  | High, provisional | New sessions under Needs you reach no live region                                                                              | Fixed by decision 0011, needs M2          |
-| BUG-4  | Medium            | A background session's Finished row disappears when the CLI stops listing it, against FR-2's 24 hours                          | Open                                      |
-| BUG-5  | Medium            | False warning and status `unknown` when the first listing has no `status`                                                      | Open                                      |
-| BUG-6  | Low               | Rows move within Active when activity times change or appear                                                                   | Open                                      |
-| BUG-7  | Low               | Sessions with an inherited `CLAUDE_CODE_CHILD_SESSION` weren't listed by the CLI in one observation, and the docs don't say so | Open, unconfirmed by the verifier         |
-| BUG-8  | Low               | The login token prints to stdout when no browser opens, and the docs don't mention this                                        | Open                                      |
-| BUG-9  | Low               | No signal that data is stale while the CLI is slow, for up to 15 seconds                                                       | Open, from code reading                   |
-| BUG-10 | Low               | Screen-reader noise: triangles, dots, and name and reason run together                                                         | Open, from substitute evidence            |
-| BUG-11 | Low               | Focus falls to the page body when the focused expandable section disappears                                                    | Open                                      |
-| BUG-12 | Low               | A corrupt older file is set aside with any names still inside                                                                  | Open                                      |
-| BUG-13 | Low               | A stale session that loses its activity time moves to Needs you and is announced                                               | Open                                      |
-| BUG-14 | Low               | A second session with no ID and no name isn't announced separately                                                             | Open                                      |
-| BUG-15 | Medium            | Shutting down could hang forever with a half-open connection, found through a CI timeout                                       | Fixed in the same pull request            |
+| ID     | Severity          | Bug                                                                                                                                   | Status                                    |
+| ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| BUG-1  | High              | Branch shows `HEAD`, with no warning                                                                                                  | Fixed by decision 0011, awaiting re-check |
+| BUG-2  | High              | Prompt text used as `name` is stored                                                                                                  | Fixed by decision 0011, awaiting re-check |
+| BUG-3  | High, provisional | New sessions under Needs you reach no live region                                                                                     | Fixed by decision 0011, needs M2          |
+| BUG-4  | Medium            | A background session's Finished row disappears when the CLI stops listing it, against FR-2's 24 hours                                 | Open                                      |
+| BUG-5  | Medium            | False warning and status `unknown` when the first listing has no `status`                                                             | Open                                      |
+| BUG-6  | Low               | Rows move within Active when activity times change or appear                                                                          | Open                                      |
+| BUG-7  | Low               | Sessions with an inherited `CLAUDE_CODE_CHILD_SESSION` weren't listed by the CLI in one observation, and the docs don't say so        | Open, unconfirmed by the verifier         |
+| BUG-8  | Low               | The login token prints to stdout when no browser opens, and the docs don't mention this                                               | Open                                      |
+| BUG-9  | Low               | No signal that data is stale while the CLI is slow, for up to 15 seconds                                                              | Open, from code reading                   |
+| BUG-10 | Low               | Screen-reader noise: triangles, dots, and name and reason run together                                                                | Open, from substitute evidence            |
+| BUG-11 | Low               | Focus falls to the page body when the focused expandable section disappears                                                           | Open                                      |
+| BUG-12 | Low               | A corrupt older file is set aside with any names still inside                                                                         | Open                                      |
+| BUG-13 | Low               | A stale session that loses its activity time moves to Needs you and is announced                                                      | Open                                      |
+| BUG-14 | Low               | A second session with no ID and no name isn't announced separately                                                                    | Open                                      |
+| BUG-15 | Medium            | Shutting down could hang forever with a half-open connection, found through a CI timeout                                              | Fixed in the same pull request            |
+| BUG-16 | Low               | An announcement can be lost if a second update arrives within 100 ms, which the 3-second poll can't produce except around a reconnect | Open                                      |
+| BUG-17 | Low               | After a failed first poll, the page says it is showing last known data and also "No sessions to show"                                 | Open                                      |

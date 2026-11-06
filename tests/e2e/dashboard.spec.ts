@@ -260,6 +260,9 @@ test.describe("live updates", () => {
 });
 
 test.describe("screen reader announcements", () => {
+  // Announcements fire after a short delay, so checking for silence sooner proves nothing.
+  const waitPastAnnouncementDelay = (page: Page) => page.waitForTimeout(400);
+
   const announcement = (page: Page, text: string) =>
     page.getByRole("status").filter({ hasText: text });
 
@@ -292,6 +295,7 @@ test.describe("screen reader announcements", () => {
   }) => {
     await open(page);
     await expect(page.getByText("prompting").first()).toBeVisible();
+    await waitPastAnnouncementDelay(page);
     await expect(
       page.getByRole("status").filter({ hasText: "needs you:" }),
     ).toHaveCount(0);
@@ -335,6 +339,7 @@ test.describe("screen reader announcements", () => {
     server.publish(snapshot({ sessions: [waiting("a", "already-waiting")] }));
 
     await expect(page.getByText("already-waiting")).toBeVisible();
+    await waitPastAnnouncementDelay(page);
     expect(await announcements(page)).toEqual([]);
   });
 
@@ -350,6 +355,7 @@ test.describe("screen reader announcements", () => {
     server.publish(snapshot({ sessions: [waiting("a", "already-waiting")] }));
 
     await expect(page.getByText("already-waiting")).toBeVisible();
+    await waitPastAnnouncementDelay(page);
     expect(await announcements(page)).toEqual([]);
   });
 
