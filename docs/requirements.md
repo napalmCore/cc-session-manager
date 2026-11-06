@@ -1,0 +1,58 @@
+# Requirements
+
+- **Status:** Signed off for iteration 1 on 2026-11-06
+- **Scope:** Read-only live monitoring of Claude Code sessions, Windows first
+
+## Functional requirements
+
+| ID | Requirement | Acceptance criteria |
+|---|---|---|
+| FR-1 | List active sessions | Running interactive and background sessions from `claude agents --json` appear on the dashboard. |
+| FR-2 | Keep recently finished sessions | A finished session stays listed for 24 hours after it ends, then is removed. It is marked as finished. |
+| FR-3 | Show identity and status | Each session shows its name, project folder, kind (interactive or background), and current status. |
+| FR-4 | Show time information | Each session shows its start time and how long it has been running. |
+| FR-5 | Show why a session needs the user | Sessions needing attention show the reason when the CLI provides it, or a generic "needs input" label otherwise. |
+| FR-6 | Show latest activity metadata | Each session shows its git branch, model, and last activity time when available. A missing value doesn't hide the session or cause an error. |
+| FR-7 | Highlight sessions needing attention | These sessions are listed first with a clear marker that doesn't rely on color alone. |
+| FR-8 | Show an attention count | The browser tab title shows how many sessions need attention. |
+| FR-9 | Stay current | Session changes appear on the dashboard within 5 seconds. |
+
+## Constraints
+
+| ID | Constraint | Source |
+|---|---|---|
+| C-1 | The tool must not change sessions, Claude Code settings, or files under `~/.claude`. | [0003](decisions/0003-first-iteration-and-platforms.md) |
+| C-2 | The tool must never read, log, or display `~/.claude/.credentials.json` or session `.key` files. | [0002](decisions/0002-product-direction.md) |
+| C-3 | The tool must not depend on `~/.claude/jobs/<id>/`. | [0002](decisions/0002-product-direction.md) |
+| C-4 | Transcript reads must not store or display message text. | [0006](decisions/0006-transcript-metadata.md) |
+| C-5 | Iteration 1 doesn't use hooks. | Requirements review, 2026-11-06 |
+| C-6 | Windows is supported first, and the code stays portable. | [0003](decisions/0003-first-iteration-and-platforms.md) |
+
+## Out of scope for iteration 1
+
+- Starting, stopping, resuming, or otherwise controlling sessions
+- Sending prompts or answering permission requests
+- History, search, cost, and token analytics
+- Message previews
+- Desktop or browser notifications
+- macOS and Linux support
+
+## Known unknowns
+
+| ID | Question | Resolve in |
+|---|---|---|
+| U-1 | Do interactive sessions report when they need the user? Only `busy` and `idle` have been observed. | Design |
+| U-2 | When does `waitingFor` appear? It was absent for a blocked background session on 2026-11-06. | Design |
+| U-3 | How long does `claude agents --json --all` keep finished sessions? This decides whether the tool must store them to meet FR-2. | Design |
+| U-4 | Which transcript fields can reliably provide git branch, model, and last activity time for FR-6? | Design |
+| U-5 | What CPU load does refreshing every 2 to 5 seconds cause? One `claude agents --json` run took about 0.5 seconds on the development machine. | Testing |
+
+## Non-functional requirements
+
+| ID | Requirement | Acceptance criteria |
+|---|---|---|
+| NFR-1 | Local access only | The server listens only on the loopback interface and is unreachable from other devices. |
+| NFR-2 | Token required | Requests without the valid random token are rejected. The token isn't written to logs. |
+| NFR-3 | No data leaves the machine | No telemetry or error reports are sent. The running tool makes no external network requests, and the dashboard loads all its assets locally. |
+| NFR-4 | Degrade on change | When Claude Code output changes or data is missing, the dashboard keeps showing what still works, marks what is missing, and displays a clear banner. |
+| NFR-5 | Accessibility | The dashboard meets WCAG 2.2 AA. |

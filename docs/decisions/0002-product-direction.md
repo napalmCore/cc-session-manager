@@ -1,6 +1,6 @@
 # 0002: Build a new open-source thin layer
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [0006](0006-transcript-metadata.md)
 - **Date:** 2026-11-06
 
 ## Context
