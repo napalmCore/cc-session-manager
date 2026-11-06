@@ -44,7 +44,7 @@ finished-sessions.json <------+
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Needs attention              | `status` is `waiting`, or `state` is `blocked`.                                                                 |
 | Reason                       | Use `waitingFor` when present, otherwise show "needs input".                                                    |
-| Finished background session  | `state` is `done`, `failed`, or `stopped`.                                                                      |
+| Finished background session  | `state` is `done`, `failed`, or `stopped`. It leaves the dashboard as soon as the CLI stops listing it.         |
 | Finished interactive session | It was seen earlier and is no longer listed.                                                                    |
 | End time                     | The CLI doesn't provide one, so use the time the tool first sees the session as finished, shown as approximate. |
 
@@ -80,14 +80,14 @@ Records stay in the file while the CLI still lists a session, even after 24 hour
 
 ## Failure handling
 
-| Failure                                       | Behavior                                                            |
-| --------------------------------------------- | ------------------------------------------------------------------- |
-| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying.            |
-| Output can't be parsed                        | Keep the last good data, mark it as out of date, and show a banner. |
-| A field is missing                            | Mark it as unavailable and show a banner.                           |
-| Transcript is missing or unreadable           | Show the session without metadata.                                  |
-| Store file is corrupt                         | Set it aside, start with an empty list, and show a notice.          |
-| Default port is busy                          | Try the next free port.                                             |
+| Failure                                       | Behavior                                                                                                                                                                          |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying.                                                                                                                          |
+| Output can't be parsed                        | Keep the last good data, mark it as out of date, and show a banner.                                                                                                               |
+| A field is missing                            | Mark it as unavailable and show a banner. The exception is a missing `status` on an interactive session's first listing, which only warns if it's still missing on the next poll. |
+| Transcript is missing or unreadable           | Show the session without metadata.                                                                                                                                                |
+| Store file is corrupt                         | Set it aside, start with an empty list, and show a notice.                                                                                                                        |
+| Default port is busy                          | Try the next free port.                                                                                                                                                           |
 
 ## Requirements coverage
 
@@ -104,7 +104,7 @@ Records stay in the file while the CLI still lists a session, even after 24 hour
 
 ## Build plan
 
-Each step is a separate pull request, approved by the owner before merge.
+Each step is a separate pull request, approved by an independent agent before merge, as decision 0012 sets out.
 
 | Step | Pull request                                                                | Covers                   |
 | ---- | --------------------------------------------------------------------------- | ------------------------ |

@@ -56,6 +56,7 @@ export function createPoller({
   let running = false;
   let sessions: SessionView[] = [];
   let warnings: string[] = [];
+  let listedLastPoll = new Set<string>();
   let lastReported: string | undefined;
 
   const report = (error: string | null) => {
@@ -68,7 +69,8 @@ export function createPoller({
 
   const tick = async () => {
     try {
-      const parsed = parseSessions(await run());
+      const parsed = parseSessions(await run(), listedLastPoll);
+      listedLastPoll = parsed.listed;
       const views = parsed.sessions.map(toSessionView);
       const enriched = (await enrich?.(views)) ?? {
         sessions: views,

@@ -88,11 +88,11 @@ describe("createPoller", () => {
     });
 
     poller.start();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10);
     poller.stop();
 
     expect(snapshots[0]?.sessions[0]?.needsAttention).toBe(true);
-    expect(snapshots[0]?.warnings).not.toHaveLength(0);
+    expect(snapshots.at(-1)?.warnings).not.toHaveLength(0);
   });
 
   it("merges tracked sessions and warnings into the snapshot", async () => {
@@ -162,6 +162,148 @@ describe("createPoller", () => {
     poller.stop();
 
     expect(track).not.toHaveBeenCalled();
+  });
+
+  describe("parsing warnings", () => {
+    const listing = (
+      sessionId: string,
+      fields: Record<string, unknown> = { status: "busy" },
+    ) => ({
+      sessionId,
+      cwd: "C:/a",
+      kind: "interactive",
+      startedAt: 1,
+      ...fields,
+    });
+    const noStatus = (sessionId: string) => listing(sessionId, {});
+    const FAIL = Symbol("failed poll");
+    type Poll = unknown[] | typeof FAIL;
+
+    /** The warnings in effect after each poll. */
+    const warningsPerPoll = async (polls: Poll[]) => {
+      let current: Snapshot | undefined;
+      const results: string[][] = [];
+      let index = 0;
+      const poller = createPoller({
+        run: () => {
+          const poll = polls[index];
+          index += 1;
+          return poll === FAIL
+            ? Promise.reject(new Error("failed"))
+            : Promise.resolve(JSON.stringify(poll ?? []));
+        },
+        intervalMs: 10,
+        onSnapshot: (snapshot) => {
+          current = snapshot;
+        },
+      });
+      poller.start();
+      for (let poll = 0; poll < polls.length; poll += 1) {
+        await vi.advanceTimersByTimeAsync(poll === 0 ? 0 : 10);
+        results.push(current?.warnings ?? []);
+      }
+      poller.stop();
+      return results;
+    };
+
+    it("excuses a session's first listing without a status", async () => {
+      expect(await warningsPerPoll([[noStatus("a")], [listing("a")]])).toEqual([
+        [],
+        [],
+      ]);
+    });
+
+    it("warns when that session still has no status on the next poll", async () => {
+      const results = await warningsPerPoll([[noStatus("a")], [noStatus("a")]]);
+      expect(results[0]).toEqual([]);
+      expect(results[1]).toEqual([expect.stringContaining("status")]);
+    });
+
+    it("excuses a session that starts while the tool is already running", async () => {
+      expect(
+        await warningsPerPoll([
+          [listing("a")],
+          [listing("a"), noStatus("b")],
+          [listing("a"), listing("b")],
+        ]),
+      ).toEqual([[], [], []]);
+    });
+
+    it("doesn't raise a false warning for sessions starting one poll apart", async () => {
+      expect(
+        await warningsPerPoll([
+          [noStatus("a")],
+          [listing("a"), noStatus("b")],
+          [listing("a"), listing("b"), noStatus("c")],
+          [listing("a"), listing("b"), listing("c")],
+        ]),
+      ).toEqual([[], [], [], []]);
+    });
+
+    it("warns at once when a known session loses its status", async () => {
+      const results = await warningsPerPoll([
+        [listing("a")],
+        [noStatus("a")],
+        [listing("a")],
+      ]);
+      expect(results[1]).toEqual([expect.stringContaining("status")]);
+      expect(results[2]).toEqual([]);
+    });
+
+    it("remembers known sessions across a failed poll", async () => {
+      const results = await warningsPerPoll([
+        [noStatus("a")],
+        FAIL,
+        [noStatus("a")],
+      ]);
+      expect(results[2]).toEqual([expect.stringContaining("status")]);
+    });
+
+    it("keeps warnings in effect through a failed poll", async () => {
+      const results = await warningsPerPoll([
+        [listing("a")],
+        [noStatus("a")],
+        FAIL,
+      ]);
+      expect(results[2]).toEqual([expect.stringContaining("status")]);
+    });
+
+    it.each([
+      ["a non-object entry", ["oops"]],
+      ["an unknown status value", [listing("a", { status: "asking" })]],
+      ["a wrongly typed field", [listing("a", { startedAt: "soon" })]],
+      [
+        "another missing field",
+        [{ sessionId: "a", kind: "interactive", status: "busy" }],
+      ],
+      [
+        "a session with no identity",
+        [{ cwd: "C:/a", kind: "interactive", startedAt: 1 }],
+      ],
+    ])("warns at once about %s", async (_label, poll) => {
+      const [first] = await warningsPerPoll([poll]);
+      expect(first).not.toHaveLength(0);
+    });
+
+    it("passes store and transcript warnings on immediately", async () => {
+      const snapshots: Snapshot[] = [];
+      const poller = createPoller({
+        run: () => Promise.resolve("[]"),
+        intervalMs: 10,
+        onSnapshot: (snapshot) => snapshots.push(snapshot),
+        enrich: (sessions) =>
+          Promise.resolve({ sessions, warnings: ["transcript problem"] }),
+        track: (sessions) => ({ sessions, warnings: ["store problem"] }),
+      });
+      poller.start();
+      await vi.advanceTimersByTimeAsync(0);
+      poller.stop();
+
+      expect(snapshots[0]?.warnings).toEqual([
+        "transcript problem",
+        "store problem",
+      ]);
+    });
   });
 
   it("only reports a snapshot when something changed", async () => {

@@ -90,11 +90,35 @@ describe("parseSessions", () => {
     ]);
   });
 
-  it("warns when an interactive session has no status", () => {
-    const withoutStatus = without(interactive, "status");
-    expect(parse([withoutStatus]).warnings).toEqual([
-      expect.stringContaining("status"),
+  describe("an interactive session with no status", () => {
+    const identified = { ...without(interactive, "status"), sessionId: "a" };
+    const parseKnown = (known: string[]) =>
+      parseSessions(JSON.stringify([identified]), new Set(known));
+
+    it("is excused on its first listing", () => {
+      expect(parseKnown([]).warnings).toEqual([]);
+    });
+
+    it("gets a warning once the session is known", () => {
+      expect(parseKnown(["a"]).warnings).toEqual([
+        expect.stringContaining("status"),
+      ]);
+    });
+
+    it("gets a warning straight away if it can't be identified", () => {
+      expect(parse([without(interactive, "status")]).warnings).toEqual([
+        expect.stringContaining("status"),
+      ]);
+    });
+  });
+
+  it("reports which sessions it listed", () => {
+    const { listed } = parse([
+      { ...interactive, sessionId: "a" },
+      { ...background, sessionId: undefined, id: "b" },
+      interactive,
     ]);
+    expect([...listed].sort()).toEqual(["a", "b"]);
   });
 
   it("warns when a waiting session has no reason", () => {
