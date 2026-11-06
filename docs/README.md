@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 1, Phase 4: Implementation.** Planning, Requirements, and Design were signed off on 2026-11-06.
+**Iteration 1, Phase 5: Testing.** Planning, Requirements, Design, and Implementation are complete.
 
 ## How these docs work
 
@@ -17,7 +17,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | ------------------------------------ | -------------------------- |
 | [`requirements.md`](requirements.md) | Signed off for iteration 1 |
 | [`design.md`](design.md)             | Signed off for iteration 1 |
-| `test-plan.md`                       | Not started (Phase 5)      |
+| [`test-plan.md`](test-plan.md)       | In progress                |
 
 ## Decision log
 

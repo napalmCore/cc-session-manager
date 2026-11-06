@@ -45,7 +45,7 @@
 | U-2 | Resolved: `waitingFor` is present only when `status` is `waiting`, so a `blocked` session without an open prompt needs the generic label.                                              | Done       |
 | U-3 | Resolved: `--all` keeps completed background sessions, but only those are documented as staying listed, and no end time is listed. The tool must store finished sessions to meet FR-2. | Done       |
 | U-4 | Resolved: `gitBranch`, `message.model`, and `timestamp` were found in all 43 local transcripts checked on 2026-11-06.                                                                  | Done       |
-| U-5 | What CPU load does refreshing every 2 to 5 seconds cause? One `claude agents --json` run took about 0.5 seconds on the development machine.                                            | Testing    |
+| U-5 | Resolved: one poll uses about 353 ms of CPU, so a 3-second interval uses about 1.3% of an 8-core PC. See [test-plan.md](test-plan.md).                                                 | Done       |
 
 ## Non-functional requirements
 
