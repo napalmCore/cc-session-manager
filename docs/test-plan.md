@@ -113,3 +113,4 @@ Across 6 measured live changes, the slowest upper bound was 2309 ms. Across 94 p
 | BUG-12 | Low               | A corrupt older file is set aside with any names still inside                                                                  | Open                                      |
 | BUG-13 | Low               | A stale session that loses its activity time moves to Needs you and is announced                                               | Open                                      |
 | BUG-14 | Low               | A second session with no ID and no name isn't announced separately                                                             | Open                                      |
+| BUG-15 | Medium            | Shutting down could hang forever with a half-open connection, found through a CI timeout                                       | Fixed in the same pull request            |

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { AddressInfo, Socket } from "node:net";
 import { extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdaptorServer } from "@hono/node-server";
@@ -110,7 +110,7 @@ export async function startServer(
     JSON.stringify({ type: "snapshot", snapshot } satisfies SnapshotMessage);
 
   const app = new Hono();
-  const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({
     app,
   });
 
@@ -209,6 +209,13 @@ export async function startServer(
   });
 
   const server = createAdaptorServer({ fetch: app.fetch }) as Server;
+  const sockets = new Set<Socket>();
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => {
+      sockets.delete(socket);
+    });
+  });
   injectWebSocket(server);
   port = await listen(server, options.preferredPort);
 
@@ -222,12 +229,13 @@ export async function startServer(
       for (const client of clients) client.send(message);
     },
     close() {
-      for (const client of wss.clients) client.terminate();
       return new Promise((resolve, reject) => {
         server.close((error) => {
           if (error) reject(error);
           else resolve();
         });
+        // Otherwise a half-open request or upgrade would keep this waiting forever.
+        for (const socket of sockets) socket.destroy();
       });
     },
   };
