@@ -1,0 +1,3 @@
+peerDependencyRules:
+  allowedVersions:
+    "@hono/node-ws>@hono/node-server": "2"
