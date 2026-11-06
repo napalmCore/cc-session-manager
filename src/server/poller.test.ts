@@ -88,11 +88,11 @@ describe("createPoller", () => {
     });
 
     poller.start();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10);
     poller.stop();
 
     expect(snapshots[0]?.sessions[0]?.needsAttention).toBe(true);
-    expect(snapshots[0]?.warnings).not.toHaveLength(0);
+    expect(snapshots.at(-1)?.warnings).not.toHaveLength(0);
   });
 
   it("merges tracked sessions and warnings into the snapshot", async () => {
@@ -162,6 +162,89 @@ describe("createPoller", () => {
     poller.stop();
 
     expect(track).not.toHaveBeenCalled();
+  });
+
+  describe("parsing warnings", () => {
+    const complete = JSON.stringify([
+      { cwd: "C:/a", kind: "interactive", startedAt: 1, status: "busy" },
+    ]);
+    const noStatus = JSON.stringify([
+      { cwd: "C:/a", kind: "interactive", startedAt: 1 },
+    ]);
+
+    const runOutputs = async (outputs: string[]) => {
+      const snapshots: Snapshot[] = [];
+      let index = 0;
+      const poller = createPoller({
+        run: () => {
+          const output = outputs[Math.min(index, outputs.length - 1)] ?? "[]";
+          index += 1;
+          return Promise.resolve(output);
+        },
+        intervalMs: 10,
+        onSnapshot: (snapshot) => snapshots.push(snapshot),
+      });
+      poller.start();
+      await vi.advanceTimersByTimeAsync(10 * (outputs.length - 1));
+      poller.stop();
+      return snapshots;
+    };
+
+    it("stays silent about a problem seen in only one poll", async () => {
+      const snapshots = await runOutputs([noStatus, complete]);
+      expect(snapshots.flatMap((snapshot) => snapshot.warnings)).toEqual([]);
+    });
+
+    it("warns when the problem is still there on the next poll", async () => {
+      const snapshots = await runOutputs([noStatus, noStatus]);
+      expect(snapshots[0]?.warnings).toEqual([]);
+      expect(snapshots.at(-1)?.warnings).toEqual([
+        expect.stringContaining("status"),
+      ]);
+    });
+
+    it("clears a warning as soon as the problem is gone", async () => {
+      const snapshots = await runOutputs([noStatus, noStatus, complete]);
+      expect(snapshots.at(-1)?.warnings).toEqual([]);
+    });
+
+    it("keeps a repeated warning through a failed poll", async () => {
+      const outputs = [noStatus, noStatus];
+      const snapshots: Snapshot[] = [];
+      let index = 0;
+      const poller = createPoller({
+        run: () => {
+          const output = outputs[index];
+          index += 1;
+          return output === undefined
+            ? Promise.reject(new Error("failed"))
+            : Promise.resolve(output);
+        },
+        intervalMs: 10,
+        onSnapshot: (snapshot) => snapshots.push(snapshot),
+      });
+      poller.start();
+      await vi.advanceTimersByTimeAsync(20);
+      poller.stop();
+
+      expect(snapshots.at(-1)?.error).toBeTruthy();
+      expect(snapshots.at(-1)?.warnings).toHaveLength(1);
+    });
+
+    it("passes store and transcript warnings on immediately", async () => {
+      const snapshots: Snapshot[] = [];
+      const poller = createPoller({
+        run: () => Promise.resolve("[]"),
+        intervalMs: 10,
+        onSnapshot: (snapshot) => snapshots.push(snapshot),
+        track: (sessions) => ({ sessions, warnings: ["store problem"] }),
+      });
+      poller.start();
+      await vi.advanceTimersByTimeAsync(0);
+      poller.stop();
+
+      expect(snapshots[0]?.warnings).toEqual(["store problem"]);
+    });
   });
 
   it("only reports a snapshot when something changed", async () => {

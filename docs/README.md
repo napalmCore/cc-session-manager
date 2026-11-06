@@ -34,3 +34,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0009](decisions/0009-dashboard-ui.md)                  | Dashboard UI                                        | Accepted                  |
 | [0010](decisions/0010-style-nonce.md)                   | Per-run style nonce                                 | Accepted                  |
 | [0011](decisions/0011-testing-bug-fixes.md)             | Fixes for High bugs found in testing                | Accepted                  |
+| [0012](decisions/0012-agent-approved-merges.md)         | Agent-approved merges and BUG-4                     | Accepted                  |
