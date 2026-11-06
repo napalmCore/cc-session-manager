@@ -9,20 +9,20 @@ Requirements for read-only live monitoring were signed off. The [agent view docs
 
 ## Decisions
 
-| Area | Options considered | Decision |
-|---|---|---|
-| Live updates | Server-Sent Events, WebSocket, browser polling | WebSocket |
-| Finished-session storage | JSON file, SQLite, memory only | JSON file |
-| UI framework | React, Svelte, Preact, no framework | React |
-| Server framework | Hono, Fastify, Express, Node built-in http | Hono |
-| Startup | Manual command, command with optional auto-start, background service | Manual command |
-| Token delivery | One-time URL then cookie, token stays in URL, user-entered password | One-time URL then cookie |
-| Code structure | Single package, pnpm workspace, separate repositories | Single package |
-| Transcript reading | Read file ends if changed, stream the whole file, modified time only | Read file ends if changed |
-| Build tool | Vite, esbuild, Next.js | Vite |
+| Area                      | Options considered                                                           | Decision                    |
+| ------------------------- | ---------------------------------------------------------------------------- | --------------------------- |
+| Live updates              | Server-Sent Events, WebSocket, browser polling                               | WebSocket                   |
+| Finished-session storage  | JSON file, SQLite, memory only                                               | JSON file                   |
+| UI framework              | React, Svelte, Preact, no framework                                          | React                       |
+| Server framework          | Hono, Fastify, Express, Node built-in http                                   | Hono                        |
+| Startup                   | Manual command, command with optional auto-start, background service         | Manual command              |
+| Token delivery            | One-time URL then cookie, token stays in URL, user-entered password          | One-time URL then cookie    |
+| Code structure            | Single package, pnpm workspace, separate repositories                        | Single package              |
+| Transcript reading        | Read file ends if changed, stream the whole file, modified time only         | Read file ends if changed   |
+| Build tool                | Vite, esbuild, Next.js                                                       | Vite                        |
 | Styling and accessibility | React Aria with CSS Modules, Tailwind with shadcn/ui, Material UI, plain CSS | React Aria with CSS Modules |
-| Data validation | Zod, Valibot, hand-written checks | Zod with tolerant schemas |
-| Port selection | Default with fallback, random free port, fixed port only | Default with fallback |
+| Data validation           | Zod, Valibot, hand-written checks                                            | Zod with tolerant schemas   |
+| Port selection            | Default with fallback, random free port, fixed port only                     | Default with fallback       |
 
 ## Consequences
 
