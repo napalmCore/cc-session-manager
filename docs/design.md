@@ -31,7 +31,7 @@ finished-sessions.json <------+
 
 ## Data flow
 
-1. The poller runs the CLI. The interval is in the 2 to 5 second range, and the final value comes from load measurements (U-5).
+1. The poller runs the CLI, waiting 3 seconds between runs. A 5-second interval would miss FR-9, because the delay includes the run itself.
 2. The schema layer validates each entry and records any missing fields.
 3. The metadata reader adds git branch, model, and last activity time.
 4. The server compares the result with the last state, and updates the store.
@@ -116,5 +116,4 @@ Each step is a separate pull request, approved by the owner before merge.
 
 ## Open items
 
-- **Phase 5 (Testing):** the final polling interval.
 - **Phase 6 (Release):** packaging and distribution, including a packaged executable for users without Node.
