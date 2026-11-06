@@ -133,10 +133,31 @@ ${newer}
     expect(metadata).toEqual({});
   });
 
-  it("flags a likely format change only when lines parsed without a timestamp", () => {
-    expect(extractMetadata(`${assistant}\n`).formatChanged).toBe(false);
-    expect(extractMetadata("").formatChanged).toBe(false);
-    expect(extractMetadata(`{"other":1}\n`).formatChanged).toBe(true);
+  describe("format change warning", () => {
+    const header = [
+      JSON.stringify({ type: "mode", mode: "default" }),
+      JSON.stringify({ type: "permission-mode", permissionMode: "default" }),
+      JSON.stringify({ type: "session-owner", sessionId: ID }),
+    ].join("\n");
+
+    it("isn't raised for a normal transcript or an empty one", () => {
+      expect(extractMetadata(`${assistant}\n`).formatChanged).toBe(false);
+      expect(extractMetadata("").formatChanged).toBe(false);
+    });
+
+    it("isn't raised for a new transcript with only header lines", () => {
+      expect(extractMetadata(`${header}\n`).formatChanged).toBe(false);
+    });
+
+    it("is raised when conversation lines have no timestamp", () => {
+      const line = JSON.stringify({ message: { model: "m" } });
+      expect(extractMetadata(`${header}\n${line}\n`).formatChanged).toBe(true);
+    });
+
+    it("is raised when the conversation's timestamp can't be read", () => {
+      const line = JSON.stringify({ timestamp: "soon", message: {} });
+      expect(extractMetadata(`${line}\n`).formatChanged).toBe(true);
+    });
   });
 });
 
@@ -259,7 +280,7 @@ describe("createMetadataReader", () => {
   });
 
   it("warns once when transcripts appear to have changed format", async () => {
-    writeTranscript(`{"other":1}\n`);
+    writeTranscript(`{"message":{}}\n`);
     const reader = createMetadataReader(root);
 
     const { warnings } = await reader.enrich([view(ID), view(ID)]);

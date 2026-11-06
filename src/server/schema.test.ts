@@ -79,7 +79,7 @@ describe("parseSessions", () => {
     expect(JSON.stringify(result.warnings)).not.toContain("private");
   });
 
-  it("does not require status on a background session whose process has exited", () => {
+  it("does not require status on a background session", () => {
     const listing = JSON.stringify([background]);
     expect(parseSessions(listing, new Set(["abc"])).warnings).toEqual([]);
   });
@@ -136,12 +136,14 @@ describe("parseSessions", () => {
 
     it("recognizes a known session by its session ID when it has both IDs", () => {
       const entry = { ...noStatus, sessionId: "a", id: "b" };
-      expect(known(entry, ["a"])).toHaveLength(1);
+      expect(known(entry, ["a"])).toEqual([expect.stringContaining("status")]);
       expect(known(entry, ["b"])).toEqual([]);
     });
 
     it("recognizes a known session by its short ID when that's all it has", () => {
-      expect(known({ ...noStatus, id: "b" }, ["b"])).toHaveLength(1);
+      expect(known({ ...noStatus, id: "b" }, ["b"])).toEqual([
+        expect.stringContaining("status"),
+      ]);
       expect(known({ ...noStatus, id: "b" }, [])).toEqual([]);
     });
 

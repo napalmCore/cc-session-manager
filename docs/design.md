@@ -53,6 +53,7 @@ finished-sessions.json <------+
 - **Fields kept:** `gitBranch`, `message.model`, and `timestamp`. An explicit allow-list copies only these fields, and tests must confirm that no message text gets through (C-4).
 - **Lookup:** `sessionId` must be a valid UUID before it is used to find `~/.claude/projects/*/<sessionId>.jsonl`, which prevents path traversal.
 - **Branch `HEAD`:** the CLI writes this for a session started outside a repository and for a detached HEAD, so it shows as unavailable.
+- **Format warning:** only conversation lines with no usable timestamp raise it, because a new transcript starts with header lines that have none.
 - **Partial results:** a field not found near the end of a file shows as unavailable (FR-6).
 - **Risk:** the transcript location and fields aren't known to be a stable interface, so failures must degrade rather than break the dashboard (NFR-4).
 
@@ -78,16 +79,18 @@ The file holds project paths, but no session names and no message text. Names ar
 
 Records stay in the file while the CLI still lists a session, even after 24 hours, so a completed background session doesn't look newly finished on the next poll. A completed background session first seen by the tool, including on its first run, is treated as finishing at that moment, because the CLI doesn't report end times.
 
+A session sitting at a trust dialog isn't listed by the CLI, so the dashboard can't show it.
+
 ## Failure handling
 
-| Failure                                       | Behavior                                                                                                                                                                                                     |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying.                                                                                                                                                     |
-| Output can't be parsed                        | Keep the last good data, mark it as out of date, and show a banner.                                                                                                                                          |
-| A field is missing                            | Mark it as unavailable and show a banner. The exception is a missing `status` on an interactive session not listed in the previous successful poll, which only warns if it's still missing on the next poll. |
-| Transcript is missing or unreadable           | Show the session without metadata.                                                                                                                                                                           |
-| Store file is corrupt                         | Set it aside, start with an empty list, and show a notice.                                                                                                                                                   |
-| Default port is busy                          | Try the next free port.                                                                                                                                                                                      |
+| Failure                                       | Behavior                                                                                                                                                                                             |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude` isn't installed or the command fails | Show a banner explaining the problem, and keep retrying.                                                                                                                                             |
+| Output can't be parsed                        | Keep the last good data, mark it as out of date, and show a banner.                                                                                                                                  |
+| A field is missing                            | Mark it as unavailable and show a banner. The exception is a missing `status` on an identified interactive session not listed in the previous successful poll, which raises no banner for that poll. |
+| Transcript is missing or unreadable           | Show the session without metadata.                                                                                                                                                                   |
+| Store file is corrupt                         | Set it aside, start with an empty list, and show a notice.                                                                                                                                           |
+| Default port is busy                          | Try the next free port.                                                                                                                                                                              |
 
 ## Requirements coverage
 

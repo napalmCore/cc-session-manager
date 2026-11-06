@@ -53,7 +53,7 @@ export function claudeProjectsDirectory(
 export function extractMetadata(text: string): Extraction {
   const metadata: TranscriptMetadata = {};
   const lines = text.split("\n");
-  let parsedLines = 0;
+  let conversationLines = 0;
 
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
@@ -67,7 +67,9 @@ export function extractMetadata(text: string): Extraction {
     }
     const result = lineSchema.safeParse(value);
     if (!result.success || Array.isArray(value)) continue;
-    parsedLines += 1;
+    if ((value as { message?: unknown }).message !== undefined) {
+      conversationLines += 1;
+    }
 
     const { gitBranch, timestamp, message } = result.data;
     if (metadata.gitBranch === undefined && gitBranch) {
@@ -97,7 +99,10 @@ export function extractMetadata(text: string): Extraction {
 
   return {
     metadata,
-    formatChanged: parsedLines > 0 && metadata.lastActivityAt === undefined,
+    // A new transcript starts with header lines that have no timestamp, so only
+    // conversation lines without one suggest that the format changed.
+    formatChanged:
+      conversationLines > 0 && metadata.lastActivityAt === undefined,
   };
 }
 
