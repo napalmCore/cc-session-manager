@@ -28,6 +28,7 @@ finished-sessions.json <------+
 | Finished-session store | Keeps finished sessions in a JSON file and removes them after 24 hours.                              |
 | Auth layer             | Handles the one-time token, the session cookie, and the checks on incoming connections.              |
 | Dashboard              | Shows the session list using React, React Aria, and CSS Modules, built with Vite and served locally. |
+| Announcer              | Tells screen readers about sessions that newly need the user, through a polite live region.          |
 
 ## Data flow
 
@@ -73,7 +74,7 @@ finished-sessions.json <------+
 
 Finished sessions are saved in the tool's own data folder, never under `~/.claude` (C-1). On Windows, this is `%LOCALAPPDATA%\cc-session-manager\finished-sessions.json`. Each write goes to a temporary file that then replaces the original, so a crash can't leave a half-written file.
 
-The file holds project paths, but no session names and no message text. Names are left out because the CLI can use a prompt as the name until a title is generated.
+The file holds project paths, but no session names and no message text. Names are left out because the CLI can use a prompt as the name until a title is generated. An older file holding a name or a `HEAD` branch is rewritten on the first update. A corrupt file is set aside unchanged, so a corrupt older file could still hold names.
 
 Records stay in the file while the CLI still lists a session, even after 24 hours, so a completed background session doesn't look newly finished on the next poll. A completed background session first seen by the tool, including on its first run, is treated as finishing at that moment, because the CLI doesn't report end times.
 

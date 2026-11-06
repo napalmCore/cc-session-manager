@@ -26,7 +26,7 @@ const done: Session = { ...working, state: "done" };
 function setup(saved: Parameters<SessionStore["save"]>[0] = []) {
   let now = 50_000;
   const store: SessionStore = {
-    load: () => ({ records: saved, notice: null }),
+    load: () => ({ records: saved, notice: null, needsRewrite: false }),
     save: vi.fn(() => null),
   };
   const tracker = createSessionTracker({ store, now: () => now });
@@ -232,7 +232,11 @@ describe("persistence", () => {
 
   it("reports a store problem and keeps working", () => {
     const store: SessionStore = {
-      load: () => ({ records: [], notice: "load notice" }),
+      load: () => ({
+        records: [],
+        notice: "load notice",
+        needsRewrite: false,
+      }),
       save: () => "save problem",
     };
     const tracker = createSessionTracker({ store, now: () => 1 });

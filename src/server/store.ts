@@ -48,6 +48,8 @@ const fileSchema = z.object({
 
 export interface LoadResult {
   records: FinishedSession[];
+  /** True when the file holds data the store no longer keeps, such as a name. */
+  needsRewrite: boolean;
   notice: string | null;
 }
 
@@ -55,6 +57,13 @@ export interface SessionStore {
   load: () => LoadResult;
   /** Returns a problem to show the user, or null on success. Never throws. */
   save: (records: FinishedSession[]) => string | null;
+}
+
+function withoutHeadBranch(record: FinishedSession): FinishedSession {
+  if (record.gitBranch !== "HEAD") return record;
+  const cleaned = { ...record };
+  delete cleaned.gitBranch;
+  return cleaned;
 }
 
 export function dataDirectory(
@@ -83,12 +92,24 @@ export function createFileStore(
         raw = readFileSync(file, "utf8");
       } catch (error) {
         const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
-        return { records: [], notice: missing ? null : LOAD_PROBLEM };
+        return {
+          records: [],
+          notice: missing ? null : LOAD_PROBLEM,
+          needsRewrite: false,
+        };
       }
 
       try {
-        const { sessions } = fileSchema.parse(JSON.parse(raw));
-        return { records: sessions as FinishedSession[], notice: null };
+        const parsed: unknown = JSON.parse(raw);
+        const { sessions } = fileSchema.parse(parsed);
+        const records = (sessions as FinishedSession[]).map(withoutHeadBranch);
+        return {
+          records,
+          notice: null,
+          needsRewrite:
+            JSON.stringify((parsed as { sessions: unknown }).sessions) !==
+            JSON.stringify(records),
+        };
       } catch {
         try {
           const name = `finished-sessions.corrupt-${String(Date.now())}.json`;
@@ -96,7 +117,7 @@ export function createFileStore(
         } catch {
           // The list still resets for this run, and the next save replaces the file.
         }
-        return { records: [], notice: LOAD_PROBLEM };
+        return { records: [], notice: LOAD_PROBLEM, needsRewrite: false };
       }
     },
 

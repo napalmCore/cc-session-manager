@@ -92,7 +92,7 @@ export async function startServer(
   let loginToken: string | null = randomBytes(32).toString("hex");
   const issuedToken = loginToken;
   let port = 0;
-  let latest: Snapshot = { sessions: [], error: null, warnings: [] };
+  let latest: Snapshot | null = null;
 
   const cookieName = () => `ccsm_session_${String(port)}`;
   const expectedHost = () => `${LOOPBACK}:${String(port)}`;
@@ -174,7 +174,7 @@ export async function startServer(
     upgradeWebSocket(() => ({
       onOpen(_event, ws) {
         clients.add(ws);
-        ws.send(toMessage(latest));
+        if (latest) ws.send(toMessage(latest));
       },
       onClose(_event, ws) {
         clients.delete(ws);

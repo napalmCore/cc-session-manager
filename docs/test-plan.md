@@ -35,29 +35,30 @@ Results below are from `main` at `b0ed97a` on 2026-11-06, before the fixes in de
 
 ## Requirements coverage
 
-| ID    | Automated                                      | Live or manual check | Status                                      |
-| ----- | ---------------------------------------------- | -------------------- | ------------------------------------------- |
-| FR-1  | `poller`, `schema`, `dashboard` tests          | L1                   | Passing                                     |
-| FR-2  | `tracker`, `store` tests                       | L3, L4               | Passing, see BUG-4                          |
-| FR-3  | `schema`, `dashboard` tests                    | L1                   | Passing, see BUG-5                          |
-| FR-4  | `format`, `dashboard` tests                    | L1                   | Passing                                     |
-| FR-5  | `rules`, `dashboard` tests                     | L2                   | Passing                                     |
-| FR-6  | `transcripts`, `dashboard` tests               | L1                   | Fix for BUG-1 awaiting re-check             |
-| FR-7  | `session-groups`, `dashboard` tests            | L2                   | Passing                                     |
-| FR-8  | `session-groups`, `dashboard` tests            | L2                   | Passing                                     |
-| FR-9  | `dashboard` test, load measurement             | L2, L3               | Passing                                     |
-| C-1   | `store` tests                                  | L5                   | Passing                                     |
-| C-2   | Permission-model run, no automated test        | L5                   | Passing                                     |
-| C-3   | Permission-model run, no automated test        | L5                   | Passing                                     |
-| C-4   | `schema`, `store`, `transcripts` tests         | L5                   | Passing                                     |
-| C-5   | Code review, no automated test                 | L5                   | Passing                                     |
-| C-6   | CI on Windows                                  | Not needed           | Passing                                     |
-| C-7   | `store` tests                                  | L5                   | Fix for BUG-2 awaiting re-check             |
-| NFR-1 | `server` test                                  | L5                   | Passing, no test from a second device       |
-| NFR-2 | `server`, `dashboard` tests                    | L5                   | Passing, see BUG-8                          |
-| NFR-3 | `server`, `dashboard` tests                    | L5                   | Passing for the tool's own process and page |
-| NFR-4 | `schema`, `poller`, `store`, `dashboard` tests | Not needed           | Passing                                     |
-| NFR-5 | axe scans, 320 px and keyboard tests           | M1, M2               | M1 passing, M2 not run                      |
+| ID    | Automated                                      | Live or manual check | Status                                                                     |
+| ----- | ---------------------------------------------- | -------------------- | -------------------------------------------------------------------------- |
+| FR-1  | `poller`, `schema`, `dashboard` tests          | L1                   | Passing                                                                    |
+| FR-2  | `tracker`, `store` tests                       | L3, L4               | Passing, see BUG-4                                                         |
+| FR-3  | `schema`, `store`, `dashboard` tests           | L1, L4               | Re-check due, stored names changed. See BUG-5.                             |
+| FR-4  | `format`, `dashboard` tests                    | L1                   | Passing                                                                    |
+| FR-5  | `rules`, `dashboard` tests                     | L2                   | Passing                                                                    |
+| FR-6  | `transcripts`, `store`, `dashboard` tests      | L1                   | Fix for BUG-1 awaiting re-check. A real branch name hasn't been seen live. |
+| FR-7  | `session-groups`, `dashboard` tests            | L2                   | Passing                                                                    |
+| FR-8  | `session-groups`, `dashboard` tests            | L2                   | Passing                                                                    |
+| FR-9  | `dashboard` test, load measurement             | L2, L3               | Passing                                                                    |
+| FR-10 | `announcements`, `dashboard` tests             | M2                   | Automated tests pass, needs M2                                             |
+| C-1   | `store` tests                                  | L5                   | Passing                                                                    |
+| C-2   | Permission-model run, no automated test        | L5                   | Passing                                                                    |
+| C-3   | Permission-model run, no automated test        | L5                   | Passing                                                                    |
+| C-4   | `schema`, `store`, `transcripts` tests         | L5                   | Passing                                                                    |
+| C-5   | Code review, no automated test                 | L5                   | Passing                                                                    |
+| C-6   | CI on Windows                                  | Not needed           | Passing                                                                    |
+| C-7   | `store` tests                                  | L5                   | Fix for BUG-2 awaiting re-check                                            |
+| NFR-1 | `server` test                                  | L5                   | Passing, no test from a second device                                      |
+| NFR-2 | `server`, `dashboard` tests                    | L5                   | Passing, see BUG-8                                                         |
+| NFR-3 | `server`, `dashboard` tests                    | L5                   | Passing for the tool's own process and page                                |
+| NFR-4 | `schema`, `poller`, `store`, `dashboard` tests | Not needed           | Passing                                                                    |
+| NFR-5 | axe scans, 320 px and keyboard tests           | M1, M2               | M1 passing, M2 not run                                                     |
 
 ## Live checks
 
@@ -109,3 +110,6 @@ Across 6 measured live changes, the slowest upper bound was 2309 ms. Across 94 p
 | BUG-9  | Low               | No signal that data is stale while the CLI is slow, for up to 15 seconds                                                       | Open, from code reading                   |
 | BUG-10 | Low               | Screen-reader noise: triangles, dots, and name and reason run together                                                         | Open, from substitute evidence            |
 | BUG-11 | Low               | Focus falls to the page body when the focused expandable section disappears                                                    | Open                                      |
+| BUG-12 | Low               | A corrupt older file is set aside with any names still inside                                                                  | Open                                      |
+| BUG-13 | Low               | A stale session that loses its activity time moves to Needs you and is announced                                               | Open                                      |
+| BUG-14 | Low               | A second session with no ID and no name isn't announced separately                                                             | Open                                      |

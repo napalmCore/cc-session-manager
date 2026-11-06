@@ -56,6 +56,23 @@ describe("newAttentionMessage", () => {
     ).toBe("one needs you: needs input. two needs you: input needed.");
   });
 
+  it("announces a repeated ID only once", () => {
+    expect(
+      newAttentionMessage(new Set(), [
+        session("a", "one"),
+        session("a", "one"),
+      ]),
+    ).toBe("one needs you: needs input.");
+  });
+
+  it("gives the same keys whatever order sessions are in", () => {
+    const one = session("a", "one");
+    const two = session("b", "two");
+    expect([...attentionKeys([one, two])]).toEqual([
+      ...attentionKeys([two, one]),
+    ]);
+  });
+
   it("announces again when an existing session's reason changes", () => {
     const previous = attentionKeys([session("a", "one", "permission prompt")]);
 

@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-06
-- **Amends:** [0006](0006-transcript-metadata.md), and FR-3 in [requirements.md](../requirements.md)
+- **Amends:** [0006](0006-transcript-metadata.md), FR-3 and FR-6 in [requirements.md](../requirements.md), and adds FR-10 and C-7
 
 ## Context
 

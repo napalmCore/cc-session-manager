@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FinishedSession } from "../shared/protocol.js";
 import { createFileStore, dataDirectory } from "./store.js";
+import { createSessionTracker } from "./tracker.js";
 
 const record: FinishedSession = {
   sessionId: "11111111-1111-4111-8111-111111111111",
@@ -36,7 +37,11 @@ afterEach(() => {
 
 describe("createFileStore", () => {
   it("starts empty with no notice when there is no file", () => {
-    expect(createFileStore(dir).load()).toEqual({ records: [], notice: null });
+    expect(createFileStore(dir).load()).toEqual({
+      records: [],
+      notice: null,
+      needsRewrite: false,
+    });
   });
 
   it("creates its folder and loads what it saved", () => {
@@ -45,7 +50,11 @@ describe("createFileStore", () => {
 
     expect(store.save([record])).toBeNull();
 
-    expect(store.load()).toEqual({ records: [record], notice: null });
+    expect(store.load()).toEqual({
+      records: [record],
+      notice: null,
+      needsRewrite: false,
+    });
   });
 
   it("keeps transcript metadata in saved sessions", () => {
@@ -155,6 +164,60 @@ describe("createFileStore", () => {
     const { notice } = createFileStore(dir).load();
 
     expect(notice).not.toContain(dir);
+  });
+});
+
+describe("older files", () => {
+  const file = () => join(dir, "finished-sessions.json");
+  const writeOlderFile = (fields: Record<string, unknown>) => {
+    writeFileSync(
+      file(),
+      JSON.stringify({ version: 1, sessions: [{ ...record, ...fields }] }),
+    );
+  };
+
+  it("flags a file that holds a name, so it gets rewritten", () => {
+    writeOlderFile({ name: "my secret prompt" });
+    expect(createFileStore(dir).load().needsRewrite).toBe(true);
+  });
+
+  it("does not flag a clean file", () => {
+    const store = createFileStore(dir);
+    store.save([record]);
+    expect(store.load().needsRewrite).toBe(false);
+  });
+
+  it("removes a stored HEAD branch when loading", () => {
+    writeOlderFile({ gitBranch: "HEAD" });
+
+    const { records, needsRewrite } = createFileStore(dir).load();
+
+    expect(records[0]?.gitBranch).toBeUndefined();
+    expect(needsRewrite).toBe(true);
+  });
+
+  it("removes a name from disk on the tracker's first update", () => {
+    writeOlderFile({ name: "my secret prompt", finishedAt: 1000 });
+    const tracker = createSessionTracker({
+      store: createFileStore(dir),
+      now: () => 2000,
+    });
+
+    const { sessions } = tracker.update([]);
+
+    expect(sessions).toHaveLength(1);
+    expect(readFileSync(file(), "utf8")).not.toContain("my secret prompt");
+  });
+
+  it("does not create a file when there is nothing to store", () => {
+    const tracker = createSessionTracker({
+      store: createFileStore(dir),
+      now: () => 2000,
+    });
+
+    tracker.update([]);
+
+    expect(readdirSync(dir)).toEqual([]);
   });
 });
 

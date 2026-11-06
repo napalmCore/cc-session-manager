@@ -258,6 +258,36 @@ describe("Content Security Policy", () => {
   });
 });
 
+describe("before the first poll", () => {
+  it("sends nothing until real data is published", async () => {
+    const fresh = await startServer({ preferredPort: 0 });
+    const url = new URL(fresh.loginUrl);
+    const previous = server;
+    server = fresh;
+    try {
+      const response = await request(url.pathname + url.search);
+      const cookie =
+        (response.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "";
+      const messages: string[] = [];
+      const socket = new WebSocket(`ws://127.0.0.1:${String(fresh.port)}/ws`, {
+        headers: { cookie, origin: `http://127.0.0.1:${String(fresh.port)}` },
+      });
+      socket.on("message", (data: Buffer) => messages.push(data.toString()));
+      await new Promise((resolve) => socket.once("open", resolve));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(messages).toEqual([]);
+
+      fresh.publish({ sessions: [], error: null, warnings: [] });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(messages).toHaveLength(1);
+      socket.close();
+    } finally {
+      server = previous;
+      await fresh.close();
+    }
+  });
+});
+
 describe("port selection", () => {
   it("falls back to the next free port when the preferred one is busy", async () => {
     const other = await startServer({ preferredPort: server.port });

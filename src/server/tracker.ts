@@ -54,7 +54,9 @@ export function createSessionTracker({
     const key = keyOf(record);
     if (key) records.set(key, record);
   }
-  let lastSaved = JSON.stringify([...records.values()]);
+  let lastSaved = loaded.needsRewrite
+    ? null
+    : JSON.stringify([...records.values()]);
   let running = new Map<string, SessionView>();
 
   return {

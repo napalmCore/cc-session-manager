@@ -297,6 +297,131 @@ test.describe("screen reader announcements", () => {
     ).toHaveCount(0);
   });
 
+  const waiting = (sessionId: string, name: string) =>
+    toSessionView({
+      name,
+      sessionId,
+      status: "waiting",
+      waitingFor: "permission prompt",
+    });
+
+  const recordAnnouncements = (page: Page) =>
+    page.evaluate(() => {
+      const region = document.querySelector("[data-announcer]");
+      if (!region) throw new Error("no announcer");
+      const seen: string[] = [];
+      new MutationObserver(() => {
+        seen.push(region.textContent);
+      }).observe(region, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+      Object.assign(window, { announcements: seen });
+    });
+
+  const announcements = (page: Page) =>
+    page.evaluate(
+      () => (window as unknown as { announcements: string[] }).announcements,
+    );
+
+  test("does not announce sessions waiting before the first poll finishes", async ({
+    page,
+  }) => {
+    await page.goto(server.loginUrl);
+    await expect(page.getByText("Loading sessions")).toBeVisible();
+    await recordAnnouncements(page);
+
+    server.publish(snapshot({ sessions: [waiting("a", "already-waiting")] }));
+
+    await expect(page.getByText("already-waiting")).toBeVisible();
+    expect(await announcements(page)).toEqual([]);
+  });
+
+  test("does not announce everything after a first poll that failed", async ({
+    page,
+  }) => {
+    await page.goto(server.loginUrl);
+    await expect(page.getByText("Loading sessions")).toBeVisible();
+    server.publish(snapshot({ sessions: [], error: "Could not read." }));
+    await expect(page.getByRole("alert")).toContainText("Could not read.");
+    await recordAnnouncements(page);
+
+    server.publish(snapshot({ sessions: [waiting("a", "already-waiting")] }));
+
+    await expect(page.getByText("already-waiting")).toBeVisible();
+    expect(await announcements(page)).toEqual([]);
+  });
+
+  test("announces a second session with identical text", async ({ page }) => {
+    await open(page, snapshot({ sessions: [] }));
+    await recordAnnouncements(page);
+    const text = "same-prompt needs you: permission prompt.";
+
+    server.publish(snapshot({ sessions: [waiting("a", "same-prompt")] }));
+    await expect(announcement(page, text)).toBeAttached();
+    server.publish(
+      snapshot({
+        sessions: [waiting("a", "same-prompt"), waiting("b", "same-prompt")],
+      }),
+    );
+
+    await expect
+      .poll(async () =>
+        (await announcements(page)).filter((value) => value === text),
+      )
+      .toHaveLength(2);
+  });
+
+  test("announces a session again when it comes back", async ({ page }) => {
+    await open(page, snapshot({ sessions: [] }));
+    await recordAnnouncements(page);
+    const text = "returning needs you: permission prompt.";
+
+    server.publish(snapshot({ sessions: [waiting("a", "returning")] }));
+    await expect(announcement(page, text)).toBeAttached();
+    server.publish(snapshot({ sessions: [] }));
+    await expect(announcement(page, text)).toHaveCount(0);
+    server.publish(snapshot({ sessions: [waiting("a", "returning")] }));
+
+    await expect(announcement(page, text)).toBeAttached();
+    expect(
+      (await announcements(page)).filter((value) => value === text),
+    ).toHaveLength(2);
+  });
+
+  test("leaves the announcement alone when waiting sessions only change order", async ({
+    page,
+  }) => {
+    const now = Date.now();
+    const at = (sessionId: string, name: string, lastActivityAt: number) => ({
+      ...waiting(sessionId, name),
+      lastActivityAt,
+    });
+    await open(page, snapshot({ sessions: [at("a", "alpha", now - 2000)] }));
+
+    server.publish(
+      snapshot({
+        sessions: [at("a", "alpha", now - 2000), at("b", "beta", now - 1000)],
+      }),
+    );
+    const text = "beta needs you: permission prompt.";
+    await expect(announcement(page, text)).toBeAttached();
+
+    server.publish(
+      snapshot({
+        sessions: [at("a", "alpha", now), at("b", "beta", now - 1000)],
+      }),
+    );
+
+    await expect(
+      section(page, /needs you/i)
+        .getByRole("listitem")
+        .first(),
+    ).toContainText("beta");
+    await expect(announcement(page, text)).toBeAttached();
+  });
+
   test("keeps the announcement region out of the visible layout", async ({
     page,
   }) => {
