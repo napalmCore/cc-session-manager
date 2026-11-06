@@ -4,6 +4,7 @@ import type { SessionView, Snapshot } from "../shared/protocol.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
 import type { TrackedSessions } from "./tracker.js";
+import type { EnrichResult } from "./transcripts.js";
 
 const POLL_FAILED =
   "Could not read sessions from Claude Code. Showing the last known data.";
@@ -36,6 +37,7 @@ export interface PollerOptions {
   intervalMs: number;
   onSnapshot: (snapshot: Snapshot) => void;
   track?: (current: SessionView[]) => TrackedSessions;
+  enrich?: (current: SessionView[]) => Promise<EnrichResult>;
 }
 
 export interface Poller {
@@ -48,6 +50,7 @@ export function createPoller({
   intervalMs,
   onSnapshot,
   track,
+  enrich,
 }: PollerOptions): Poller {
   let timer: NodeJS.Timeout | undefined;
   let running = false;
@@ -67,9 +70,20 @@ export function createPoller({
     try {
       const parsed = parseSessions(await run());
       const views = parsed.sessions.map(toSessionView);
-      const tracked = track?.(views) ?? { sessions: views, warnings: [] };
+      const enriched = (await enrich?.(views)) ?? {
+        sessions: views,
+        warnings: [],
+      };
+      const tracked = track?.(enriched.sessions) ?? {
+        sessions: enriched.sessions,
+        warnings: [],
+      };
       sessions = tracked.sessions;
-      warnings = [...parsed.warnings, ...tracked.warnings];
+      warnings = [
+        ...parsed.warnings,
+        ...enriched.warnings,
+        ...tracked.warnings,
+      ];
       if (running) report(null);
     } catch {
       if (running) report(POLL_FAILED);

@@ -6,6 +6,7 @@ import { createPoller, runClaudeAgents } from "./poller.js";
 import { startServer } from "./server.js";
 import { createFileStore } from "./store.js";
 import { createSessionTracker } from "./tracker.js";
+import { createMetadataReader } from "./transcripts.js";
 
 function browserCommand(url: string): [string, string[]] {
   if (process.platform === "win32")
@@ -21,6 +22,7 @@ const poller = createPoller({
   intervalMs: POLL_INTERVAL_MS,
   onSnapshot: server.publish,
   track: tracker.update,
+  enrich: createMetadataReader().enrich,
 });
 poller.start();
 

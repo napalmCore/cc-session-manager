@@ -74,6 +74,9 @@ export function App() {
               <th scope="col">Kind</th>
               <th scope="col">Status</th>
               <th scope="col">Needs you</th>
+              <th scope="col">Branch</th>
+              <th scope="col">Model</th>
+              <th scope="col">Last activity</th>
               <th scope="col">Started</th>
               <th scope="col">Ran for</th>
               <th scope="col">Ended (approximate)</th>
@@ -87,6 +90,13 @@ export function App() {
                 <td>{session.kind ?? "Unknown"}</td>
                 <td>{session.finished ? "Finished" : session.statusLabel}</td>
                 <td>{session.attentionReason ?? ""}</td>
+                <td>{session.gitBranch ?? "Unavailable"}</td>
+                <td>{session.model ?? "Unavailable"}</td>
+                <td>
+                  {session.lastActivityAt === undefined
+                    ? "Unavailable"
+                    : new Date(session.lastActivityAt).toLocaleString()}
+                </td>
                 <td>
                   {session.startedAt === undefined
                     ? "Unknown"
