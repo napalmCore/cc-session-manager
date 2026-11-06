@@ -56,7 +56,7 @@ export function createPoller({
   let running = false;
   let sessions: SessionView[] = [];
   let warnings: string[] = [];
-  let previousParseWarnings = new Set<string>();
+  let listedLastPoll = new Set<string>();
   let lastReported: string | undefined;
 
   const report = (error: string | null) => {
@@ -69,7 +69,8 @@ export function createPoller({
 
   const tick = async () => {
     try {
-      const parsed = parseSessions(await run());
+      const parsed = parseSessions(await run(), listedLastPoll);
+      listedLastPoll = parsed.listed;
       const views = parsed.sessions.map(toSessionView);
       const enriched = (await enrich?.(views)) ?? {
         sessions: views,
@@ -80,13 +81,11 @@ export function createPoller({
         warnings: [],
       };
       sessions = tracked.sessions;
-      // The CLI's first listing of a new session can lack fields, so only a problem
-      // seen in two polls in a row is reported.
-      const repeated = parsed.warnings.filter((warning) =>
-        previousParseWarnings.has(warning),
-      );
-      previousParseWarnings = new Set(parsed.warnings);
-      warnings = [...repeated, ...enriched.warnings, ...tracked.warnings];
+      warnings = [
+        ...parsed.warnings,
+        ...enriched.warnings,
+        ...tracked.warnings,
+      ];
       if (running) report(null);
     } catch {
       if (running) report(POLL_FAILED);

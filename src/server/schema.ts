@@ -28,6 +28,8 @@ const statusSchema = z.enum(["busy", "waiting", "idle"]);
 export interface ParsedSessions {
   sessions: Session[];
   warnings: string[];
+  /** Identities of the sessions in this listing. */
+  listed: Set<string>;
 }
 
 const missing = (field: string) =>
@@ -35,7 +37,11 @@ const missing = (field: string) =>
 const unexpected = (field: string) =>
   `Claude Code reported an unexpected value for "${field}".`;
 
-function parseEntry(source: Record<string, unknown>, warnings: Set<string>) {
+function parseEntry(
+  source: Record<string, unknown>,
+  warnings: Set<string>,
+  listedBefore: Set<string>,
+) {
   const session: Session = {};
 
   for (const field of STRING_FIELDS) {
@@ -68,7 +74,14 @@ function parseEntry(source: Record<string, unknown>, warnings: Set<string>) {
   if (session.kind === "background" && source.state === undefined) {
     warnings.add(missing("state"));
   }
-  if (session.kind === "interactive" && source.status === undefined) {
+  // The CLI's first listing of a new interactive session may not have a status yet.
+  const identity = session.sessionId ?? session.id;
+  const firstListing = identity !== undefined && !listedBefore.has(identity);
+  if (
+    session.kind === "interactive" &&
+    source.status === undefined &&
+    !firstListing
+  ) {
     warnings.add(missing("status"));
   }
   if (session.status === "waiting" && source.waitingFor === undefined) {
@@ -79,7 +92,10 @@ function parseEntry(source: Record<string, unknown>, warnings: Set<string>) {
 }
 
 /** Throws when the output as a whole is unusable. Problems within entries become warnings. */
-export function parseSessions(output: string): ParsedSessions {
+export function parseSessions(
+  output: string,
+  listedBefore: Set<string> = new Set(),
+): ParsedSessions {
   const parsed = z.array(z.unknown()).parse(JSON.parse(output));
   const warnings = new Set<string>();
   const sessions: Session[] = [];
@@ -87,11 +103,14 @@ export function parseSessions(output: string): ParsedSessions {
   for (const entry of parsed) {
     const result = entrySchema.safeParse(entry);
     if (result.success) {
-      sessions.push(parseEntry(result.data, warnings));
+      sessions.push(parseEntry(result.data, warnings, listedBefore));
     } else {
       warnings.add("Claude Code reported a session in an unexpected format.");
     }
   }
 
-  return { sessions, warnings: [...warnings] };
+  const listed = new Set(
+    sessions.flatMap((session) => session.sessionId ?? session.id ?? []),
+  );
+  return { sessions, warnings: [...warnings], listed };
 }

@@ -165,70 +165,124 @@ describe("createPoller", () => {
   });
 
   describe("parsing warnings", () => {
-    const complete = JSON.stringify([
-      { cwd: "C:/a", kind: "interactive", startedAt: 1, status: "busy" },
-    ]);
-    const noStatus = JSON.stringify([
-      { cwd: "C:/a", kind: "interactive", startedAt: 1 },
-    ]);
+    const listing = (
+      sessionId: string,
+      fields: Record<string, unknown> = { status: "busy" },
+    ) => ({
+      sessionId,
+      cwd: "C:/a",
+      kind: "interactive",
+      startedAt: 1,
+      ...fields,
+    });
+    const noStatus = (sessionId: string) => listing(sessionId, {});
+    const FAIL = Symbol("failed poll");
+    type Poll = unknown[] | typeof FAIL;
 
-    const runOutputs = async (outputs: string[]) => {
-      const snapshots: Snapshot[] = [];
+    /** The warnings in effect after each poll. */
+    const warningsPerPoll = async (polls: Poll[]) => {
+      let current: Snapshot | undefined;
+      const results: string[][] = [];
       let index = 0;
       const poller = createPoller({
         run: () => {
-          const output = outputs[Math.min(index, outputs.length - 1)] ?? "[]";
+          const poll = polls[index];
           index += 1;
-          return Promise.resolve(output);
+          return poll === FAIL
+            ? Promise.reject(new Error("failed"))
+            : Promise.resolve(JSON.stringify(poll ?? []));
         },
         intervalMs: 10,
-        onSnapshot: (snapshot) => snapshots.push(snapshot),
+        onSnapshot: (snapshot) => {
+          current = snapshot;
+        },
       });
       poller.start();
-      await vi.advanceTimersByTimeAsync(10 * (outputs.length - 1));
+      for (let poll = 0; poll < polls.length; poll += 1) {
+        await vi.advanceTimersByTimeAsync(poll === 0 ? 0 : 10);
+        results.push(current?.warnings ?? []);
+      }
       poller.stop();
-      return snapshots;
+      return results;
     };
 
-    it("stays silent about a problem seen in only one poll", async () => {
-      const snapshots = await runOutputs([noStatus, complete]);
-      expect(snapshots.flatMap((snapshot) => snapshot.warnings)).toEqual([]);
-    });
-
-    it("warns when the problem is still there on the next poll", async () => {
-      const snapshots = await runOutputs([noStatus, noStatus]);
-      expect(snapshots[0]?.warnings).toEqual([]);
-      expect(snapshots.at(-1)?.warnings).toEqual([
-        expect.stringContaining("status"),
+    it("excuses a session's first listing without a status", async () => {
+      expect(await warningsPerPoll([[noStatus("a")], [listing("a")]])).toEqual([
+        [],
+        [],
       ]);
     });
 
-    it("clears a warning as soon as the problem is gone", async () => {
-      const snapshots = await runOutputs([noStatus, noStatus, complete]);
-      expect(snapshots.at(-1)?.warnings).toEqual([]);
+    it("warns when that session still has no status on the next poll", async () => {
+      const results = await warningsPerPoll([[noStatus("a")], [noStatus("a")]]);
+      expect(results[0]).toEqual([]);
+      expect(results[1]).toEqual([expect.stringContaining("status")]);
     });
 
-    it("keeps a repeated warning through a failed poll", async () => {
-      const outputs = [noStatus, noStatus];
-      const snapshots: Snapshot[] = [];
-      let index = 0;
-      const poller = createPoller({
-        run: () => {
-          const output = outputs[index];
-          index += 1;
-          return output === undefined
-            ? Promise.reject(new Error("failed"))
-            : Promise.resolve(output);
-        },
-        intervalMs: 10,
-        onSnapshot: (snapshot) => snapshots.push(snapshot),
-      });
-      poller.start();
-      await vi.advanceTimersByTimeAsync(20);
-      poller.stop();
+    it("excuses a session that starts while the tool is already running", async () => {
+      expect(
+        await warningsPerPoll([
+          [listing("a")],
+          [listing("a"), noStatus("b")],
+          [listing("a"), listing("b")],
+        ]),
+      ).toEqual([[], [], []]);
+    });
 
-      expect(snapshots.at(-1)?.error).toBeTruthy();
-      expect(snapshots.at(-1)?.warnings).toHaveLength(1);
+    it("doesn't raise a false warning for sessions starting one poll apart", async () => {
+      expect(
+        await warningsPerPoll([
+          [noStatus("a")],
+          [listing("a"), noStatus("b")],
+          [listing("a"), listing("b"), noStatus("c")],
+          [listing("a"), listing("b"), listing("c")],
+        ]),
+      ).toEqual([[], [], [], []]);
+    });
+
+    it("warns at once when a known session loses its status", async () => {
+      const results = await warningsPerPoll([
+        [listing("a")],
+        [noStatus("a")],
+        [listing("a")],
+      ]);
+      expect(results[1]).toEqual([expect.stringContaining("status")]);
+      expect(results[2]).toEqual([]);
+    });
+
+    it("remembers known sessions across a failed poll", async () => {
+      const results = await warningsPerPoll([
+        [noStatus("a")],
+        FAIL,
+        [noStatus("a")],
+      ]);
+      expect(results[2]).toEqual([expect.stringContaining("status")]);
+    });
+
+    it("keeps warnings in effect through a failed poll", async () => {
+      const results = await warningsPerPoll([
+        [listing("a")],
+        [noStatus("a")],
+        FAIL,
+      ]);
+      expect(results[2]).toEqual([expect.stringContaining("status")]);
+    });
+
+    it.each([
+      ["a non-object entry", ["oops"]],
+      ["an unknown status value", [listing("a", { status: "asking" })]],
+      ["a wrongly typed field", [listing("a", { startedAt: "soon" })]],
+      [
+        "another missing field",
+        [{ sessionId: "a", kind: "interactive", status: "busy" }],
+      ],
+      [
+        "a session with no identity",
+        [{ cwd: "C:/a", kind: "interactive", startedAt: 1 }],
+      ],
+    ])("warns at once about %s", async (_label, poll) => {
+      const [first] = await warningsPerPoll([poll]);
+      expect(first).not.toHaveLength(0);
     });
 
     it("passes store and transcript warnings on immediately", async () => {
@@ -237,13 +291,18 @@ describe("createPoller", () => {
         run: () => Promise.resolve("[]"),
         intervalMs: 10,
         onSnapshot: (snapshot) => snapshots.push(snapshot),
+        enrich: (sessions) =>
+          Promise.resolve({ sessions, warnings: ["transcript problem"] }),
         track: (sessions) => ({ sessions, warnings: ["store problem"] }),
       });
       poller.start();
       await vi.advanceTimersByTimeAsync(0);
       poller.stop();
 
-      expect(snapshots[0]?.warnings).toEqual(["store problem"]);
+      expect(snapshots[0]?.warnings).toEqual([
+        "transcript problem",
+        "store problem",
+      ]);
     });
   });
 

@@ -17,4 +17,5 @@
 - The agent that reviews a change must not be the one that wrote it. The owner sees changes after they merge, and can revert them.
 - Making the repository public, and product decisions, stay with the owner.
 - Deleting a finished background session with `claude rm` also removes it from the dashboard.
+- A missing `status` on a session's first listing raises no warning. It warns if still missing on the next poll. Every other parsing problem warns at once.
 - If the CLI ever prunes completed sessions by itself within 24 hours, they would leave the dashboard early. This hasn't been confirmed either way.
