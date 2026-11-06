@@ -1,0 +1,18 @@
+:root {
+  color-scheme: light dark;
+  --background: light-dark(#ffffff, #0d1117);
+  --text: light-dark(#1f2328, #e6edf3);
+  --muted: light-dark(#57606a, #a3afbb);
+  --border: light-dark(#d0d7de, #30363d);
+  --attention: light-dark(#9a3412, #fdba74);
+  --attention-surface: light-dark(#fff7ed, #2a1a0e);
+  --focus: light-dark(#0550ae, #79c0ff);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  line-height: 1.4;
+}
