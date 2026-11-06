@@ -1,0 +1,134 @@
+.page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.title {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+}
+
+.group {
+  margin-top: 1.5rem;
+}
+
+.groupTitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.row {
+  padding: 0.625rem 0.875rem;
+}
+
+.row + .row {
+  border-top: 1px solid var(--border);
+}
+
+.flagged {
+  border-left: 0.25rem solid var(--attention);
+  background: var(--attention-surface);
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.125rem 1rem;
+}
+
+.name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.marker {
+  color: var(--attention);
+  font-weight: 800;
+}
+
+.status {
+  font-weight: 500;
+}
+
+.flagged .status {
+  color: var(--attention);
+  font-weight: 700;
+}
+
+.details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.details li {
+  overflow-wrap: anywhere;
+}
+
+.details li + li::before {
+  content: "· ";
+}
+
+.banner {
+  margin: 0 0 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--attention);
+  border-radius: 0.5rem;
+  background: var(--attention-surface);
+}
+
+.bannerTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.warnings {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.disclosureButton {
+  min-height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.disclosureButton::before {
+  content: "▸ ";
+}
+
+.disclosureButton[aria-expanded="true"]::before {
+  content: "▾ ";
+}
+
+.disclosureButton[data-focus-visible] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
