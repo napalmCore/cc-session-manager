@@ -98,8 +98,21 @@ The file holds session names and project paths, but no message text.
 | NFR-4 | Schema layer, failure handling |
 | NFR-5 | React Aria, accessibility testing |
 
+## Build plan
+
+Each step is a separate pull request, approved by the owner before merge.
+
+| Step | Pull request | Covers |
+|---|---|---|
+| 1 | Project scaffold: TypeScript, linting, tests, Node version pin, and CI | Foundation |
+| 2 | Thin end-to-end slice: CLI to poller to secured WebSocket to a basic page | FR-1, FR-9, NFR-1, NFR-2 |
+| 3 | Session rules and tolerant parsing | FR-3, FR-4, FR-5, NFR-4 |
+| 4 | Finished-session store | FR-2 |
+| 5 | Transcript metadata reader | FR-6, C-4 |
+| 6 | Dashboard UI: attention sorting, tab count, and banners | FR-7, FR-8, NFR-4 |
+| 7 | Hardening: Content Security Policy, browser tests, and accessibility checks | NFR-3, NFR-5 |
+
 ## Open items
 
-- **Phase 4 (Implementation):** default port number, minimum Node version, package manager, and branching workflow.
-- **Phase 5 (Testing):** test tools and strategy, and the final polling interval.
+- **Phase 5 (Testing):** the final polling interval.
 - **Phase 6 (Release):** packaging and distribution, including a packaged executable for users without Node.

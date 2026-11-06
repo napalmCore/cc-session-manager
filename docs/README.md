@@ -30,3 +30,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0005](decisions/0005-project-setup.md) | Name, license, repository timing, docs layout | Accepted |
 | [0006](decisions/0006-transcript-metadata.md) | Allow transcript metadata for session activity | Accepted |
 | [0007](decisions/0007-iteration-1-architecture.md) | Iteration 1 architecture | Accepted |
+| [0008](decisions/0008-development-setup.md) | Development setup | Accepted |
