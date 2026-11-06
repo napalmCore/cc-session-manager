@@ -1,6 +1,6 @@
 # 0004: Local web dashboard in TypeScript on Node
 
-- **Status:** Provisional. To be confirmed or changed in Phase 3 (Design), after requirements are written.
+- **Status:** Accepted. Confirmed in Phase 3 (Design) on 2026-11-06, with details in [0007](0007-iteration-1-architecture.md).
 - **Date:** 2026-11-06
 
 ## Context
@@ -27,7 +27,7 @@ Language and runtime:
 
 Work towards a local web dashboard written in TypeScript on Node.
 
-Still open for Design: UI framework, server framework, data storage, packaging, and test tools.
+The UI framework, server framework, and data storage were chosen in [0007](0007-iteration-1-architecture.md). Packaging and test tools remain open.
 
 ## Consequences
 

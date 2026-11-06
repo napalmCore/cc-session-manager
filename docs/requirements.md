@@ -8,7 +8,7 @@
 | ID | Requirement | Acceptance criteria |
 |---|---|---|
 | FR-1 | List active sessions | Running interactive and background sessions from `claude agents --json` appear on the dashboard. |
-| FR-2 | Keep recently finished sessions | A finished session stays listed for 24 hours after it ends, then is removed. It is marked as finished. |
+| FR-2 | Keep recently finished sessions | Finished sessions the tool observed while running, and completed background sessions reported by the CLI, stay listed for 24 hours and are marked as finished. Interactive sessions that end while the tool is off aren't listed, and the docs state this limit. |
 | FR-3 | Show identity and status | Each session shows its name, project folder, kind (interactive or background), and current status. |
 | FR-4 | Show time information | Each session shows its start time and how long it has been running. |
 | FR-5 | Show why a session needs the user | Sessions needing attention show the reason when the CLI provides it, or a generic "needs input" label otherwise. |
@@ -41,10 +41,10 @@
 
 | ID | Question | Resolve in |
 |---|---|---|
-| U-1 | Do interactive sessions report when they need the user? Only `busy` and `idle` have been observed. | Design |
-| U-2 | When does `waitingFor` appear? It was absent for a blocked background session on 2026-11-06. | Design |
-| U-3 | How long does `claude agents --json --all` keep finished sessions? This decides whether the tool must store them to meet FR-2. | Design |
-| U-4 | Which transcript fields can reliably provide git branch, model, and last activity time for FR-6? | Design |
+| U-1 | Resolved: the [docs](https://code.claude.com/docs/en/agent-view) list `status: waiting` for sessions needing the user. Confirm against a live session during Testing. | Testing |
+| U-2 | Resolved: `waitingFor` is present only when `status` is `waiting`, so a `blocked` session without an open prompt needs the generic label. | Done |
+| U-3 | Resolved: `--all` keeps completed background sessions, but only those are documented as staying listed, and no end time is listed. The tool must store finished sessions to meet FR-2. | Done |
+| U-4 | Resolved: `gitBranch`, `message.model`, and `timestamp` were found in all 43 local transcripts checked on 2026-11-06. | Done |
 | U-5 | What CPU load does refreshing every 2 to 5 seconds cause? One `claude agents --json` run took about 0.5 seconds on the development machine. | Testing |
 
 ## Non-functional requirements
