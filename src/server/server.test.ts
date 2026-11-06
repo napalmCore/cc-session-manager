@@ -1,4 +1,5 @@
 import http from "node:http";
+import net from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { toSessionView } from "./rules.js";
@@ -255,6 +256,106 @@ describe("Content Security Policy", () => {
   it("is also sent on rejected requests", async () => {
     const { headers } = await request("/");
     expect(headers["content-security-policy"]).toBeTruthy();
+  });
+});
+
+describe("before the first poll", () => {
+  it("sends nothing until real data is published", async () => {
+    const fresh = await startServer({ preferredPort: 0 });
+    const url = new URL(fresh.loginUrl);
+    const previous = server;
+    server = fresh;
+    try {
+      const response = await request(url.pathname + url.search);
+      const cookie =
+        (response.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "";
+      const messages: string[] = [];
+      const socket = new WebSocket(`ws://127.0.0.1:${String(fresh.port)}/ws`, {
+        headers: { cookie, origin: `http://127.0.0.1:${String(fresh.port)}` },
+      });
+      socket.on("message", (data: Buffer) => messages.push(data.toString()));
+      await new Promise((resolve) => socket.once("open", resolve));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(messages).toEqual([]);
+
+      fresh.publish({ sessions: [], error: null, warnings: [] });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(messages).toHaveLength(1);
+      socket.close();
+    } finally {
+      server = previous;
+      await fresh.close();
+    }
+  });
+});
+
+describe("shutting down", () => {
+  const closesInTime = async (target: RunningServer) => {
+    const outcome = await Promise.race([
+      target.close().then(() => "closed"),
+      new Promise((resolve) =>
+        setTimeout(() => {
+          resolve("timed out");
+        }, 2000),
+      ),
+    ]);
+    expect(outcome).toBe("closed");
+  };
+
+  it("finishes with a half-sent request still open", async () => {
+    const target = await startServer({ preferredPort: 0 });
+    const socket = net.connect(target.port, "127.0.0.1");
+    await new Promise((resolve) => socket.once("connect", resolve));
+    socket.on("error", () => undefined);
+    socket.write("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    await closesInTime(target);
+    socket.destroy();
+  });
+
+  it("finishes with a WebSocket connected", async () => {
+    const target = await startServer({ preferredPort: 0 });
+    target.publish({ sessions: [], error: null, warnings: [] });
+    const previous = server;
+    server = target;
+    const cookie = await login();
+    server = previous;
+    const socket = new WebSocket(`ws://127.0.0.1:${String(target.port)}/ws`, {
+      headers: { cookie, origin: `http://127.0.0.1:${String(target.port)}` },
+    });
+    socket.on("error", () => undefined);
+    await new Promise((resolve) => socket.once("message", resolve));
+
+    await closesInTime(target);
+  });
+
+  it("finishes with a WebSocket upgrade still in progress", async () => {
+    const target = await startServer({ preferredPort: 0 });
+    const previous = server;
+    server = target;
+    const cookie = await login();
+    server = previous;
+    const socket = net.connect(target.port, "127.0.0.1");
+    await new Promise((resolve) => socket.once("connect", resolve));
+    socket.on("error", () => undefined);
+    socket.write(
+      [
+        "GET /ws HTTP/1.1",
+        `Host: 127.0.0.1:${String(target.port)}`,
+        `Origin: http://127.0.0.1:${String(target.port)}`,
+        `Cookie: ${cookie}`,
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "",
+        "",
+      ].join("\r\n"),
+    );
+
+    await closesInTime(target);
+    socket.destroy();
   });
 });
 

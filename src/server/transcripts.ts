@@ -91,6 +91,10 @@ export function extractMetadata(text: string): Extraction {
     }
   }
 
+  // The CLI writes HEAD when a session has no branch to report, such as one started
+  // outside a repository, so the value doesn't identify a branch.
+  if (metadata.gitBranch === "HEAD") delete metadata.gitBranch;
+
   return {
     metadata,
     formatChanged: parsedLines > 0 && metadata.lastActivityAt === undefined,

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Disclosure,
   DisclosurePanel,
   Heading,
 } from "react-aria-components";
+import { attentionKeys, newAttentionMessage } from "../shared/announcements.js";
 import { formatDuration } from "../shared/format.js";
 import type { SessionView } from "../shared/protocol.js";
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
@@ -12,6 +13,7 @@ import cssClasses from "./App.module.css";
 import { useSnapshot } from "./useSnapshot.js";
 
 const CLOCK_MS = 30_000;
+const ANNOUNCE_DELAY_MS = 100;
 const styles = cssClasses as Record<
   | "banner"
   | "bannerTitle"
@@ -28,6 +30,7 @@ const styles = cssClasses as Record<
   | "status"
   | "summary"
   | "title"
+  | "visuallyHidden"
   | "warnings",
   string
 >;
@@ -220,9 +223,37 @@ export function App() {
     document.title = pageTitle(attentionCount);
   }, [attentionCount]);
 
+  const [announcement, setAnnouncement] = useState("");
+  const previousAttention = useRef<Set<string> | null>(null);
+  const attentionSignature = [...attentionKeys(groups.needsYou)].join("\n");
+  // A failed first poll has no sessions, so it can't be the baseline for what is new.
+  const loaded = snapshot !== null && snapshot.error === null;
+
+  useEffect(() => {
+    if (!loaded) return;
+    const previous = previousAttention.current;
+    previousAttention.current = attentionKeys(groups.needsYou);
+    // Sessions already waiting when the page opens are read from the page itself.
+    if (!previous) return;
+
+    // Clearing first means identical text still counts as a change to a screen reader.
+    setAnnouncement("");
+    const message = newAttentionMessage(previous, groups.needsYou);
+    if (!message) return;
+    const timer = window.setTimeout(() => {
+      setAnnouncement(message);
+    }, ANNOUNCE_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loaded, attentionSignature]);
+
   return (
     <main className={styles.page}>
       <h1 className={styles.title}>Claude Code sessions</h1>
+      <div role="status" data-announcer className={styles.visuallyHidden}>
+        {announcement}
+      </div>
       <Banners
         connected={connected}
         error={snapshot?.error ?? null}

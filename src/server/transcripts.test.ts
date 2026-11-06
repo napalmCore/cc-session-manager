@@ -86,6 +86,32 @@ describe("extractMetadata", () => {
     });
   });
 
+  it("treats HEAD as an unavailable branch", () => {
+    const line = JSON.stringify({ gitBranch: "HEAD", timestamp: TIME });
+    expect(
+      extractMetadata(`${line}
+`).metadata.gitBranch,
+    ).toBeUndefined();
+  });
+
+  it("does not fall back to an older branch when the newest value is HEAD", () => {
+    const older = JSON.stringify({ gitBranch: "main", timestamp: TIME });
+    const newer = JSON.stringify({ gitBranch: "HEAD", timestamp: TIME });
+    expect(
+      extractMetadata(`${older}
+${newer}
+`).metadata.gitBranch,
+    ).toBeUndefined();
+  });
+
+  it("keeps a real branch name that merely contains HEAD", () => {
+    const line = JSON.stringify({ gitBranch: "fix/HEAD-bug", timestamp: TIME });
+    expect(
+      extractMetadata(`${line}
+`).metadata.gitBranch,
+    ).toBe("fix/HEAD-bug");
+  });
+
   it("skips placeholder models and empty branches", () => {
     const real = JSON.stringify({ message: { model: "real" } });
     const synthetic = JSON.stringify({
