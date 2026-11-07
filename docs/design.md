@@ -132,24 +132,24 @@ Each step is a separate pull request. The owner approved steps 1 to 7, and since
 
 ### Evidence
 
-An investigator agent tested on Windows 11 with Claude Code 2.1.319, installed through npm, on 2026-11-07. A reviewer then audited its logs.
+An investigator agent tested on Windows 11 with Claude Code 2.1.319, installed through npm, on 2026-11-07, and a reviewer audited its logs. Two proof runs then tested the PowerShell helper itself, and another reviewer audited those.
 
 - **Supported by the logs:**
-  - Ctrl+Break closed the session in all 5 trials, in 0.4 to 1.8 seconds, and kept the transcript.
-  - Two processes started 1.1 and 1.4 seconds before `startedAt`.
+  - With the fixed helper, Ctrl+Break closed the session in every trial, in 1.1 to 2.7 seconds, and kept the transcript. The helper reported and exited cleanly each time.
+  - Three permission-prompt trials, with nothing pre-allowed in two of them, left the prompt unapproved.
+  - Across 17 sessions, processes started 0.9 to 1.6 seconds before `startedAt`.
+  - With npm's `claude.cmd`, the terminal shows "Terminate batch job (Y/N)?" afterwards, and a cmd or PowerShell parent shell survives.
+  - Git Bash sessions are refused, and Force end leaves a Git Bash or cmd shell alive.
   - `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` reach programs a session starts.
   - A planted program runs on an unqualified launch, and doesn't on an absolute one.
   - `wt` splits on `;` and expands `%VAR%`.
   - Browser notifications work from `http://127.0.0.1`.
   - Per the CLI code, `claude rm` has two different exit-1 cases.
-- **Weakly supported:**
-  - One permission-prompt trial, which suggests Ctrl+Break doesn't approve the prompt.
 - **Not in the logs, and needing a check in Implementation or Testing:**
-  - The leftover "Terminate batch job (Y/N)?" prompt, and whether the parent shell survives a break.
   - Which states `claude attach` opens, and resume folder behavior.
   - The `claude stop` exit codes.
-  - Any trial of the PowerShell helper. Every Ctrl+Break trial used a compiled C# helper.
   - Notification delivery to a hidden tab, and a real notification click.
+  - A session that exits during a Force end, which the helper now refuses rather than proceeding.
 
 ### New components
 
@@ -228,9 +228,8 @@ Telling the two non-zero Delete cases apart relies on the CLI's message, so a ch
 - Runs as `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script> <arguments>`.
 - The script lives in the tool's own folder, and runs with that folder as its working directory. Its arguments are numbers only.
 - It frees its own console before attaching to the target's, and registers a handler so the break doesn't end the helper.
-- It has a 10-second timeout.
+- It has a 10-second timeout. A run takes about 0.7 seconds to refuse, and 1.1 to 1.4 seconds otherwise.
 - A Group Policy execution policy, or Constrained Language Mode, can block it, and End is then unavailable, with a message saying so.
-- **Implementation step 1:** prove the helper, since no trial used it. If it doesn't work, the owner decides between the tested compiled helper and other options.
 
 **Ownership check, run before each signal:**
 
@@ -242,7 +241,7 @@ Telling the two non-zero Delete cases apart relies on the CLI's message, so a ch
    - The listing still shows the same `kind` and `sessionId` for that process ID.
 4. If any check fails, refuse.
 
-Two trials support the start-time window. Testing must also cover slow starts and sessions with MCP servers, where a correct session could be refused.
+Across 17 sessions, including one with a slow MCP server, processes started 0.9 to 1.6 seconds before `startedAt`, inside the window.
 
 **Console members check:** a console event reaches every process on the console. The helper lists them, and refuses if any is neither the session, its ancestors, nor its descendants. Git Bash hides its shell from the process chain, so End is refused for sessions started from Git Bash, and the page says to use the session's own terminal. Force end still works there.
 

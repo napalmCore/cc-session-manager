@@ -28,10 +28,9 @@ The Force end options were reworded on 2026-11-07 at the owner's request: the ow
 
 ## Consequences
 
-- On npm installs, a session closed with Ctrl+Break is expected to leave its terminal showing "Terminate batch job (Y/N)?". This isn't yet in the logs.
 - Force end also ends programs the session started, such as dev servers.
 - If the tool can't tell which session started it, those three actions are unavailable until it's restarted outside Claude Code.
-- End needs Windows PowerShell, and the proof measured about 1 second per helper step. If PowerShell is blocked by policy, End is unavailable.
+- End needs Windows PowerShell, and the proof measured 1.1 to 1.4 seconds per helper step. If PowerShell is blocked by policy, End is unavailable.
 - The single-instance handover adds a secret in the tool's data folder, which is as exposed as the store file.
 - The PowerShell helper is proven before anything is built on it.
 - More sessions can be protected from Stop, Delete, and End, because handovers add to the set.
