@@ -11,6 +11,7 @@
 | Merging                                             | Merge when agents approve, the owner keeps merging, agents for docs and tests only                           | Merge when CI passes and an independent agent approves                |
 | BUG-4: finished session removed from the CLI's list | Amend FR-2, keep rows for 24 hours, ship as a known issue                                                    | Amend FR-2, so a session the CLI no longer lists leaves the dashboard |
 | BUG-5: false warning on a new session               | Fix before release by warning only if the status is still missing on the next refresh, ship as a known issue | Fix before release                                                    |
+| BUG-25: last activity lost with no banner           | Fall back to the file's modified time, show a banner, read more of the file, ship as a known issue           | Fall back to the file's modified time                                 |
 
 ## Consequences
 
