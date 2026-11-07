@@ -134,29 +134,58 @@ ${newer}
   });
 
   describe("format change warning", () => {
-    const header = [
-      JSON.stringify({ type: "mode", mode: "default" }),
-      JSON.stringify({ type: "permission-mode", permissionMode: "default" }),
-      JSON.stringify({ type: "session-owner", sessionId: ID }),
-    ].join("\n");
+    const headerTypes = [
+      "mode",
+      "permission-mode",
+      "session-owner",
+      "atis-latch",
+      "file-history-snapshot",
+      "ai-title",
+      "agent-name",
+      "artifact-comment-monitor",
+    ];
+    const header = headerTypes
+      .map((type) => JSON.stringify({ type }))
+      .join("\n");
 
     it("isn't raised for a normal transcript or an empty one", () => {
       expect(extractMetadata(`${assistant}\n`).formatChanged).toBe(false);
       expect(extractMetadata("").formatChanged).toBe(false);
     });
 
+    it.each(headerTypes)("isn't raised for a %s header line", (type) => {
+      const line = JSON.stringify({ type });
+      expect(extractMetadata(`${line}\n`).formatChanged).toBe(false);
+    });
+
     it("isn't raised for a new transcript with only header lines", () => {
       expect(extractMetadata(`${header}\n`).formatChanged).toBe(false);
     });
 
-    it("is raised when conversation lines have no timestamp", () => {
-      const line = JSON.stringify({ message: { model: "m" } });
+    it.each([
+      ["a message without a timestamp", { message: { model: "m" } }],
+      ["an unreadable timestamp", { timestamp: "soon", message: {} }],
+      [
+        "a renamed timestamp and message",
+        { type: "assistant", ts: 1, msg: {} },
+      ],
+      [
+        "fields moved under another key",
+        { type: "user", data: { timestamp: "x" } },
+      ],
+      ["an unknown line type", { type: "something-new" }],
+      ["a line with no type", { other: 1 }],
+      ["a non-string type", { type: 5 }],
+    ])("is raised for %s", (_label, fields) => {
+      const line = JSON.stringify(fields);
       expect(extractMetadata(`${header}\n${line}\n`).formatChanged).toBe(true);
     });
 
-    it("is raised when the conversation's timestamp can't be read", () => {
-      const line = JSON.stringify({ timestamp: "soon", message: {} });
-      expect(extractMetadata(`${line}\n`).formatChanged).toBe(true);
+    it("isn't raised once any line has a usable timestamp", () => {
+      const line = JSON.stringify({ type: "something-new" });
+      expect(extractMetadata(`${line}\n${assistant}\n`).formatChanged).toBe(
+        false,
+      );
     });
   });
 });

@@ -48,12 +48,14 @@ finished-sessions.json <------+
 | Finished interactive session | It was seen earlier and is no longer listed.                                                                    |
 | End time                     | The CLI doesn't provide one, so use the time the tool first sees the session as finished, shown as approximate. |
 
+A session sitting at a trust dialog isn't listed by the CLI, so the dashboard can't show it.
+
 ## Transcript metadata
 
 - **Fields kept:** `gitBranch`, `message.model`, and `timestamp`. An explicit allow-list copies only these fields, and tests must confirm that no message text gets through (C-4).
 - **Lookup:** `sessionId` must be a valid UUID before it is used to find `~/.claude/projects/*/<sessionId>.jsonl`, which prevents path traversal.
 - **Branch `HEAD`:** the CLI writes this for a session started outside a repository and for a detached HEAD, so it shows as unavailable.
-- **Format warning:** only conversation lines with no usable timestamp raise it, because a new transcript starts with header lines that have none.
+- **Format warning:** raised when no line has a usable timestamp and at least one line isn't a known header type, because a new transcript starts with header lines that have none. Unknown lines warn, so a real format change isn't hidden.
 - **Partial results:** a field not found near the end of a file shows as unavailable (FR-6).
 - **Risk:** the transcript location and fields aren't known to be a stable interface, so failures must degrade rather than break the dashboard (NFR-4).
 
@@ -78,8 +80,6 @@ Finished sessions are saved in the tool's own data folder, never under `~/.claud
 The file holds project paths, but no session names and no message text. Names are left out because the CLI can use a prompt as the name until a title is generated. An older file holding a name or a `HEAD` branch is rewritten on the first update. A corrupt file is set aside unchanged, so a corrupt older file could still hold names.
 
 Records stay in the file while the CLI still lists a session, even after 24 hours, so a completed background session doesn't look newly finished on the next poll. A completed background session first seen by the tool, including on its first run, is treated as finishing at that moment, because the CLI doesn't report end times.
-
-A session sitting at a trust dialog isn't listed by the CLI, so the dashboard can't show it.
 
 ## Failure handling
 
