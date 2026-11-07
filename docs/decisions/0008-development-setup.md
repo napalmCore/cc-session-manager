@@ -27,7 +27,7 @@
 - Node 24 is supported until 2028-04-30, per the [Node release schedule](https://github.com/nodejs/Release).
 - The first release must state that Node 24 or later is required, until a packaged executable is available.
 - Private-repository CI uses limited free minutes, and Windows runners consume them faster.
-- Automated axe checks can't prove WCAG 2.2 AA on their own, so NFR-5 also needs manual keyboard and screen-reader checks. [0013](0013-release-without-wcag-claim.md) later dropped this for iteration 1 by removing the conformance claim.
+- Automated axe checks can't prove WCAG 2.2 AA on their own, so NFR-5 also needs manual keyboard and screen-reader checks. [0013](0013-release-without-wcag-claim.md) later dropped the screen-reader part for iteration 1 by removing the conformance claim.
 - Move to TypeScript 7 once `typescript-eslint` supports it.
 - `@hono/node-ws` officially requires `@hono/node-server` 1.x, so `pnpm-workspace.yaml` records an exception. It doesn't import that package at runtime, and the WebSocket tests guard the pairing. Remove the exception when `@hono/node-ws` supports 2.x.
 - CI doesn't test Linux yet, so portability relies on avoiding Windows-only dependencies until a later iteration adds it.

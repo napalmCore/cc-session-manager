@@ -26,3 +26,4 @@ M2 wasn't run. Its script stays in [test-plan.md](../test-plan.md) for a later i
 - The release notes must say that the dashboard hasn't been verified with a screen reader.
 - BUG-3 stops being counted as an open High bug: the announcement region is in place and passes automated tests, but what a screen reader says about it is unverified. FR-10 is checked to that level only.
 - People who rely on screen readers may hit problems that the automated checks can't find, such as BUG-10.
+- The owner was then asked directly whether BUG-3 no longer blocking, and L3 to L5 not being fully repeated on the final code, are acceptable, and chose "Yes, close Testing".
