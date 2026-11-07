@@ -10,7 +10,7 @@ cc-session-manager is a read-only dashboard for your Claude Code sessions. It ru
 
 - Lists your running interactive and background sessions.
 - Puts sessions that need you first, with the reason, and shows the count in the browser tab title.
-- Announces sessions that newly need you to screen readers.
+- Marks sessions that newly need you for screen readers to announce. See Accessibility.
 - Moves blocked sessions with no activity for over 7 days to a collapsed Stale group. A session with an open prompt or unknown activity is never moved there.
 - Shows each session's name, project folder, kind, status, start time, running time, git branch, model, and last activity.
 - Keeps finished sessions listed for 24 hours, including after a restart.
@@ -70,4 +70,4 @@ Every open bug is Low.
 
 ### Accessibility
 
-The dashboard is built towards WCAG 2.2 AA and passes automated accessibility scans and keyboard tests, but it doesn't claim conformance and **hasn't been tested with a screen reader**. Screen-reader announcements are in place, but what they sound like is unverified, and BUG-10 lists likely noise. Reports are welcome.
+The dashboard is built towards WCAG 2.2 AA and passes automated accessibility scans and keyboard tests, but it doesn't claim conformance and **hasn't been tested with a screen reader**. Screen-reader announcements are in place, but whether and how they're read out is unverified, and BUG-10 lists likely noise.

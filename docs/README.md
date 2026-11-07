@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 1, Phase 6: Release.** Planning, Requirements, Design, Implementation, and Testing are complete. Testing passed with the screen-reader check not run, by decision 0013.
+**Iteration 1, Phase 6: Release.** Planning, Requirements, Design, Implementation, and Testing are complete. Testing passed with the screen-reader check not run, by decision 0013, and some live checks not repeated on the final code. See [test-plan.md](test-plan.md).
 
 ## How these docs work
 
