@@ -14,6 +14,7 @@ export interface Programs {
 }
 
 /** Variables a running session sets. A `claude` that inherits them isn't listed. */
+// Includes the list Claude Code 2.1.319 itself removes before starting a child session.
 export const SESSION_IDENTITY_VARIABLES = [
   "CLAUDECODE",
   "CLAUDE_CODE_CHILD_SESSION",
@@ -23,8 +24,13 @@ export const SESSION_IDENTITY_VARIABLES = [
   "CLAUDE_CODE_SESSION_ATTENDED",
   "CLAUDE_JOB_DIR",
   "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_BRIDGE_SESSION_ID",
+  "CLAUDE_CODE_HOST_WORKTREE",
+  "CLAUDE_CODE_HOST_WORKTREE_FENCE",
+  "CLAUDE_CODE_CHROME_MCP_ORG_DENIED",
+  "CLAUDE_CODE_EVAL_INTERVIEW_SESSION",
 ] as const;
-const SESSION_IDENTITY_PREFIXES = ["CLAUDE_CODE_MESSAGING_"];
+const SESSION_IDENTITY_PREFIXES = ["CLAUDE_CODE_MESSAGING_", "CLAUDE_BG_"];
 
 const SHORT_ID = /^[0-9a-f]{8}$/;
 const ABSOLUTE_WINDOWS_PATH = /^(?:[A-Za-z]:\\|\\\\)/;
@@ -158,8 +164,10 @@ export function planOpen(
   if (programs.cmd !== null) {
     return {
       file: programs.cmd,
+      // /v:off stops a delayed-expansion registry setting from expanding ! in the path.
       args: [
         "/d",
+        "/v:off",
         "/c",
         `start "" "${programs.claude}" ${claudeArgs.join(" ")}`,
       ],

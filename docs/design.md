@@ -187,15 +187,15 @@ An investigator agent tested on Windows 11 with Claude Code 2.1.319, installed t
   - The resolved path must contain no `;`, `%`, or `"`, because `wt` treats those specially.
   - If resolution fails, monitoring falls back to the iteration 1 method, running `claude` through a shell from the home folder, with a banner saying the actions are unavailable. This covers other installers, such as pnpm, volta, or scoop.
 - **`wt.exe`:** `%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe`, checked with `lstat`, because it's an app execution alias that `stat` can't read.
-- **`cmd.exe` and `powershell.exe`:** under the System32 folder, which the tool gets from the operating system rather than the `SystemRoot` variable.
+- **`cmd.exe` and `powershell.exe`:** under the System32 folder. Node can't ask the operating system for that folder without starting another program, so the tool reads `SystemRoot` and requires an absolute path with no `;`, `%`, or `"`. Anyone who can change the tool's environment could already change `PATH`, so this adds no new trust.
 - **Poller:** it moves to the resolved `claude.exe` when one is found.
 - **Tests:** Node applies `NoDefaultCurrentDirectoryInExePath` from its own environment, so tests run the tool without it and plant a fake program in the session's folder.
 
 ### Launching a terminal (FR-14)
 
-- **Environment:** remove only the variables that mark a running session, so that a launched `claude` is listed: `CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, `CLAUDE_CODE_ENTRYPOINT`, every `CLAUDE_CODE_MESSAGING_*`, `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_JOB_DIR`, and `CLAUDE_CODE_EXECPATH`. User settings, such as `CLAUDE_CONFIG_DIR`, are kept. The poller removes the same set. The list needs reviewing when Claude Code changes.
+- **Environment:** remove only the variables that mark a running session, so that a launched `claude` is listed: `CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, `CLAUDE_CODE_ENTRYPOINT`, every `CLAUDE_CODE_MESSAGING_*`, `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_JOB_DIR`, and `CLAUDE_CODE_EXECPATH`, plus the list Claude Code 2.1.319 itself removes for child sessions: `CLAUDE_CODE_BRIDGE_SESSION_ID`, `CLAUDE_CODE_HOST_WORKTREE`, `CLAUDE_CODE_HOST_WORKTREE_FENCE`, `CLAUDE_CODE_CHROME_MCP_ORG_DENIED`, `CLAUDE_CODE_EVAL_INTERVIEW_SESSION`, and every `CLAUDE_BG_*`. Names match whatever their capitalization. User settings, such as `CLAUDE_CONFIG_DIR`, are kept. The poller removes the same set. The list needs reviewing when Claude Code changes.
 - **Windows Terminal:** `wt.exe -w new -d . -- <claude.exe> attach <id>`, with the session's folder as the process's working directory, never in command text. `-w new` opens a new window rather than a tab.
-- **Fallback console:** `cmd.exe /d /c start "" "<claude.exe>" attach <id>`, passed as one exact string with Node's verbatim-arguments option, with the same working directory and environment.
+- **Fallback console:** `cmd.exe /d /v:off /c start "" "<claude.exe>" attach <id>`, passed as one exact string with Node's verbatim-arguments option, with the same working directory and environment.
 - **Resume:**
   - Runs `claude.exe --resume <sessionId>` in the session's original folder.
   - Offered only when the session's transcript exists, the original folder still exists, and the recheck passes.
