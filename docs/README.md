@@ -26,7 +26,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | ------------------------------------------------------- | --------------------------------------------------- | ------------------------- |
 | [0001](decisions/0001-sdlc-model.md)                    | Follow an iterative SDLC                            | Accepted                  |
 | [0002](decisions/0002-product-direction.md)             | Build a new open-source thin layer                  | Accepted, amended by 0006 |
-| [0003](decisions/0003-first-iteration-and-platforms.md) | Start with read-only live monitoring, Windows first | Accepted                  |
+| [0003](decisions/0003-first-iteration-and-platforms.md) | Start with read-only live monitoring, Windows first | Accepted, amended by 0014 |
 | [0004](decisions/0004-provisional-stack.md)             | Local web dashboard in TypeScript on Node           | Accepted                  |
 | [0005](decisions/0005-project-setup.md)                 | Name, license, repository timing, docs layout       | Accepted                  |
 | [0006](decisions/0006-transcript-metadata.md)           | Allow transcript metadata for session activity      | Accepted                  |
