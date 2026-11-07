@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 2, Phase 2: Requirements.** Iteration 2 adds desktop notifications and session control. Iteration 1 passed Testing, and its first release waits until iteration 2 is done. See [0014](decisions/0014-iteration-2-scope.md).
+**Iteration 2, Phase 3: Design.** Requirements are complete. Iteration 1 passed Testing, and its first release waits until iteration 2 is done. See [0014](decisions/0014-iteration-2-scope.md) and [0015](decisions/0015-iteration-2-design.md).
 
 ## How these docs work
 
@@ -38,3 +38,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0012](decisions/0012-agent-approved-merges.md)         | Agent-approved merges and BUG-4                     | Accepted                  |
 | [0013](decisions/0013-release-without-wcag-claim.md)    | Release without a WCAG claim                        | Accepted                  |
 | [0014](decisions/0014-iteration-2-scope.md)             | Iteration 2 scope                                   | Accepted                  |
+| [0015](decisions/0015-iteration-2-design.md)            | Iteration 2 design choices                          | Accepted                  |
