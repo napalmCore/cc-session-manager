@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 1, Phase 5: Testing.** Planning, Requirements, Design, and Implementation are complete.
+**Iteration 1, Phase 6: Release.** Planning, Requirements, Design, Implementation, and Testing are complete. Testing passed with the screen-reader check not run, by decision 0013.
 
 ## How these docs work
 
@@ -13,12 +13,12 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Living documents
 
-| Document                               | Status                     |
-| -------------------------------------- | -------------------------- |
-| [`requirements.md`](requirements.md)   | Signed off for iteration 1 |
-| [`design.md`](design.md)               | Signed off for iteration 1 |
-| [`test-plan.md`](test-plan.md)         | In progress                |
-| [`release-notes.md`](release-notes.md) | Draft for iteration 1      |
+| Document                               | Status                            |
+| -------------------------------------- | --------------------------------- |
+| [`requirements.md`](requirements.md)   | Signed off for iteration 1        |
+| [`design.md`](design.md)               | Signed off for iteration 1        |
+| [`test-plan.md`](test-plan.md)         | Exit criteria met for iteration 1 |
+| [`release-notes.md`](release-notes.md) | Draft for iteration 1             |
 
 ## Decision log
 
@@ -36,3 +36,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0010](decisions/0010-style-nonce.md)                   | Per-run style nonce                                 | Accepted                  |
 | [0011](decisions/0011-testing-bug-fixes.md)             | Fixes for High bugs found in testing                | Accepted                  |
 | [0012](decisions/0012-agent-approved-merges.md)         | Agent-approved merges and BUG-4                     | Accepted                  |
+| [0013](decisions/0013-release-without-wcag-claim.md)    | Release without a WCAG claim                        | Accepted                  |
