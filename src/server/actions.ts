@@ -167,7 +167,8 @@ export function createActionTracker(options: ActionTrackerOptions) {
       );
     }
 
-    const lockKey = session.sessionId ?? session.id ?? key;
+    // A background row's short id is stable, while its sessionId can appear between polls.
+    const lockKey = session.id ?? session.sessionId ?? key;
     if (locks.has(lockKey))
       return refused("Another action on this session is still running.");
     locks.add(lockKey);

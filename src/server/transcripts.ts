@@ -141,6 +141,31 @@ interface CacheEntry {
   extraction: Extraction;
 }
 
+/** Whether a session has a transcript, which Resume needs. Links aren't followed. */
+export async function transcriptExists(
+  sessionId: string,
+  root: string = claudeProjectsDirectory(),
+): Promise<boolean> {
+  if (!isValidSessionId(sessionId)) return false;
+  try {
+    const projects = await readdir(root, { withFileTypes: true });
+    for (const project of projects) {
+      if (!project.isDirectory()) continue;
+      try {
+        const stats = await lstat(
+          join(root, project.name, `${sessionId}.jsonl`),
+        );
+        if (stats.isFile()) return true;
+      } catch {
+        // Not in this project.
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export function createMetadataReader(root: string = claudeProjectsDirectory()) {
   const cache = new Map<string, CacheEntry>();
   const internals = { readTail };

@@ -18,6 +18,7 @@ import {
   createMetadataReader,
   extractMetadata,
   isValidSessionId,
+  transcriptExists,
   TAIL_BYTES,
 } from "./transcripts.js";
 
@@ -422,6 +423,19 @@ describe("createMetadataReader", () => {
     const session = view(ID);
     const reader = createMetadataReader(root);
     expect((await reader.enrich([session])).sessions).toEqual([session]);
+  });
+});
+
+describe("transcriptExists", () => {
+  it("finds a session's transcript in any project", async () => {
+    writeTranscript(`${assistant}\n`, ID, "project-b");
+    expect(await transcriptExists(ID, root)).toBe(true);
+  });
+
+  it("is false when there's no transcript or the ID isn't valid", async () => {
+    expect(await transcriptExists(ID, root)).toBe(false);
+    expect(await transcriptExists("../x", root)).toBe(false);
+    expect(await transcriptExists(ID, join(root, "missing"))).toBe(false);
   });
 });
 
