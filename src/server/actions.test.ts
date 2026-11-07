@@ -385,34 +385,45 @@ describe("gaps found in review", () => {
       expect(slow).toHaveBeenCalledTimes(1);
     });
     listing[0] = background();
-    expect(
-      (await tracker.handle({ action: "delete", key: SESSION_ID })).outcome,
-    ).toBe("refused");
+    // Settle within 200 ms either way, so a regression fails here rather than by timing out.
+    const second = await Promise.race([
+      tracker.handle({ action: "delete", key: SESSION_ID }),
+      new Promise<{ outcome: string }>((resolve) =>
+        setTimeout(() => {
+          resolve({ outcome: "still-running" });
+        }, 200),
+      ),
+    ]);
+    expect(second.outcome).toBe("refused");
 
     release();
     await first;
   });
 
   it("refuses when only the listed session is protected", async () => {
-    const { tracker, executors } = setup({ listing: [background()] });
-    const protectedTracker = createActionTracker({
+    const stop = vi.fn(() =>
+      Promise.resolve({ outcome: "succeeded" as const, message: "" }),
+    );
+    let calls = 0;
+    const tracker = createActionTracker({
       listing: () => ({
         sessions: [background()],
         lastSuccessAt: NOW,
         lastPollFailed: false,
       }),
-      freshListing: () =>
-        Promise.resolve([background({ sessionId: OTHER_ID })]),
-      executors,
-      isProtected: (session) => session.sessionId === SESSION_ID,
+      freshListing: () => Promise.resolve([background()]),
+      executors: { stop },
+      // Only the first check, on the listed session, sees it as protected.
+      isProtected: () => {
+        calls += 1;
+        return calls === 1;
+      },
       now: () => NOW,
     });
     expect(
-      (await protectedTracker.handle({ action: "stop", key: "abcd1234" }))
-        .outcome,
+      (await tracker.handle({ action: "stop", key: "abcd1234" })).outcome,
     ).toBe("refused");
-    expect(executors.stop).not.toHaveBeenCalled();
-    expect(tracker).toBeDefined();
+    expect(stop).not.toHaveBeenCalled();
   });
 
   it("refuses when only the fresh session is protected", async () => {

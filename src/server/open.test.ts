@@ -163,7 +163,7 @@ describe("Resume", () => {
     expect(launch).not.toHaveBeenCalled();
   });
 
-  it("shares the repeated-click window with Open for the same session", async () => {
+  it("ignores a repeated Resume of the same session within the window", async () => {
     const { executors, launch } = setup();
     await executors.resume(finishedInteractive());
     expect((await executors.resume(finishedInteractive())).outcome).toBe(
