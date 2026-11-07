@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
 import { createPoller, runClaudeAgents } from "./poller.js";
+import { resolvePrograms } from "./programs.js";
 import { startServer } from "./server.js";
 import { createFileStore } from "./store.js";
 import { createSessionTracker } from "./tracker.js";
@@ -17,8 +18,14 @@ function browserCommand(url: string): [string, string[]] {
 
 const server = await startServer({ preferredPort: DEFAULT_PORT });
 const tracker = createSessionTracker({ store: createFileStore() });
+const programs = resolvePrograms();
+if (programs.claude === null) {
+  console.log(
+    "Couldn't find claude.exe, so session actions will be unavailable. Monitoring still works.",
+  );
+}
 const poller = createPoller({
-  run: runClaudeAgents,
+  run: () => runClaudeAgents(programs.claude),
   intervalMs: POLL_INTERVAL_MS,
   onSnapshot: server.publish,
   track: tracker.update,
