@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
-import { createActionTracker } from "./actions.js";
+import { createActionTracker, FRESHNESS_MS } from "./actions.js";
+import { createOpenExecutors } from "./open.js";
 import { createPoller, runClaudeAgents } from "./poller.js";
 import { resolvePrograms } from "./programs.js";
 import { toSessionView } from "./rules.js";
@@ -10,7 +12,7 @@ import { parseSessions } from "./schema.js";
 import { startServer } from "./server.js";
 import { createFileStore } from "./store.js";
 import { createSessionTracker } from "./tracker.js";
-import { createMetadataReader } from "./transcripts.js";
+import { createMetadataReader, transcriptExists } from "./transcripts.js";
 
 function browserCommand(url: string): [string, string[]] {
   if (process.platform === "win32")
@@ -43,14 +45,29 @@ const poller = createPoller({
   track: tracker.update,
   enrich: createMetadataReader().enrich,
 });
-// Executors for each action arrive in later build steps, so for now every action is unavailable.
+const openExecutors = createOpenExecutors({
+  programs,
+  folderExists: (folder) => {
+    try {
+      return existsSync(folder) && statSync(folder).isDirectory();
+    } catch {
+      return false;
+    }
+  },
+  transcriptExists: (sessionId) => transcriptExists(sessionId),
+  homeFolder: homedir(),
+});
+// Stop, Delete, and End arrive in later build steps, and are unavailable until then.
 actionsRef.current = createActionTracker({
   listing: () => poller.state(),
   freshListing: async () =>
-    parseSessions(await runClaudeAgents(programs.claude)).sessions.map(
-      toSessionView,
-    ),
-  executors: {},
+    parseSessions(
+      await runClaudeAgents(programs.claude, FRESHNESS_MS),
+    ).sessions.map(toSessionView),
+  executors: {
+    open: (session) => openExecutors.open(session),
+    resume: (session) => openExecutors.resume(session),
+  },
   isProtected: () => false,
 });
 poller.start();

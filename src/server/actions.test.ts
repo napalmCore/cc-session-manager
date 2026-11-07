@@ -86,7 +86,7 @@ function setup(options: {
   const tracker = createActionTracker({
     listing: () => ({
       sessions: options.listing,
-      lastSuccessAt: NOW - 1000,
+      lastSuccessAt: now - 1000,
       lastPollFailed: false,
       ...options.state,
     }),
@@ -358,6 +358,131 @@ describe("Force end precondition (NFR-10)", () => {
     expect(
       (await tracker.handle({ action: "forceEnd", key: SESSION_ID })).outcome,
     ).toBe("refused");
+  });
+});
+
+describe("gaps found in review", () => {
+  it("locks a session under one key even when its session ID appears later", async () => {
+    let release: () => void = () => undefined;
+    const slow = vi.fn(
+      () =>
+        new Promise<{ outcome: "succeeded"; message: string }>((resolve) => {
+          release = () => {
+            resolve({ outcome: "succeeded", message: "Stopped." });
+          };
+        }),
+    );
+    const withoutSessionId = background();
+    delete withoutSessionId.sessionId;
+    const listing = [withoutSessionId];
+    const { tracker } = setup({
+      listing,
+      executors: { stop: slow, delete: slow },
+    });
+
+    const first = tracker.handle({ action: "stop", key: "abcd1234" });
+    await vi.waitFor(() => {
+      expect(slow).toHaveBeenCalledTimes(1);
+    });
+    listing[0] = background();
+    expect(
+      (await tracker.handle({ action: "delete", key: SESSION_ID })).outcome,
+    ).toBe("refused");
+
+    release();
+    await first;
+  });
+
+  it("refuses when only the listed session is protected", async () => {
+    const { tracker, executors } = setup({ listing: [background()] });
+    const protectedTracker = createActionTracker({
+      listing: () => ({
+        sessions: [background()],
+        lastSuccessAt: NOW,
+        lastPollFailed: false,
+      }),
+      freshListing: () =>
+        Promise.resolve([background({ sessionId: OTHER_ID })]),
+      executors,
+      isProtected: (session) => session.sessionId === SESSION_ID,
+      now: () => NOW,
+    });
+    expect(
+      (await protectedTracker.handle({ action: "stop", key: "abcd1234" }))
+        .outcome,
+    ).toBe("refused");
+    expect(executors.stop).not.toHaveBeenCalled();
+    expect(tracker).toBeDefined();
+  });
+
+  it("refuses when only the fresh session is protected", async () => {
+    const stop = vi.fn(() =>
+      Promise.resolve({ outcome: "succeeded" as const, message: "" }),
+    );
+    const tracker = createActionTracker({
+      listing: () => ({
+        sessions: [background()],
+        lastSuccessAt: NOW,
+        lastPollFailed: false,
+      }),
+      freshListing: () => Promise.resolve([background()]),
+      executors: { stop },
+      isProtected: (() => {
+        let calls = 0;
+        return () => {
+          calls += 1;
+          return calls > 1;
+        };
+      })(),
+      now: () => NOW,
+    });
+    expect(
+      (await tracker.handle({ action: "stop", key: "abcd1234" })).outcome,
+    ).toBe("refused");
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the fresh row has the same short ID but a different session", async () => {
+    const { tracker, executors } = setup({
+      listing: [background()],
+      fresh: [background({ sessionId: OTHER_ID })],
+    });
+    expect(
+      (await tracker.handle({ action: "stop", key: "abcd1234" })).outcome,
+    ).toBe("refused");
+    expect(executors.stop).not.toHaveBeenCalled();
+  });
+
+  it("refuses End when the fresh listing shows the session finished", async () => {
+    const { tracker, executors } = setup({
+      listing: [interactive()],
+      fresh: [interactive({ finished: true })],
+    });
+    expect(
+      (await tracker.handle({ action: "end", key: SESSION_ID })).outcome,
+    ).toBe("refused");
+    expect(executors.end).not.toHaveBeenCalled();
+  });
+
+  it("refuses End on a session already finished in the listing", async () => {
+    const { tracker, executors } = setup({
+      listing: [interactive({ finished: true })],
+    });
+    expect(
+      (await tracker.handle({ action: "end", key: SESSION_ID })).outcome,
+    ).toBe("refused");
+    expect(executors.end).not.toHaveBeenCalled();
+  });
+
+  it("refuses Resume of an interactive session that hasn't finished", async () => {
+    const { tracker, executors } = setup({
+      listing: [interactive()],
+      fresh: [],
+    });
+    expect(
+      (await tracker.handle({ action: "resume", key: SESSION_ID })).outcome,
+    ).toBe("refused");
+    expect(executors.resume).not.toHaveBeenCalled();
   });
 });
 

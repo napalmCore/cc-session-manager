@@ -150,6 +150,23 @@ describe("POST /api/actions", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("rejects an oversized body without passing it on", async () => {
+    const cookie = await login();
+    const body = JSON.stringify({
+      action: "stop",
+      key: "abcd1234",
+      pad: "x".repeat(10_000),
+    });
+    const response = await send(
+      "POST",
+      "/api/actions",
+      { cookie, origin: origin(), "content-type": "application/json" },
+      body,
+    );
+    expect(response.status).toBe(413);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it("can't be triggered by a read", async () => {
     const cookie = await login();
     await send("GET", "/api/actions?action=stop&key=abcd1234", {

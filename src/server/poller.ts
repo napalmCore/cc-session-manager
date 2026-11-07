@@ -26,6 +26,7 @@ const RUN_OPTIONS = {
  */
 export function runClaudeAgents(
   claudeExe: string | null = null,
+  timeoutMs: number = RUN_OPTIONS.timeout,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const done = (error: Error | null, stdout: string) => {
@@ -36,7 +37,12 @@ export function runClaudeAgents(
       execFile(
         claudeExe,
         AGENTS_ARGS,
-        { ...RUN_OPTIONS, cwd: homedir(), env: sessionLaunchEnv(process.env) },
+        {
+          ...RUN_OPTIONS,
+          timeout: timeoutMs,
+          cwd: homedir(),
+          env: sessionLaunchEnv(process.env),
+        },
         (error, stdout) => {
           done(error, stdout);
         },
@@ -44,7 +50,7 @@ export function runClaudeAgents(
     } else {
       exec(
         `claude ${AGENTS_ARGS.join(" ")}`,
-        { ...RUN_OPTIONS, cwd: homedir() },
+        { ...RUN_OPTIONS, timeout: timeoutMs, cwd: homedir() },
         (error, stdout) => {
           done(error, stdout);
         },
