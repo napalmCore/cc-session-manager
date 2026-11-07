@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionView } from "../shared/protocol.js";
+import { groupSessions } from "../shared/session-groups.js";
 import { toSessionView } from "./rules.js";
 import {
   claudeProjectsDirectory,
@@ -306,6 +307,83 @@ describe("createMetadataReader", () => {
     const { sessions } = await reader.enrich([session]);
     expect(read).toHaveBeenCalledTimes(2);
     expect(sessions[0]?.gitBranch).toBe("next");
+  });
+
+  describe("when no timestamp can be read", () => {
+    const OLD = Date.parse("2026-01-01T00:00:00.000Z");
+    const setFileTime = (file: string) => {
+      utimesSync(file, new Date(OLD), new Date(OLD));
+    };
+    const blocked = () =>
+      toSessionView({ sessionId: ID, kind: "background", state: "blocked" });
+
+    it("uses the file's modified time for a newest line larger than the tail", async () => {
+      const huge = JSON.stringify({ padding: "x".repeat(TAIL_BYTES * 2) });
+      setFileTime(writeTranscript(`${assistant}\n${huge}\n`));
+
+      const { sessions } = await createMetadataReader(root).enrich([view(ID)]);
+
+      expect(sessions[0]?.lastActivityAt).toBe(OLD);
+    });
+
+    it("uses the file's modified time when only header lines are readable", async () => {
+      setFileTime(writeTranscript(`${JSON.stringify({ type: "mode" })}\n`));
+
+      const { sessions } = await createMetadataReader(root).enrich([view(ID)]);
+
+      expect(sessions[0]?.lastActivityAt).toBe(OLD);
+    });
+
+    it("uses the file's modified time when every line is unreadable", async () => {
+      setFileTime(writeTranscript("garbage\n[]\nnull\n"));
+
+      const { sessions } = await createMetadataReader(root).enrich([view(ID)]);
+
+      expect(sessions[0]?.lastActivityAt).toBe(OLD);
+    });
+
+    it("prefers a timestamp from the transcript", async () => {
+      setFileTime(writeTranscript(`${assistant}\n`));
+
+      const { sessions } = await createMetadataReader(root).enrich([view(ID)]);
+
+      expect(sessions[0]?.lastActivityAt).toBe(Date.parse(TIME));
+    });
+
+    it("keeps an idle blocked session in Stale", async () => {
+      const huge = JSON.stringify({ padding: "x".repeat(TAIL_BYTES * 2) });
+      setFileTime(writeTranscript(`${huge}\n`));
+
+      const { sessions } = await createMetadataReader(root).enrich([blocked()]);
+      const groups = groupSessions(sessions, Date.parse(TIME));
+
+      expect(groups.stale).toHaveLength(1);
+      expect(groups.needsYou).toEqual([]);
+    });
+
+    it("still warns about a format change", async () => {
+      const line = JSON.stringify({ type: "assistant", ts: 1, msg: {} });
+      setFileTime(writeTranscript(`${line}\n`));
+
+      const { sessions, warnings } = await createMetadataReader(root).enrich([
+        view(ID),
+      ]);
+
+      expect(warnings).toHaveLength(1);
+      expect(sessions[0]?.lastActivityAt).toBe(OLD);
+    });
+
+    it("clears the warning once a timestamped line arrives", async () => {
+      const file = writeTranscript(`${JSON.stringify({ other: 1 })}\n`);
+      const reader = createMetadataReader(root);
+      expect((await reader.enrich([view(ID)])).warnings).toHaveLength(1);
+
+      appendFileSync(file, `${assistant}\n`);
+
+      const { sessions, warnings } = await reader.enrich([view(ID)]);
+      expect(warnings).toEqual([]);
+      expect(sessions[0]?.lastActivityAt).toBe(Date.parse(TIME));
+    });
   });
 
   it("warns once when transcripts appear to have changed format", async () => {

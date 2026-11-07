@@ -55,7 +55,8 @@ A session sitting at a trust dialog isn't listed by the CLI, so the dashboard ca
 - **Fields kept:** `gitBranch`, `message.model`, and `timestamp`. An explicit allow-list copies only these fields, and tests must confirm that no message text gets through (C-4).
 - **Lookup:** `sessionId` must be a valid UUID before it is used to find `~/.claude/projects/*/<sessionId>.jsonl`, which prevents path traversal.
 - **Branch `HEAD`:** the CLI writes this for a session started outside a repository and for a detached HEAD, so it shows as unavailable.
-- **Format warning:** raised when no line has a usable timestamp and at least one line isn't a known header type, because a new transcript starts with header lines that have none. Unknown lines warn, so a real format change isn't hidden.
+- **Format warning:** raised when no line has a usable timestamp and at least one parsed line isn't a known header type, because a new transcript starts with header lines that have none. Unknown lines warn, which covers most format changes, but see BUG-26.
+- **Last activity fallback:** when no timestamp can be read, last activity is the file's modified time.
 - **Partial results:** a field not found near the end of a file shows as unavailable (FR-6).
 - **Risk:** the transcript location and fields aren't known to be a stable interface, so failures must degrade rather than break the dashboard (NFR-4).
 

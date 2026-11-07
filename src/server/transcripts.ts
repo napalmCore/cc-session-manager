@@ -192,6 +192,9 @@ export function createMetadataReader(root: string = claudeProjectsDirectory()) {
       const extraction = extractMetadata(
         await internals.readTail(file, stats.size),
       );
+      // Without this, an idle session whose newest line can't be read would look newly
+      // blocked, because Stale depends on knowing its last activity.
+      extraction.metadata.lastActivityAt ??= Math.floor(stats.mtimeMs);
       cache.set(sessionId, {
         file,
         mtimeMs: stats.mtimeMs,
