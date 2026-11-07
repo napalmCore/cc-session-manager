@@ -13,11 +13,12 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Living documents
 
-| Document                             | Status                     |
-| ------------------------------------ | -------------------------- |
-| [`requirements.md`](requirements.md) | Signed off for iteration 1 |
-| [`design.md`](design.md)             | Signed off for iteration 1 |
-| [`test-plan.md`](test-plan.md)       | In progress                |
+| Document                               | Status                     |
+| -------------------------------------- | -------------------------- |
+| [`requirements.md`](requirements.md)   | Signed off for iteration 1 |
+| [`design.md`](design.md)               | Signed off for iteration 1 |
+| [`test-plan.md`](test-plan.md)         | In progress                |
+| [`release-notes.md`](release-notes.md) | Draft for iteration 1      |
 
 ## Decision log
 

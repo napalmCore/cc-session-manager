@@ -342,6 +342,27 @@ describe("createMetadataReader", () => {
       expect(sessions[0]?.lastActivityAt).toBe(OLD);
     });
 
+    it("uses the file's modified time for an empty file", async () => {
+      setFileTime(writeTranscript(""));
+
+      const { sessions } = await createMetadataReader(root).enrich([view(ID)]);
+
+      expect(sessions[0]?.lastActivityAt).toBe(OLD);
+    });
+
+    it("follows the file's modified time when it changes", async () => {
+      const file = writeTranscript(`${JSON.stringify({ type: "mode" })}\n`);
+      setFileTime(file);
+      const reader = createMetadataReader(root);
+      await reader.enrich([view(ID)]);
+
+      const later = OLD + 60_000;
+      utimesSync(file, new Date(later), new Date(later));
+
+      const { sessions } = await reader.enrich([view(ID)]);
+      expect(sessions[0]?.lastActivityAt).toBe(later);
+    });
+
     it("prefers a timestamp from the transcript", async () => {
       setFileTime(writeTranscript(`${assistant}\n`));
 
