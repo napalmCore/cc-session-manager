@@ -4,6 +4,13 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
 import { createActionTracker, FRESHNESS_MS } from "./actions.js";
+import {
+  CLOSE_WAIT_MS,
+  createEndExecutors,
+  createHelperRunner,
+  helperAvailable,
+  helperScriptPath,
+} from "./end.js";
 import { createOpenExecutors } from "./open.js";
 import {
   createStopDeleteExecutors,
@@ -71,7 +78,16 @@ const stopDelete = createStopDeleteExecutors({
       : runClaude(claudeExe, args),
   watch: watchPoller(() => poller.state()),
 });
-// End arrives in a later build step, and is unavailable until then.
+const helperScript = helperScriptPath();
+const powershell = programs.powershell;
+const endExecutors = createEndExecutors({
+  helperAvailable: helperAvailable(powershell, helperScript),
+  run:
+    powershell === null
+      ? () => Promise.resolve({ kind: "error" as const })
+      : createHelperRunner(powershell, helperScript),
+  watch: watchPoller(() => poller.state(), CLOSE_WAIT_MS),
+});
 actionsRef.current = createActionTracker({
   listing: () => poller.state(),
   freshListing: async () =>
@@ -83,6 +99,8 @@ actionsRef.current = createActionTracker({
     resume: (session) => openExecutors.resume(session),
     stop: (session) => stopDelete.stop(session),
     delete: (session) => stopDelete.delete(session),
+    end: (session) => endExecutors.end(session),
+    forceEnd: (session, record) => endExecutors.forceEnd(session, record),
   },
   isProtected: () => false,
 });

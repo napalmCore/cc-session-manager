@@ -3,7 +3,10 @@
 #
 # Usage:
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File process-helper.ps1 `
-#     -Action <inspect|break|force> -TargetPid <n> -StartedAtMs <n>
+#     -Action <inspect|break|force> -TargetPid <n> -StartedAtMs <n> [-ExpectedStartMs <n>]
+#
+# -ExpectedStartMs, if given, must match the process's start time, so Force end only acts on
+# the process that got the normal close.
 #
 # Arguments are numbers only. The helper writes one JSON object to stdout and exits 0 when it
 # ran, even if it refused or was unavailable. Exit code 1 means it couldn't run at all.
@@ -14,7 +17,8 @@
 param(
   [Parameter(Mandatory = $true)][ValidateSet('inspect', 'break', 'force')][string]$Action,
   [Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$TargetPid,
-  [Parameter(Mandatory = $true)][ValidateRange(1, [long]::MaxValue)][long]$StartedAtMs
+  [Parameter(Mandatory = $true)][ValidateRange(1, [long]::MaxValue)][long]$StartedAtMs,
+  [ValidateRange(0, [long]::MaxValue)][long]$ExpectedStartMs = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -114,8 +118,9 @@ public static class CcsmConsole {
       Thread.Sleep(300);
       return "sent";
     } finally {
-      SetConsoleCtrlHandler(Ignore, false);
+      // Detach first, so a late Ctrl+Break can't reach this process once its handler is gone.
       FreeConsole();
+      SetConsoleCtrlHandler(Ignore, false);
     }
   }
 }
@@ -148,6 +153,10 @@ try {
   $imageName = $target.ProcessName
   if ($imageName -ne 'claude') {
     Write-Result @{ ok = $false; action = $Action; reason = 'wrong-image'; image = $imageName }
+    exit 0
+  }
+  if ($ExpectedStartMs -gt 0 -and [Math]::Abs($startMs - $ExpectedStartMs) -gt $StartToleranceMs) {
+    Write-Result @{ ok = $false; action = $Action; reason = 'start-time-mismatch'; startMs = $startMs }
     exit 0
   }
   if ($startMs -lt ($StartedAtMs - $WindowBeforeMs) -or $startMs -gt ($StartedAtMs + $WindowAfterMs)) {

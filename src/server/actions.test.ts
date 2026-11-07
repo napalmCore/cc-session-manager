@@ -280,9 +280,16 @@ describe("one action per session (NFR-10)", () => {
     await vi.waitFor(() => {
       expect(slow).toHaveBeenCalledTimes(1);
     });
-    expect(
-      (await tracker.handle({ action: "delete", key: SESSION_ID })).outcome,
-    ).toBe("refused");
+    // Settle within 200 ms either way, so a regression fails here rather than by timing out.
+    const second = await Promise.race([
+      tracker.handle({ action: "delete", key: SESSION_ID }),
+      new Promise<{ outcome: string }>((resolve) =>
+        setTimeout(() => {
+          resolve({ outcome: "still-running" });
+        }, 200),
+      ),
+    ]);
+    expect(second.outcome).toBe("refused");
 
     release();
     expect((await first).outcome).toBe("succeeded");
@@ -405,13 +412,14 @@ describe("gaps found in review", () => {
       Promise.resolve({ outcome: "succeeded" as const, message: "" }),
     );
     let calls = 0;
+    const freshListing = vi.fn(() => Promise.resolve([background()]));
     const tracker = createActionTracker({
       listing: () => ({
         sessions: [background()],
         lastSuccessAt: NOW,
         lastPollFailed: false,
       }),
-      freshListing: () => Promise.resolve([background()]),
+      freshListing,
       executors: { stop },
       // Only the first check, on the listed session, sees it as protected.
       isProtected: () => {
@@ -424,6 +432,8 @@ describe("gaps found in review", () => {
       (await tracker.handle({ action: "stop", key: "abcd1234" })).outcome,
     ).toBe("refused");
     expect(stop).not.toHaveBeenCalled();
+    // The listed check refuses before any fresh listing is taken.
+    expect(freshListing).not.toHaveBeenCalled();
   });
 
   it("refuses when only the fresh session is protected", async () => {
