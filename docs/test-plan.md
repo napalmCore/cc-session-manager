@@ -10,12 +10,12 @@ Testing passes when both of these are true:
 - Every requirement and constraint below has been checked.
 - No critical or high severity bugs are open. Medium and low severity bugs may ship if the release notes list them.
 
-| Severity | Meaning                                                                           |
-| -------- | --------------------------------------------------------------------------------- |
-| Critical | Exposes data or credentials, changes Claude Code files or sessions, or loses data |
-| High     | A requirement fails, or the dashboard gives a wrong answer with no warning        |
-| Medium   | A requirement works with a noticeable problem, and a workaround exists            |
-| Low      | Cosmetic, or unlikely to affect use                                               |
+| Severity | Meaning                                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| Critical | Exposes data or credentials, changes Claude Code files or sessions without the user's request, or loses data |
+| High     | A requirement fails, or the dashboard gives a wrong answer with no warning                                   |
+| Medium   | A requirement works with a noticeable problem, and a workaround exists                                       |
+| Low      | Cosmetic, or unlikely to affect use                                                                          |
 
 ## Test levels
 

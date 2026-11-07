@@ -1,6 +1,6 @@
 # 0003: Start with read-only live monitoring, Windows first
 
-- **Status:** Accepted
+- **Status:** Accepted, read-only limit lifted for iteration 2 by [0014](0014-iteration-2-scope.md)
 - **Date:** 2026-11-06
 
 ## Context
