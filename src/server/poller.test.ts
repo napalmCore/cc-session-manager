@@ -318,6 +318,43 @@ describe("createPoller", () => {
     });
   });
 
+  it("reports the latest listing and its freshness", async () => {
+    const run = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce(
+        JSON.stringify([
+          {
+            cwd: "C:/a",
+            kind: "background",
+            startedAt: 1,
+            state: "working",
+            id: "abcd1234",
+          },
+        ]),
+      )
+      .mockRejectedValue(new Error("failed"));
+    const poller = createPoller({ run, intervalMs: 10, onSnapshot: vi.fn() });
+    expect(poller.state()).toEqual({
+      sessions: [],
+      lastSuccessAt: null,
+      lastPollFailed: false,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const afterSuccess = poller.state();
+    expect(afterSuccess.sessions).toHaveLength(1);
+    expect(afterSuccess.lastSuccessAt).not.toBeNull();
+    expect(afterSuccess.lastPollFailed).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(10);
+    poller.stop();
+    const afterFailure = poller.state();
+    expect(afterFailure.lastPollFailed).toBe(true);
+    expect(afterFailure.lastSuccessAt).toBe(afterSuccess.lastSuccessAt);
+    expect(afterFailure.sessions).toHaveLength(1);
+  });
+
   it("only reports a snapshot when something changed", async () => {
     const onSnapshot = vi.fn();
     const poller = createPoller({

@@ -2,8 +2,11 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
+import { createActionTracker } from "./actions.js";
 import { createPoller, runClaudeAgents } from "./poller.js";
 import { resolvePrograms } from "./programs.js";
+import { toSessionView } from "./rules.js";
+import { parseSessions } from "./schema.js";
 import { startServer } from "./server.js";
 import { createFileStore } from "./store.js";
 import { createSessionTracker } from "./tracker.js";
@@ -16,7 +19,16 @@ function browserCommand(url: string): [string, string[]] {
   return ["xdg-open", [url]];
 }
 
-const server = await startServer({ preferredPort: DEFAULT_PORT });
+// The tracker needs the poller, which needs the server, so the server reads the tracker through
+// this holder once it exists.
+const actionsRef: { current?: ReturnType<typeof createActionTracker> } = {};
+const server = await startServer({
+  preferredPort: DEFAULT_PORT,
+  onAction: (request) =>
+    actionsRef.current === undefined
+      ? Promise.resolve({ outcome: "unavailable", message: "Not ready yet." })
+      : actionsRef.current.handle(request),
+});
 const tracker = createSessionTracker({ store: createFileStore() });
 const programs = resolvePrograms();
 if (programs.claude === null) {
@@ -30,6 +42,16 @@ const poller = createPoller({
   onSnapshot: server.publish,
   track: tracker.update,
   enrich: createMetadataReader().enrich,
+});
+// Executors for each action arrive in later build steps, so for now every action is unavailable.
+actionsRef.current = createActionTracker({
+  listing: () => poller.state(),
+  freshListing: async () =>
+    parseSessions(await runClaudeAgents(programs.claude)).sessions.map(
+      toSessionView,
+    ),
+  executors: {},
+  isProtected: () => false,
 });
 poller.start();
 

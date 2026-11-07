@@ -4,6 +4,7 @@ import type { SessionView, Snapshot } from "../shared/protocol.js";
 import { sessionLaunchEnv } from "./programs.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
+import type { ListingState } from "./actions.js";
 import type { TrackedSessions } from "./tracker.js";
 import type { EnrichResult } from "./transcripts.js";
 
@@ -63,6 +64,8 @@ export interface PollerOptions {
 export interface Poller {
   start: () => void;
   stop: () => void;
+  /** The latest listing and its freshness, for the action tracker. */
+  state: () => ListingState;
 }
 
 export function createPoller({
@@ -76,6 +79,8 @@ export function createPoller({
   let running = false;
   let sessions: SessionView[] = [];
   let warnings: string[] = [];
+  let lastSuccessAt: number | null = null;
+  let lastPollFailed = false;
   let listedLastPoll = new Set<string>();
   let lastReported: string | undefined;
 
@@ -106,8 +111,11 @@ export function createPoller({
         ...enriched.warnings,
         ...tracked.warnings,
       ];
+      lastSuccessAt = Date.now();
+      lastPollFailed = false;
       if (running) report(null);
     } catch {
+      lastPollFailed = true;
       if (running) report(POLL_FAILED);
     }
     if (running) timer = setTimeout(() => void tick(), intervalMs);
@@ -122,6 +130,9 @@ export function createPoller({
     stop() {
       running = false;
       clearTimeout(timer);
+    },
+    state() {
+      return { sessions, lastSuccessAt, lastPollFailed };
     },
   };
 }

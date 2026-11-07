@@ -9,10 +9,21 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import type { WSContext } from "hono/ws";
+import { z } from "zod";
+import {
+  ACTION_NAMES,
+  type ActionRequest,
+  type ActionResult,
+} from "./actions.js";
 import type { Snapshot, SnapshotMessage } from "../shared/protocol.js";
 
 const LOOPBACK = "127.0.0.1";
 const PORT_ATTEMPTS = 20;
+const MAX_ACTION_BODY = 4096;
+
+const actionRequestSchema = z
+  .object({ action: z.enum(ACTION_NAMES), key: z.string().max(64) })
+  .strict();
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -25,6 +36,8 @@ const CONTENT_TYPES: Record<string, string> = {
 export interface ServerOptions {
   preferredPort: number;
   webDir?: string;
+  /** Runs a session action. Without it, actions are reported as unavailable. */
+  onAction?: (request: ActionRequest) => Promise<ActionResult>;
 }
 
 export interface RunningServer {
@@ -181,6 +194,41 @@ export async function startServer(
       },
     })),
   );
+
+  // Actions change sessions, so they need the cookie checked above, plus a JSON POST from the
+  // dashboard's own origin (NFR-6). The tracker validates the key and applies the action rules.
+  app.post("/api/actions", async (c) => {
+    if (c.req.header("origin") !== `http://${expectedHost()}`) {
+      return c.json({ outcome: "refused", message: "Forbidden" }, 403);
+    }
+    const contentType = c.req.header("content-type") ?? "";
+    if (
+      contentType.split(";")[0]?.trim().toLowerCase() !== "application/json"
+    ) {
+      return c.json({ outcome: "refused", message: "Expected JSON" }, 415);
+    }
+    const text = await c.req.text();
+    if (text.length > MAX_ACTION_BODY) {
+      return c.json({ outcome: "refused", message: "Request too large" }, 400);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return c.json({ outcome: "refused", message: "Invalid request" }, 400);
+    }
+    const request = actionRequestSchema.safeParse(parsed);
+    if (!request.success) {
+      return c.json({ outcome: "refused", message: "Invalid request" }, 400);
+    }
+    if (options.onAction === undefined) {
+      return c.json(
+        { outcome: "unavailable", message: "Actions aren't available." },
+        503,
+      );
+    }
+    return c.json(await options.onAction(request.data), 200);
+  });
 
   app.get("*", (c) => {
     const path = c.req.path === "/" ? "/index.html" : c.req.path;
