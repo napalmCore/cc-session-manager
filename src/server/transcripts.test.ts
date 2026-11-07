@@ -133,10 +133,60 @@ ${newer}
     expect(metadata).toEqual({});
   });
 
-  it("flags a likely format change only when lines parsed without a timestamp", () => {
-    expect(extractMetadata(`${assistant}\n`).formatChanged).toBe(false);
-    expect(extractMetadata("").formatChanged).toBe(false);
-    expect(extractMetadata(`{"other":1}\n`).formatChanged).toBe(true);
+  describe("format change warning", () => {
+    const headerTypes = [
+      "mode",
+      "permission-mode",
+      "session-owner",
+      "atis-latch",
+      "file-history-snapshot",
+      "ai-title",
+      "agent-name",
+      "artifact-comment-monitor",
+    ];
+    const header = headerTypes
+      .map((type) => JSON.stringify({ type }))
+      .join("\n");
+
+    it("isn't raised for a normal transcript or an empty one", () => {
+      expect(extractMetadata(`${assistant}\n`).formatChanged).toBe(false);
+      expect(extractMetadata("").formatChanged).toBe(false);
+    });
+
+    it.each(headerTypes)("isn't raised for a %s header line", (type) => {
+      const line = JSON.stringify({ type });
+      expect(extractMetadata(`${line}\n`).formatChanged).toBe(false);
+    });
+
+    it("isn't raised for a new transcript with only header lines", () => {
+      expect(extractMetadata(`${header}\n`).formatChanged).toBe(false);
+    });
+
+    it.each([
+      ["a message without a timestamp", { message: { model: "m" } }],
+      ["an unreadable timestamp", { timestamp: "soon", message: {} }],
+      [
+        "a renamed timestamp and message",
+        { type: "assistant", ts: 1, msg: {} },
+      ],
+      [
+        "fields moved under another key",
+        { type: "user", data: { timestamp: "x" } },
+      ],
+      ["an unknown line type", { type: "something-new" }],
+      ["a line with no type", { other: 1 }],
+      ["a non-string type", { type: 5 }],
+    ])("is raised for %s", (_label, fields) => {
+      const line = JSON.stringify(fields);
+      expect(extractMetadata(`${header}\n${line}\n`).formatChanged).toBe(true);
+    });
+
+    it("isn't raised once any line has a usable timestamp", () => {
+      const line = JSON.stringify({ type: "something-new" });
+      expect(extractMetadata(`${line}\n${assistant}\n`).formatChanged).toBe(
+        false,
+      );
+    });
   });
 });
 
@@ -259,7 +309,7 @@ describe("createMetadataReader", () => {
   });
 
   it("warns once when transcripts appear to have changed format", async () => {
-    writeTranscript(`{"other":1}\n`);
+    writeTranscript(`{"message":{}}\n`);
     const reader = createMetadataReader(root);
 
     const { warnings } = await reader.enrich([view(ID), view(ID)]);

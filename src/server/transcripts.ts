@@ -39,6 +39,23 @@ export interface EnrichResult {
   warnings: string[];
 }
 
+/** Line types seen before the first timestamp in real transcripts on 2026-11-06. */
+const HEADER_LINE_TYPES = new Set([
+  "mode",
+  "permission-mode",
+  "session-owner",
+  "atis-latch",
+  "file-history-snapshot",
+  "ai-title",
+  "agent-name",
+  "artifact-comment-monitor",
+]);
+
+function isKnownHeaderLine(value: unknown): boolean {
+  const type = (value as { type?: unknown }).type;
+  return typeof type === "string" && HEADER_LINE_TYPES.has(type);
+}
+
 export function isValidSessionId(value: string): boolean {
   return SESSION_ID.test(value);
 }
@@ -53,7 +70,7 @@ export function claudeProjectsDirectory(
 export function extractMetadata(text: string): Extraction {
   const metadata: TranscriptMetadata = {};
   const lines = text.split("\n");
-  let parsedLines = 0;
+  let unexplainedLines = 0;
 
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
@@ -67,7 +84,7 @@ export function extractMetadata(text: string): Extraction {
     }
     const result = lineSchema.safeParse(value);
     if (!result.success || Array.isArray(value)) continue;
-    parsedLines += 1;
+    if (!isKnownHeaderLine(value)) unexplainedLines += 1;
 
     const { gitBranch, timestamp, message } = result.data;
     if (metadata.gitBranch === undefined && gitBranch) {
@@ -97,7 +114,10 @@ export function extractMetadata(text: string): Extraction {
 
   return {
     metadata,
-    formatChanged: parsedLines > 0 && metadata.lastActivityAt === undefined,
+    // A new transcript starts with header lines that have no timestamp. Any other
+    // line without one suggests the format changed, so unknown lines warn.
+    formatChanged:
+      unexplainedLines > 0 && metadata.lastActivityAt === undefined,
   };
 }
 

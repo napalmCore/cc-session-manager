@@ -24,6 +24,6 @@ The owner asked on 2026-11-06 for live checks and validation to be run by indepe
 ## Consequences
 
 - A real detached HEAD, or a repository created after a session started, shows as "Branch unavailable".
-- Sessions that start in an existing repository should still show their branch name. This comes from reading the CLI's code, and hasn't been seen live.
+- Sessions that start in an existing repository show their branch name. This was seen live with `claude -p`, but not yet with a long-running interactive session.
 - Finished sessions show as unnamed after a restart unless the CLI still lists them, and are identified by project folder.
 - Live names, which come from the CLI, can still show prompt text on the page until a title is generated. Screen-reader announcements can read them too.

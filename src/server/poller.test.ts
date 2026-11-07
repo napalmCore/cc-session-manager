@@ -250,13 +250,16 @@ describe("createPoller", () => {
       expect(results[2]).toEqual([]);
     });
 
-    it("forgets a session that was absent from the last poll", async () => {
+    // This is what lets a session that keeps leaving the list avoid the warning (BUG-19).
+    it("treats a session absent from the last poll as new, then warns", async () => {
       const results = await warningsPerPoll([
         [listing("a")],
         [],
         [noStatus("a")],
+        [noStatus("a")],
       ]);
       expect(results[2]).toEqual([]);
+      expect(results[3]).toEqual([expect.stringContaining("status")]);
     });
 
     it("remembers known sessions across a failed poll", async () => {
