@@ -1,6 +1,6 @@
 # Requirements
 
-- **Status:** Iteration 1 tested on 2026-11-06. Iteration 2 requirements below are a draft under review.
+- **Status:** Iteration 1 tested on 2026-11-06. Iteration 2 requirements signed off on 2026-11-06.
 - **Scope:** Iteration 1 is live monitoring. Iteration 2 adds desktop notifications and session control. Windows first.
 
 ## Functional requirements
@@ -115,13 +115,13 @@ The [agent view docs](https://code.claude.com/docs/en/agent-view) and [sessions 
 
 | ID   | Question                                                                                                                                                                                                                                                    | Resolve in |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| U-6  | Resolved: `claude attach` opens working, blocked, done, and stopped sessions, restarting an exited one. It exits with code 1 for a failed session that can't start, a bad ID, or an untrusted folder. See design.md.                                        | Done       |
+| U-6  | Partly resolved: per the CLI code and one investigation, `claude attach` opens working, blocked, done, and stopped sessions, and exits with code 1 when it can't start one. This isn't in the logs, so Testing confirms it.                                 | Testing    |
 | U-7  | Resolved: Ctrl+Break closes the session cleanly. See design.md.                                                                                                                                                                                             | Done       |
 | U-8  | Resolved: notifications work from `http://127.0.0.1`, and the policy is unchanged with no icon. A real notification click is untested.                                                                                                                      | Done       |
-| U-9  | Resolved: resume runs in the session's original folder, and needs a transcript. See design.md.                                                                                                                                                              | Done       |
+| U-9  | Partly resolved: resume works in the folder it's started in, so it runs in the session's original folder, and needs a transcript. This isn't in the logs, so Testing confirms it.                                                                           | Testing    |
 | U-10 | When does plain `claude rm` keep a session, and what does it remove? The docs say it keeps a session with uncommitted changes or unconfirmed commits, a worktree in use or locked, or on a git or hook failure. Ignored and untracked files aren't settled. | Testing    |
 | U-11 | Resolved: compare the process start time with `startedAt` while holding a handle. See design.md.                                                                                                                                                            | Done       |
-| U-12 | Resolved: `stop`, `rm`, and `attach` exit with code 1 on a bad ID, and `rm` with code 1 on a refusal, per the CLI code. Force end includes the session's children, by decision 0015.                                                                        | Done       |
-| U-13 | Resolved: `claude stop` is safe on every background state and always exits 0.                                                                                                                                                                               | Done       |
+| U-12 | Resolved: per the CLI code, `rm` exits with code 1 when it keeps a session and when it can't remove one. Force end covers the session's descendants, by decision 0015.                                                                                      | Done       |
+| U-13 | Resolved in design: `claude stop` is offered on every background state, and success comes from the listing. Its exit codes aren't in the logs, so Testing confirms them.                                                                                    | Testing    |
 | U-14 | Resolved: the listing has no field that separates IDE or desktop sessions.                                                                                                                                                                                  | Done       |
 | U-15 | Resolved: a second start hands over to the running instance, by decision 0015.                                                                                                                                                                              | Done       |

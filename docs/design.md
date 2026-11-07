@@ -126,132 +126,241 @@ Each step is a separate pull request. The owner approved steps 1 to 7, and since
 
 ## Iteration 2 design
 
-- **Status:** Draft, not yet reviewed
+- **Status:** Draft, under review
 - **Requirements:** FR-11 to FR-22, C-8 to C-11, NFR-6 to NFR-10 in [requirements.md](requirements.md)
 - **Decisions:** [0014](decisions/0014-iteration-2-scope.md), [0015](decisions/0015-iteration-2-design.md)
 
-Facts below come from tests on Windows 11 with Claude Code 2.1.319, installed through npm, on 2026-11-07, unless they're marked as coming from the docs.
+### Evidence
+
+An investigator agent tested on Windows 11 with Claude Code 2.1.319, installed through npm, on 2026-11-07. A reviewer then audited its logs.
+
+- **Supported by the logs:**
+  - Ctrl+Break closed the session in all 5 trials, in 0.4 to 1.8 seconds, and kept the transcript.
+  - Two processes started 1.1 and 1.4 seconds before `startedAt`.
+  - `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID` reach programs a session starts.
+  - A planted program runs on an unqualified launch, and doesn't on an absolute one.
+  - `wt` splits on `;` and expands `%VAR%`.
+  - Browser notifications work from `http://127.0.0.1`.
+  - Per the CLI code, `claude rm` has two different exit-1 cases.
+- **Weakly supported:**
+  - One permission-prompt trial, which suggests Ctrl+Break doesn't approve the prompt.
+- **Not in the logs, and needing a check in Implementation or Testing:**
+  - The leftover "Terminate batch job (Y/N)?" prompt, and whether the parent shell survives a break.
+  - Which states `claude attach` opens, and resume folder behavior.
+  - The `claude stop` exit codes.
+  - Any trial of the PowerShell helper. Every Ctrl+Break trial used a compiled C# helper.
+  - Notification delivery to a hidden tab, and a real notification click.
 
 ### New components
 
-| Component            | Responsibility                                                                                                                                                                                |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Program resolver     | Finds absolute paths for `claude.exe`, `wt.exe`, `cmd.exe`, and `powershell.exe` at startup, without searching any session's folder (C-11).                                                   |
-| Action route         | Accepts `POST /api/actions` with an action name and a session key, applies the access and action rules, and returns a result in the tool's own words.                                         |
-| Action planner       | Builds a fixed command from the server's own data, never from page text (NFR-7).                                                                                                              |
-| Process helper       | A PowerShell script shipped with the tool. It checks that a process ID still belongs to a session while holding a handle on it, sends Ctrl+Break, or force-ends the session and its children. |
-| Self-protection      | Records at startup which session started the tool, and blocks Stop, Delete, and End on it (FR-22).                                                                                            |
-| Single-instance lock | Lets a second start hand over to the running instance, so the port, and the browser's notification permission, stay stable.                                                                   |
-| Notifier             | Runs in the page. Compares snapshots, shows browser notifications, and handles clicks.                                                                                                        |
+| Component            | Responsibility                                                                                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Program resolver     | Finds absolute paths for `claude.exe`, `wt.exe`, `cmd.exe`, and `powershell.exe` at startup, without searching any session's folder (C-11).                                             |
+| Action route         | Accepts `POST /api/actions`, applies the access and action rules, and returns a result in the tool's own words.                                                                         |
+| Action planner       | Builds a fixed command from the server's own data, never from page text (NFR-7).                                                                                                        |
+| Action tracker       | Holds per-session action state on the server: the one-action lock, normal-close records for Force end, and own-action markers for notifications.                                        |
+| Process helper       | A PowerShell script shipped with the tool. It checks that a process still belongs to a session while holding a handle, sends Ctrl+Break, or force-ends the session and its descendants. |
+| Self-protection      | Keeps the set of sessions that started or handed over to the tool, and blocks Stop, Delete, and End on them (FR-22).                                                                    |
+| Single-instance lock | Lets a second start hand over to the running instance, so the port and the browser's notification permission stay stable.                                                               |
+| Notifier             | Runs in the page. Compares snapshots, shows browser notifications, and handles clicks. One tab notifies at a time.                                                                      |
 
-### Access rules for actions
+### Access rules for actions (NFR-6, NFR-7)
 
-- Only `POST` with a JSON body. A missing or mismatched `Origin` or `Host`, or a missing session cookie, is rejected. Reads and page loads can't trigger an action, and the existing `frame-ancestors 'none'` stays (NFR-6).
-- The session key must be a short `id` of 8 hex characters, or a `sessionId` UUID (NFR-7).
-- Only one action runs per session at a time, and none retries automatically (NFR-10).
+- **Request format:** only `POST` with `Content-Type: application/json`, and a body holding exactly an action name and a session key. Unknown fields are rejected.
+- **Rejected requests:** a missing or invalid session cookie, or a missing or mismatched `Origin` or `Host`. Reads and page loads can't trigger an action, and `frame-ancestors 'none'` stays.
+- **Session key:** a short `id` of 8 hex characters, or a `sessionId` UUID.
+- **One action at a time:** the action tracker allows one action per session, keyed by `sessionId` when known, and nothing retries automatically (NFR-10).
 
 ### Freshness and recheck (C-9)
 
-- Stop, Delete, End, Force end, and Resume are blocked if the latest poll failed, or the last successful listing is more than 10 seconds old, which is two poll cycles plus a margin.
-- Before running one of those, the server takes a fresh listing and rechecks that the session is still there with the same kind, state or status, process ID, and session ID. Open by short `id` skips this, because it's non-destructive.
+- **Freshness:** Stop, Delete, End, Force end, and Resume are blocked if the latest poll failed, or the last successful listing is more than 10 seconds old.
+- **Fresh listing:** before running one of them, the server takes a fresh listing, with a 10-second timeout.
+- **Recheck for Stop, Delete, End, and Force end:** the session must still be listed with the same kind, process ID, and session ID, and its current state or status must still permit the action. An exact match on status isn't required, because a busy session changes status within seconds.
+- **Recheck for Resume:** the session must still be absent from the listing. That shows it isn't live, which matters because the CLI allows two resumes of one session at once.
+- **Open by short `id`:** skips freshness and recheck, because it's non-destructive.
 
 ### Program resolution (C-11)
 
-- **`claude.exe`:** scan only absolute entries in `PATH`, using `lstat`. For an npm install, the `claude.cmd` folder contains `node_modules\@anthropic-ai\claude-code\bin\claude.exe`, and the tool launches that file directly, with no shell. A native install's `claude.exe` is used as found. If neither exists, Open, Stop, and Delete are unavailable, and the page says why.
+- **`claude.exe`:**
+  - Scan only absolute entries in `PATH`, using `lstat`.
+  - For an npm install, the folder with `claude.cmd` contains `node_modules\@anthropic-ai\claude-code\bin\claude.exe`, which the tool launches directly, with no shell. A native install's `claude.exe` is used as found.
+  - The resolved path must contain no `;`, `%`, or `"`, because `wt` treats those specially.
+  - If resolution fails, monitoring falls back to the iteration 1 method, running `claude` through a shell from the home folder, with a banner saying the actions are unavailable. This covers other installers, such as pnpm, volta, or scoop.
 - **`wt.exe`:** `%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe`, checked with `lstat`, because it's an app execution alias that `stat` can't read.
-- **`cmd.exe` and `powershell.exe`:** their fixed paths under `%SystemRoot%\System32`.
-- Node applies `NoDefaultCurrentDirectoryInExePath` from its own environment, so tests run the tool without it and plant a fake program in the session's folder.
-- The iteration 1 poller still runs `claude` through a shell from the home folder. It moves to the resolved `claude.exe`, with no shell.
+- **`cmd.exe` and `powershell.exe`:** under the System32 folder, which the tool gets from the operating system rather than the `SystemRoot` variable.
+- **Poller:** it moves to the resolved `claude.exe` when one is found.
+- **Tests:** Node applies `NoDefaultCurrentDirectoryInExePath` from its own environment, so tests run the tool without it and plant a fake program in the session's folder.
 
 ### Launching a terminal (FR-14)
 
-- **Environment:** every `CLAUDE*` variable is removed, because a `claude` started with `CLAUDE_CODE_CHILD_SESSION` or `CLAUDECODE` set isn't listed.
-- **Windows Terminal:** `wt.exe -w new -d . -- <claude.exe> attach <id>`, with the session's folder as the process's working directory, never in command text. `-w new` opens a new window rather than a tab in an existing one. `wt` splits on `;` even after `--`, which validated IDs can't contain.
-- **Fallback console:** `cmd.exe /d /c start "" "<claude.exe>" attach <id>`, with the same working directory and environment.
-- **Resume:** `claude.exe --resume <sessionId>` started in the session's original folder. A session resumed from another folder works in that other folder. Resume is offered only when the transcript exists, because a session ended before its first prompt has none, and only when the current listing doesn't show that session as live, because the CLI allows two resumes at once. If the original folder no longer exists, Resume is refused.
-- **Result:** "terminal started". `wt.exe` exits 0 even when its arguments are wrong, and `claude attach` failures show in the new terminal, with exit code 1.
-- **Repeated clicks:** a second Open for the same session is ignored for 10 seconds.
+- **Environment:** remove only the variables that mark a running session, so that a launched `claude` is listed: `CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, `CLAUDE_CODE_ENTRYPOINT`, every `CLAUDE_CODE_MESSAGING_*`, `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_JOB_DIR`, and `CLAUDE_CODE_EXECPATH`. User settings, such as `CLAUDE_CONFIG_DIR`, are kept. The poller removes the same set. The list needs reviewing when Claude Code changes.
+- **Windows Terminal:** `wt.exe -w new -d . -- <claude.exe> attach <id>`, with the session's folder as the process's working directory, never in command text. `-w new` opens a new window rather than a tab.
+- **Fallback console:** `cmd.exe /d /c start "" "<claude.exe>" attach <id>`, passed as one exact string with Node's verbatim-arguments option, with the same working directory and environment.
+- **Resume:**
+  - Runs `claude.exe --resume <sessionId>` in the session's original folder.
+  - Offered only when the session's transcript exists, the original folder still exists, and the recheck passes.
+- **Result:** "terminal started", because `wt.exe` exits 0 even when its arguments are wrong, and a `claude attach` failure shows in the new terminal.
+- **Repeated clicks:** a second Open or Resume for the same session within 10 seconds is ignored, and the page says a terminal was just started.
 
 ### Stop and Delete (FR-15, FR-16)
 
-- **Stop:** `claude.exe stop <id>`, offered on every background state, because it's safe on each one.
+- **Stop:** `claude.exe stop <id>`, offered on every background state.
 - **Delete:** `claude.exe rm <id>`, never with `--discard-unpushed` or `--force-remove-worktree` (C-8).
-- **Timeout:** 15 seconds for both.
-- **Exit code:** `stop` exits 0 even when it changes nothing, so success comes from the next listing.
+- **Timing:** both have a 15-second timeout. Afterwards, the tool watches the listing for up to 15 seconds, because Stop takes effect asynchronously.
 
-| Action | Exit code | Next listing                                             | Result                       |
-| ------ | --------- | -------------------------------------------------------- | ---------------------------- |
-| Stop   | Any       | State is `stopped`, `done`, or `failed`, with no process | Succeeded                    |
-| Delete | 0         | Row gone                                                 | Succeeded                    |
-| Delete | Non-zero  | Row still there                                          | Kept, with the FR-16 message |
-| Either | Any       | Poll failed, or the command timed out                    | Unknown                      |
+| Action | Exit code                 | Listing within 15 seconds                       | Result                                                 |
+| ------ | ------------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| Stop   | Any                       | `stopped`, `done`, or `failed`, with no process | Succeeded                                              |
+| Stop   | Any                       | Still `working` or `blocked`                    | Failed                                                 |
+| Delete | 0                         | Row gone                                        | Succeeded                                              |
+| Delete | Non-zero, "kept" message  | Row still there                                 | Kept, with the FR-16 message                           |
+| Delete | Non-zero, other message   | Row still there                                 | Failed, try again later                                |
+| Delete | 0                         | Row still there                                 | Unknown                                                |
+| Delete | Non-zero                  | Row gone                                        | Succeeded, with a note that the CLI reported a problem |
+| Any    | Timeout, or polls failing | Any                                             | Unknown                                                |
+
+Telling the two non-zero Delete cases apart relies on the CLI's message, so a change in its wording only turns "Kept" into "Failed".
 
 ### Ending an interactive session (FR-17)
 
-The helper runs as `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script> <arguments>`, with validated numeric arguments only. It frees its own console before attaching to the target's, and registers a handler so the break doesn't end the helper itself. Each run adds about 0.6 seconds.
+**Helper:**
+
+- Runs as `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script> <arguments>`.
+- The script lives in the tool's own folder, and runs with that folder as its working directory. Its arguments are numbers only.
+- It frees its own console before attaching to the target's, and registers a handler so the break doesn't end the helper.
+- It has a 10-second timeout.
+- A Group Policy execution policy, or Constrained Language Mode, can block it, and End is then unavailable, with a message saying so.
+- **Implementation step 1:** prove the helper, since no trial used it. If it doesn't work, the owner decides between the tested compiled helper and other options.
 
 **Ownership check, run before each signal:**
 
 1. Take a fresh listing.
 2. Open a handle to the process ID, and keep it open until the signal is sent.
 3. Through that handle, require all of these:
-   - The process image is `claude.exe` at the resolved path, or another `claude.exe`.
-   - The process started no more than 5 seconds before the listing's `startedAt`, and no later than 1 second after it. Tests found it starts 0.9 to 1.4 seconds before.
+   - The image file name is `claude.exe`.
+   - The process started no more than 5 seconds before the listing's `startedAt`, and no later than 1 second after it.
    - The listing still shows the same `kind` and `sessionId` for that process ID.
 4. If any check fails, refuse.
 
-**Console members check:** a console event reaches every process on that console. The helper lists them, and refuses if any is neither the session, its ancestors, nor its descendants.
+Two trials support the start-time window. Testing must also cover slow starts and sessions with MCP servers, where a correct session could be refused.
 
-**Normal close:** Ctrl+Break to the session's console. In tests, it exited cleanly in 0.4 to 1.8 seconds, idle, busy, or at a permission prompt, and kept the transcript. A pending permission prompt wasn't approved. On npm installs, the terminal is left showing "Terminate batch job (Y/N)?", and the dialog says so. The tool waits 5 seconds, and if the session is still listed, it offers Force end.
+**Console members check:** a console event reaches every process on the console. The helper lists them, and refuses if any is neither the session, its ancestors, nor its descendants. What a break does to a Git Bash or cmd parent shell needs testing.
 
-**Force end:** the same ownership check, then the session and those of its descendants that started after it. Descendants are found from the process parent links, each checked by start time, because process IDs get reused. Each is ended through its own handle. The parent shell and terminal are left alone. The dialog says that programs the session started, such as dev servers, are also ended.
+**Normal close:**
 
-Tests found no case where Ctrl+Break failed to close the session, so the fallback to a Force-only End isn't needed.
+- Ctrl+Break to the session's console.
+- The action tracker records the session ID, process ID, process start time, and the time it was sent.
+- The tool waits 5 seconds. If the session is still listed, the page offers Force end, so a `SessionEnd` hook that's still running could see Force end offered.
+
+**Force end:**
+
+- The server accepts it only for the same session ID, process ID, and start time as a normal close sent within the last 2 minutes (NFR-10).
+- The helper repeats the ownership check, finds the session's descendants through process parent links, and checks each one's start time against its parent's.
+- It opens every handle first, then ends the session and its descendants. The parent shell and terminal are left alone.
+- The dialog says programs the session started, such as dev servers, are also ended.
+
+**End results:**
+
+| Outcome                                        | Result                                             |
+| ---------------------------------------------- | -------------------------------------------------- |
+| Ownership or console check failed              | Refused, with the reason                           |
+| Session no longer listed within 5 seconds      | Succeeded                                          |
+| Still listed after 5 seconds                   | Not closed, offering Force end                     |
+| Force end, and session gone within 5 seconds   | Succeeded                                          |
+| Helper failed, timed out, or blocked by policy | Failed, or unavailable for policy, with the reason |
+| Polls failing                                  | Unknown                                            |
 
 ### Self-protection (FR-22)
 
-- At startup, the tool records `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, and that process's start time. These are documented variables, and they survive the parent exiting.
-- A row matching that session ID, or that process ID with the same start time, gets no Stop, Delete, or End, and the server refuses them.
-- If `CLAUDECODE` or `CLAUDE_CODE_CHILD_SESSION` is set but no row matches, Stop, Delete, and End are blocked for every session, with a banner explaining why. Open still works.
+- **At startup:** the tool records `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, and that process's start time. These variables survive the parent exiting.
+- **On handover:** a second start's matching values are sent with the handover and added to the protected set.
+- **Protected rows:** a row matching a protected session ID, or a protected process ID with the same start time, gets no Stop, Delete, or End, and the server refuses them.
+- **Unknown session:** if `CLAUDECODE` or `CLAUDE_CODE_CHILD_SESSION` is set but no row matches, Stop, Delete, and End are blocked for every session, with a banner explaining why. Open still works.
 
 ### Single instance (U-15)
 
-- At startup, the tool writes `instance.json` to its data folder, with its process ID and start time, port, and a random handover secret.
-- A second start that finds a live instance asks it, using the secret, for a new one-time sign-in link, opens the browser on it, and exits.
-- If the file is stale or the instance doesn't answer, the tool starts normally and replaces the file. The handover secret is no stronger than the store file, because any program running as the same user can read both.
+- **Lock file:** at startup, the tool creates `instance.json` in its data folder, with exclusive creation so two starts can't both win. It holds the tool's process ID and start time, port, and a random handover secret.
+- **Handover:** a second start sends `POST /api/handover` with the secret, and its own session values if any.
+  - The route requires the correct `Host`, rejects any request with a browser `Origin`, and compares the secret in constant time.
+  - It returns a one-time sign-in link that's valid for 60 seconds, which the second start opens before exiting.
+  - It's an exception to NFR-2's single token, for the same user only.
+- **Stale lock:** if the lock's process is gone or doesn't answer, the tool replaces the file and starts normally.
+- **Exposure:** the secret is as exposed as the store file, because any program running as the same user can read both.
 
 ### Notifications (FR-11 to FR-13, FR-21)
 
-- The page compares each new snapshot with the last successful one. The first successful snapshot only sets the starting point, and the comparison carries across reconnects.
+- **Sequence numbers:** the server stamps each snapshot with a sequence number, and includes own-action markers: the sessions with an action from the dashboard in the last 30 seconds.
+- **Comparison:** a tab compares each new snapshot with the last successful one. The first successful snapshot only sets the starting point, and the comparison carries across reconnects.
+- **Leader tab:** only the tab holding a Web Locks API lock shows notifications. If that tab closes, another takes over.
 
-| Event               | Notifies when                                                                                              |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Needs you           | A session enters Needs you, or its specific reason changes. A fallback to the generic label doesn't count. |
-| Finished            | A background session moves to `done` or `stopped`                                                          |
-| Failed              | A session moves to `failed`. This doesn't also count as finished.                                          |
-| Can't read sessions | A poll fails after the last one succeeded. Only once until polling recovers.                               |
+| Event               | Notifies when                                                                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Needs you           | A session enters Needs you, including one that first appears already needing the user, or its specific reason changes. A fallback to the generic label, and Stale sessions, don't count. |
+| Finished            | A background session moves to `done` or `stopped`                                                                                                                                        |
+| Failed              | A session moves to `failed`. This doesn't also count as finished.                                                                                                                        |
+| Can't read sessions | Three polls in a row fail after a success. Only once until polling recovers.                                                                                                             |
 
-- **Own actions:** for 30 seconds after the user's own Stop, Delete, or End on a session, that session's changes don't notify.
+- **Own actions:** sessions in an own-action marker don't notify. This works across tabs, because the server sends the marker.
 - **Content:** a session notification shows the project folder name and the reason. A read failure says only that. There's no icon, so the Content Security Policy is unchanged.
-- **Tabs:** events in one snapshot are combined. Each notification has a tag built from its events, so other tabs replace it instead of adding another.
-- **Click:** the click brings the tab up with `window.focus()`, as far as the browser allows, and highlights the rows that are still listed.
-- **Permission:** notifications are turned on with a page button, which is the only place the browser's permission prompt can appear. Tests found notifications work from `http://127.0.0.1`, which counts as a secure context. Clicking a real notification hasn't been tested.
+- **Combining:** events in one snapshot are combined. The notification tag includes the snapshot's sequence number, so a recurring event alerts again.
+- **Permission:** the page has a button to turn notifications on, which is the only place the browser's prompt can appear. If permission is denied or unavailable, the button says so, and the page works as before. Turning notifications on doesn't send earlier events.
+- **Click:** brings the tab up with `window.focus()`, as far as the browser allows, and highlights the rows still listed.
 
 ### Dashboard changes
 
-- Each row has action buttons. Risky actions open a React Aria alert dialog that identifies the session (FR-19). Focus returns to the row afterward (NFR-8).
-- Results appear in the existing announcement region and next to the row.
-- Live interactive rows show their process ID (FR-20).
+- **Row buttons:** risky actions open a React Aria alert dialog, which identifies the session (FR-19).
+  - Stop says work in progress is interrupted and the conversation is kept.
+  - Delete says the session is removed and its work stops, and that a worktree Claude created is removed when that's safe.
+  - End and Force end say work in progress can be lost, and Force end also says it ends programs the session started.
+- **Focus:** returns to the row afterward, or to the group heading if the row has gone (NFR-8).
+- **Results:** appear in the existing announcement region and next to the row.
+- **Live interactive rows:** show their process ID (FR-20). A row with neither ID has no Open.
+
+### Requirements coverage
+
+| Requirements          | Covered by                                                  |
+| --------------------- | ----------------------------------------------------------- |
+| FR-11 to FR-13, FR-21 | Notifications                                               |
+| FR-14, FR-20          | Program resolution, launching a terminal, dashboard changes |
+| FR-15, FR-16, FR-18   | Stop and Delete, End results                                |
+| FR-17                 | Ending an interactive session                               |
+| FR-19                 | Dashboard changes                                           |
+| FR-22                 | Self-protection, single instance                            |
+| C-8, C-11             | Stop and Delete, program resolution                         |
+| C-9                   | Freshness and recheck                                       |
+| C-10                  | No hooks or prompts in any component                        |
+| NFR-6, NFR-7          | Access rules for actions                                    |
+| NFR-8                 | Dashboard changes                                           |
+| NFR-9                 | Security review before release                              |
+| NFR-10                | Action tracker, Force end, timeouts                         |
+
+### Build plan
+
+Each step is a separate pull request, approved by an independent agent before merge.
+
+| Step | Pull request                                                                  | Covers                   |
+| ---- | ----------------------------------------------------------------------------- | ------------------------ |
+| 1    | Prove the PowerShell helper on throwaway sessions                             | FR-17                    |
+| 2    | Program resolver and safe launch, with planted-program and hostile-name tests | C-11, NFR-7              |
+| 3    | Action route, tracker, freshness, and recheck                                 | NFR-6, NFR-10, C-9       |
+| 4    | Open and Resume                                                               | FR-14, FR-20             |
+| 5    | Stop and Delete                                                               | FR-15, FR-16, FR-18, C-8 |
+| 6    | End and Force end                                                             | FR-17                    |
+| 7    | Self-protection and single instance                                           | FR-22                    |
+| 8    | Notifications                                                                 | FR-11 to FR-13, FR-21    |
+| 9    | Dashboard actions, dialogs, and accessibility                                 | FR-19, NFR-8             |
 
 ### Testing approach
 
-- **Unit tests:** the planner, validation, the freshness rule, result rules, notification rules, self-protection, and program resolution, including hostile folder names.
-- **Browser tests:** dialogs, keyboard use, and suppression after the user's own actions.
-- **Windows tests:** the process helper, with throwaway processes. A planted-program test runs without `NoDefaultCurrentDirectoryInExePath`.
-- **Live checks:** each action, the notification click by hand, and `claude rm` on a real worktree with uncommitted, untracked, and ignored files (U-10).
-
-### Open items
-
-- **U-10:** what `claude rm` keeps or removes in a Claude-created worktree hasn't been observed, so it moves to Testing.
-- **Notification clicks:** `window.focus()` from a real notification click moves to Testing.
-- **PowerShell:** it may be blocked by policy on some PCs. The helper then fails with a clear message, and End is unavailable.
+- **Unit tests:** the planner, validation, the freshness rule, result rules, notification rules, self-protection, the handover, and program resolution, including hostile folder names.
+- **Browser tests:** dialogs, keyboard use, suppression after the user's own actions, and the leader tab. Headless Chromium denies notification permission, so these tests mock `Notification`.
+- **Windows tests:** the process helper with throwaway processes. CI may not support console events, so these may run as live checks instead. A planted-program test runs without `NoDefaultCurrentDirectoryInExePath`.
+- **Live checks:**
+  - Each action.
+  - The leftover wrapper prompt, and a parent shell surviving.
+  - Resume folders.
+  - `claude stop` exit codes.
+  - Start-time checks for slow starts.
+  - A notification in a hidden tab, and a real notification click.
+  - `claude rm` on a real worktree with uncommitted, untracked, and ignored files (U-10).
+- **Security review:** of the action routes and handover, before release (NFR-9).
