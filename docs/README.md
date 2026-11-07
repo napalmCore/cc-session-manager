@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 1, Phase 6: Release.** Planning, Requirements, Design, Implementation, and Testing are complete. Testing passed with the screen-reader check not run, by decision 0013, and some live checks not repeated on the final code. See [test-plan.md](test-plan.md).
+**Iteration 2, Phase 2: Requirements.** Iteration 2 adds desktop notifications and session control. Iteration 1 passed Testing, and its first release waits until iteration 2 is done. See [0014](decisions/0014-iteration-2-scope.md).
 
 ## How these docs work
 
@@ -37,3 +37,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0011](decisions/0011-testing-bug-fixes.md)             | Fixes for High bugs found in testing                | Accepted                  |
 | [0012](decisions/0012-agent-approved-merges.md)         | Agent-approved merges and BUG-4                     | Accepted                  |
 | [0013](decisions/0013-release-without-wcag-claim.md)    | Release without a WCAG claim                        | Accepted                  |
+| [0014](decisions/0014-iteration-2-scope.md)             | Iteration 2 scope                                   | Accepted                  |
