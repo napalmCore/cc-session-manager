@@ -47,11 +47,13 @@ public static class CcsmConsole {
   // member is in the allowed set. The caller holds a handle on the target throughout.
   public static string BreakIfSafe(uint targetPid, uint[] allowed, bool send, out uint[] members) {
     members = new uint[0];
-    SetConsoleCtrlHandler(Ignore, true);
     FreeConsole();
     if (!AttachConsole(targetPid)) {
       return "no-console:" + Marshal.GetLastWin32Error();
     }
+    // Register only after attaching. A handler registered before attaching was found not to
+    // run, so the break ended this helper before it could report.
+    SetConsoleCtrlHandler(Ignore, true);
     try {
       uint[] list = new uint[256];
       uint n = GetConsoleProcessList(list, (uint)list.Length);
@@ -59,15 +61,14 @@ public static class CcsmConsole {
       uint self = (uint)Process.GetCurrentProcess().Id;
       var others = new List<uint>();
       var allowedSet = new HashSet<uint>(allowed);
+      uint unexpected = 0;
       for (int i = 0; i < n; i++) {
         if (list[i] == self) continue;
         others.Add(list[i]);
-        if (!allowedSet.Contains(list[i])) {
-          members = others.ToArray();
-          return "unexpected-member:" + list[i];
-        }
+        if (unexpected == 0 && !allowedSet.Contains(list[i])) unexpected = list[i];
       }
       members = others.ToArray();
+      if (unexpected != 0) return "unexpected-member:" + unexpected;
       if (!send) return "ok";
       if (!GenerateConsoleCtrlEvent(1, 0)) return "send-failed:" + Marshal.GetLastWin32Error();
       // Give the event time to arrive before detaching, so this process still handles it.
@@ -178,7 +179,9 @@ try {
           if (-not $p.HasExited) { $p.Kill(); $ended += $p.Id }
         } catch { }
       }
-      Write-Result @{ ok = ($ended -contains $TargetPid); action = $Action; reason = 'ended'; ended = $ended }
+      $endedTarget = $ended -contains $TargetPid
+      $reason = if ($endedTarget) { 'ended' } else { 'target-not-ended' }
+      Write-Result @{ ok = $endedTarget; action = $Action; reason = $reason; ended = $ended }
     }
   }
   exit 0

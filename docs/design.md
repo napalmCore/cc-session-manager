@@ -244,11 +244,11 @@ Telling the two non-zero Delete cases apart relies on the CLI's message, so a ch
 
 Two trials support the start-time window. Testing must also cover slow starts and sessions with MCP servers, where a correct session could be refused.
 
-**Console members check:** a console event reaches every process on the console. The helper lists them, and refuses if any is neither the session, its ancestors, nor its descendants. What a break does to a Git Bash or cmd parent shell needs testing.
+**Console members check:** a console event reaches every process on the console. The helper lists them, and refuses if any is neither the session, its ancestors, nor its descendants. Git Bash hides its shell from the process chain, so End is refused for sessions started from Git Bash, and the page says to use the session's own terminal. Force end still works there.
 
 **Normal close:**
 
-- Ctrl+Break to the session's console.
+- Ctrl+Break to the session's console. With npm's `claude.cmd`, the terminal then shows "Terminate batch job (Y/N)?", and a hidden console leaves its idle wrapper and console host running. The dialog says so.
 - The action tracker records the session ID, process ID, process start time, and the time it was sent.
 - The tool waits 5 seconds. If the session is still listed, the page offers Force end, so a `SessionEnd` hook that's still running could see Force end offered.
 
