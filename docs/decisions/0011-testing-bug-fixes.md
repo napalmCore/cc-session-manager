@@ -10,12 +10,12 @@ Independent agents ran the live checks and found three High bugs. See [test-plan
 
 ## Decisions
 
-| Bug                           | Options considered                                                                      | Decision                                                                     |
-| ----------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| BUG-1: branch shows `HEAD`    | Treat `HEAD` as unavailable, read `.git/HEAD`, run git per folder, keep it and document | Show `HEAD` as "Branch unavailable"                                          |
-| BUG-2: prompt text in `name`  | Don't store names, remove names everywhere, accept and document                         | Never store names, and document that live names can briefly show prompt text |
-| BUG-3: no screen-reader alert | Polite announcement, immediate alert, treat as not required                             | Polite announcement for sessions that newly need the user                    |
-| M2: NVDA check                | Owner runs NVDA once, release without the claim, ask users to test                      | The owner runs a short NVDA script before release                            |
+| Bug                           | Options considered                                                                      | Decision                                                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| BUG-1: branch shows `HEAD`    | Treat `HEAD` as unavailable, read `.git/HEAD`, run git per folder, keep it and document | Show `HEAD` as "Branch unavailable"                                                                                                          |
+| BUG-2: prompt text in `name`  | Don't store names, remove names everywhere, accept and document                         | Never store names, and document that live names can briefly show prompt text                                                                 |
+| BUG-3: no screen-reader alert | Polite announcement, immediate alert, treat as not required                             | Polite announcement for sessions that newly need the user                                                                                    |
+| M2: NVDA check                | Owner runs NVDA once, release without the claim, ask users to test                      | The owner runs a short NVDA script before release. Replaced by [0013](0013-release-without-wcag-claim.md), which releases without the claim. |
 
 ## Validation process
 
