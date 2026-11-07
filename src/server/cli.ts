@@ -5,6 +5,11 @@ import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
 import { createActionTracker, FRESHNESS_MS } from "./actions.js";
 import { createOpenExecutors } from "./open.js";
+import {
+  createStopDeleteExecutors,
+  runClaude,
+  watchPoller,
+} from "./stop-delete.js";
 import { createPoller, runClaudeAgents } from "./poller.js";
 import { resolvePrograms } from "./programs.js";
 import { toSessionView } from "./rules.js";
@@ -57,7 +62,16 @@ const openExecutors = createOpenExecutors({
   transcriptExists: (sessionId) => transcriptExists(sessionId),
   homeFolder: homedir(),
 });
-// Stop, Delete, and End arrive in later build steps, and are unavailable until then.
+const claudeExe = programs.claude;
+const stopDelete = createStopDeleteExecutors({
+  claudeAvailable: claudeExe !== null,
+  run: (args) =>
+    claudeExe === null
+      ? Promise.resolve({ kind: "error" as const })
+      : runClaude(claudeExe, args),
+  watch: watchPoller(() => poller.state()),
+});
+// End arrives in a later build step, and is unavailable until then.
 actionsRef.current = createActionTracker({
   listing: () => poller.state(),
   freshListing: async () =>
@@ -67,6 +81,8 @@ actionsRef.current = createActionTracker({
   executors: {
     open: (session) => openExecutors.open(session),
     resume: (session) => openExecutors.resume(session),
+    stop: (session) => stopDelete.stop(session),
+    delete: (session) => stopDelete.delete(session),
   },
   isProtected: () => false,
 });

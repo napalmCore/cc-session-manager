@@ -432,6 +432,11 @@ describe("transcriptExists", () => {
     expect(await transcriptExists(ID, root)).toBe(true);
   });
 
+  it("doesn't accept an invalid ID even when a matching file exists", async () => {
+    writeTranscript(`${assistant}\n`, "not-a-session-id");
+    expect(await transcriptExists("not-a-session-id", root)).toBe(false);
+  });
+
   it("is false when there's no transcript or the ID isn't valid", async () => {
     expect(await transcriptExists(ID, root)).toBe(false);
     expect(await transcriptExists("../x", root)).toBe(false);
