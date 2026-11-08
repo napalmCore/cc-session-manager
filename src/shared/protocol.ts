@@ -40,6 +40,8 @@ export interface Snapshot {
   runId?: string;
   /** Sessions acted on from the dashboard in the last 30 seconds, so their changes don't notify. */
   ownActions?: string[];
+  /** Sessions that started or handed over to the tool, so Stop, Delete, and End aren't offered. */
+  protectedSessions?: string[];
 }
 
 export interface SnapshotMessage {

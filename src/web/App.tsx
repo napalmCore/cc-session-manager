@@ -9,9 +9,31 @@ import { attentionKeys, newAttentionMessage } from "../shared/announcements.js";
 import { formatDuration } from "../shared/format.js";
 import { sessionKeys } from "../shared/notifications.js";
 import type { SessionView } from "../shared/protocol.js";
+import {
+  actionContext,
+  actionKey,
+  availableActions,
+  isProtectedSession,
+  ACTION_LABELS,
+  isRisky,
+  sessionLabel,
+  type ActionContext,
+  type SessionAction,
+} from "../shared/session-actions.js";
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
 import cssClasses from "./App.module.css";
+import {
+  ConfirmDialog,
+  RowActions,
+  type Confirming,
+} from "./SessionActions.js";
 import { type NotifyPermission, useNotifications } from "./useNotifications.js";
+import {
+  restoreFocus,
+  type ActionResultView,
+  type FocusTarget,
+  useSessionActions,
+} from "./useSessionActions.js";
 import { useSnapshot } from "./useSnapshot.js";
 
 const CLOCK_MS = 30_000;
@@ -26,6 +48,8 @@ const styles = cssClasses as Record<
   | "group"
   | "groupTitle"
   | "highlighted"
+  | "lastResult"
+  | "note"
   | "notifyButton"
   | "notifyStatus"
   | "toolbar"
@@ -56,6 +80,14 @@ function details(session: SessionView, now: number): string[] {
       ? "Start time unknown"
       : `Started ${formatTime(session.startedAt)}`,
   ];
+  // Helps find a live session's terminal, since it has no Open (FR-20).
+  if (
+    session.kind === "interactive" &&
+    !session.finished &&
+    session.pid !== undefined
+  ) {
+    items.push(`Process ID ${String(session.pid)}`);
+  }
 
   if (session.startedAt !== undefined) {
     if (session.finishedAt !== undefined) {
@@ -94,16 +126,51 @@ function rowClass(flagged: boolean, highlighted: boolean): string {
     .join(" ");
 }
 
+/** What every row needs to offer and show actions. */
+interface RowActionProps {
+  context: ActionContext;
+  pending: ReadonlyMap<string, SessionAction>;
+  results: ReadonlyMap<string, ActionResultView>;
+  forceOffers: ReadonlySet<string>;
+  onAction: (
+    session: SessionView,
+    action: SessionAction,
+    label: string,
+    groupId: string,
+  ) => void;
+}
+
+function rowActions(
+  session: SessionView,
+  props: RowActionProps,
+  key: string | undefined,
+): SessionAction[] {
+  const actions = availableActions(session, props.context);
+  // Force end follows an End that couldn't close the session, while End is still allowed.
+  if (
+    key !== undefined &&
+    props.forceOffers.has(key) &&
+    actions.includes("end")
+  ) {
+    actions.push("forceEnd");
+  }
+  return actions;
+}
+
 function SessionList({
   sessions,
   now,
   flagged = false,
   highlighted,
+  groupId,
+  actionProps,
 }: {
   sessions: SessionView[];
   now: number;
   flagged?: boolean;
   highlighted: Set<string>;
+  groupId: string;
+  actionProps: RowActionProps;
 }) {
   return (
     <ul className={styles.list}>
@@ -111,12 +178,15 @@ function SessionList({
         const isHighlighted = sessionKeys(session).some((key) =>
           highlighted.has(key),
         );
+        const key = actionKey(session);
+        const label = sessionLabel(session, formatTime);
         return (
           <li
             key={session.sessionId ?? session.id ?? index}
             className={rowClass(flagged, isHighlighted)}
             data-highlighted={isHighlighted ? "true" : undefined}
-            tabIndex={isHighlighted ? -1 : undefined}
+            data-session-key={key}
+            tabIndex={-1}
           >
             <div className={styles.summary}>
               <span className={styles.name}>
@@ -134,6 +204,25 @@ function SessionList({
                 <li key={item}>{item}</li>
               ))}
             </ul>
+            {isProtectedSession(session, actionProps.context) && (
+              <p className={styles.note}>
+                The dashboard was started from this session, so it can&apos;t be
+                stopped, deleted, or ended from here.
+              </p>
+            )}
+            <RowActions
+              actions={rowActions(session, actionProps, key)}
+              label={label}
+              pending={
+                key === undefined ? undefined : actionProps.pending.get(key)
+              }
+              result={
+                key === undefined ? undefined : actionProps.results.get(key)
+              }
+              onAction={(action) => {
+                actionProps.onAction(session, action, label, groupId);
+              }}
+            />
           </li>
         );
       })}
@@ -147,18 +236,20 @@ function Group({
   now,
   flagged = false,
   highlighted,
+  actionProps,
 }: {
   title: string;
   sessions: SessionView[];
   now: number;
   flagged?: boolean;
   highlighted: Set<string>;
+  actionProps: RowActionProps;
 }) {
   if (sessions.length === 0) return null;
   const id = `group-${title.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <section aria-labelledby={id} className={styles.group}>
-      <h2 id={id} className={styles.groupTitle}>
+      <h2 id={id} className={styles.groupTitle} tabIndex={-1}>
         {title} ({sessions.length})
       </h2>
       <SessionList
@@ -166,6 +257,8 @@ function Group({
         now={now}
         flagged={flagged}
         highlighted={highlighted}
+        groupId={id}
+        actionProps={actionProps}
       />
     </section>
   );
@@ -175,21 +268,33 @@ function StaleGroup({
   sessions,
   now,
   highlighted,
+  actionProps,
 }: {
   sessions: SessionView[];
   now: number;
   highlighted: Set<string>;
+  actionProps: RowActionProps;
 }) {
   if (sessions.length === 0) return null;
   return (
     <Disclosure className={styles.group}>
       <Heading level={2} className={styles.groupTitle}>
-        <Button slot="trigger" className={styles.disclosureButton}>
+        <Button
+          id="group-stale"
+          slot="trigger"
+          className={styles.disclosureButton}
+        >
           Stale ({sessions.length}): blocked, inactive for over 7 days
         </Button>
       </Heading>
       <DisclosurePanel>
-        <SessionList sessions={sessions} now={now} highlighted={highlighted} />
+        <SessionList
+          sessions={sessions}
+          now={now}
+          highlighted={highlighted}
+          groupId="group-stale"
+          actionProps={actionProps}
+        />
       </DisclosurePanel>
     </Disclosure>
   );
@@ -247,13 +352,18 @@ function Banners({
   connected,
   error,
   warnings,
+  actionsBlocked,
 }: {
   connected: boolean;
   error: string | null;
   warnings: string[];
+  actionsBlocked: string | null;
 }) {
   return (
     <>
+      {actionsBlocked !== null && (
+        <p className={styles.banner}>{actionsBlocked}</p>
+      )}
       {!connected && (
         <p role="alert" className={styles.banner}>
           Not connected to the local server. Trying to reconnect.
@@ -298,6 +408,68 @@ export function App() {
     onNotificationClick,
   );
 
+  const [announcement, setAnnouncement] = useState("");
+  const announceTimer = useRef<number | undefined>(undefined);
+  const announce = useCallback((message: string) => {
+    // Clearing first means identical text still counts as a change to a screen reader.
+    setAnnouncement("");
+    window.clearTimeout(announceTimer.current);
+    announceTimer.current = window.setTimeout(() => {
+      setAnnouncement(message);
+    }, ANNOUNCE_DELAY_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(announceTimer.current);
+    },
+    [],
+  );
+
+  const actions = useSessionActions(announce);
+  const { run, lastTarget } = actions;
+  const [confirming, setConfirming] = useState<
+    (Confirming & { session: SessionView; target: FocusTarget }) | null
+  >(null);
+  const onAction = useCallback(
+    (
+      session: SessionView,
+      action: SessionAction,
+      label: string,
+      groupId: string,
+    ) => {
+      const key = actionKey(session);
+      if (key === undefined) return;
+      if (isRisky(action)) {
+        setConfirming({
+          action,
+          label,
+          session,
+          target: { key, action, groupId },
+        });
+      } else {
+        void run(session, action, label, groupId);
+      }
+    },
+    [run],
+  );
+  const closeDialog = useCallback(() => {
+    const target = confirming?.target ?? null;
+    setConfirming(null);
+    restoreFocus(target);
+  }, [confirming]);
+  const confirm = useCallback(() => {
+    if (confirming === null) return;
+    const { session, action, label, target } = confirming;
+    setConfirming(null);
+    restoreFocus(target);
+    void run(session, action, label, target.groupId);
+  }, [confirming, run]);
+
+  // A row that has gone, such as after Delete, takes focus with it, so it goes to its group.
+  useEffect(() => {
+    restoreFocus(lastTarget.current);
+  }, [snapshot, lastTarget]);
+
   // Brings the first highlighted row into view, and clears the highlight after a while.
   useEffect(() => {
     if (highlighted.size === 0) return;
@@ -324,13 +496,28 @@ export function App() {
   }, []);
 
   const groups = groupSessions(snapshot?.sessions ?? [], now);
+  const actionProps: RowActionProps = {
+    context: actionContext(snapshot),
+    pending: actions.pending,
+    results: actions.results,
+    forceOffers: actions.forceOffers,
+    onAction,
+  };
+  // The result stays visible above the list once its row has gone, such as after Delete.
+  const lastResult = actions.lastResult;
+  const lastResultGone =
+    lastResult !== null &&
+    !(snapshot?.sessions ?? []).some(
+      (session) => actionKey(session) === lastResult.key,
+    )
+      ? lastResult
+      : null;
   const attentionCount = groups.needsYou.length;
 
   useEffect(() => {
     document.title = pageTitle(attentionCount);
   }, [attentionCount]);
 
-  const [announcement, setAnnouncement] = useState("");
   const previousAttention = useRef<Set<string> | null>(null);
   const attentionSignature = [...attentionKeys(groups.needsYou)].join("\n");
   // A failed first poll has no sessions, so it can't be the baseline for what is new.
@@ -343,17 +530,10 @@ export function App() {
     // Sessions already waiting when the page opens are read from the page itself.
     if (!previous) return;
 
-    // Clearing first means identical text still counts as a change to a screen reader.
-    setAnnouncement("");
     const message = newAttentionMessage(previous, groups.needsYou);
-    if (!message) return;
-    const timer = window.setTimeout(() => {
-      setAnnouncement(message);
-    }, ANNOUNCE_DELAY_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [loaded, attentionSignature]);
+    // A change with nothing new still clears the region, so a session that returns is read again.
+    announce(message);
+  }, [loaded, attentionSignature, announce]);
 
   return (
     <main className={styles.page}>
@@ -366,7 +546,17 @@ export function App() {
         connected={connected}
         error={snapshot?.error ?? null}
         warnings={snapshot?.warnings ?? []}
+        actionsBlocked={snapshot?.actionsBlocked ?? null}
       />
+      {lastResultGone !== null && (
+        <p
+          className={styles.lastResult}
+          data-outcome={lastResultGone.reply.outcome}
+        >
+          {ACTION_LABELS[lastResultGone.action]}, {lastResultGone.label}:{" "}
+          {lastResultGone.reply.message}
+        </p>
+      )}
       {snapshot === null && <p>Loading sessions…</p>}
       {snapshot?.sessions.length === 0 && <p>No sessions to show.</p>}
       <Group
@@ -375,19 +565,32 @@ export function App() {
         now={now}
         flagged
         highlighted={highlighted}
+        actionProps={actionProps}
       />
       <Group
         title="Active"
         sessions={groups.active}
         now={now}
         highlighted={highlighted}
+        actionProps={actionProps}
       />
-      <StaleGroup sessions={groups.stale} now={now} highlighted={highlighted} />
+      <StaleGroup
+        sessions={groups.stale}
+        now={now}
+        highlighted={highlighted}
+        actionProps={actionProps}
+      />
       <Group
         title="Finished"
         sessions={groups.finished}
         now={now}
         highlighted={highlighted}
+        actionProps={actionProps}
+      />
+      <ConfirmDialog
+        confirming={confirming}
+        onCancel={closeDialog}
+        onConfirm={confirm}
       />
     </main>
   );
