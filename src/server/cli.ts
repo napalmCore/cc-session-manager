@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
+import { sessionKeys } from "../shared/notifications.js";
 import { createActionTracker, FRESHNESS_MS } from "./actions.js";
 import {
   CLOSE_WAIT_MS,
@@ -31,7 +32,12 @@ import {
 } from "./stop-delete.js";
 import { createPoller, runClaudeAgents } from "./poller.js";
 import { resolvePrograms } from "./programs.js";
-import { createProtection, processStartMs, readIdentity } from "./protect.js";
+import {
+  createProtection,
+  PROTECTED_MESSAGE,
+  processStartMs,
+  readIdentity,
+} from "./protect.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
 import { startServer } from "./server.js";
@@ -136,6 +142,11 @@ const publish = (snapshot: Snapshot) => {
     seq: sequence,
     runId,
     ownActions: actionsRef.current?.ownActionSessions() ?? [],
+    protectedSessions: snapshot.sessions
+      .filter(
+        (session) => protection.isProtected(session) === PROTECTED_MESSAGE,
+      )
+      .flatMap(sessionKeys),
   });
 };
 

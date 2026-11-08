@@ -312,8 +312,14 @@ Across 17 sessions, including one with a slow MCP server, processes started 0.9 
   - Stop says work in progress is interrupted and the conversation is kept.
   - Delete says the session is removed and its work stops, and that a worktree Claude created is removed when that's safe.
   - End and Force end say work in progress can be lost, and Force end also says it ends programs the session started.
-- **Focus:** returns to the row afterward, or to the group heading if the row has gone (NFR-8).
-- **Results:** appear in the existing announcement region and next to the row.
+  - End also mentions the "Terminate batch job (Y/N)?" prompt with npm's `claude.cmd`, and that a Git Bash session is offered Force end instead.
+  - One dialog serves the page, so a row moving between groups doesn't close it. Cancel has focus when it opens, so Enter alone never confirms.
+  - Open and Resume run straight away, because they're non-destructive.
+- **Which buttons:** match what the server allows. Background rows offer Open, Stop, and Delete. Live interactive rows with a process ID offer End. Finished interactive rows offer Resume. Force end appears only after End reports the session wasn't closed, for the 2 minutes the server accepts it.
+- **Self-protection on the page:** snapshots list the protected sessions, so their rows leave out Stop, Delete, and End and say why. When actions are off for every session, the page shows the reason as a banner and leaves those buttons out. The server still refuses either way (NFR-10).
+- **Focus:** returns to the button, or its row, afterward, or to the group heading if the row has gone (NFR-8). It's only moved when focus was lost, and never after the user has clicked elsewhere.
+- **Results:** appear in the existing announcement region and next to the row. Once a row has gone, such as after Delete, the last result stays visible above the list. An answer the page can't read, or no answer, is shown as unknown.
+- **Requests:** `fetch` to the page's own origin, so the Content Security Policy's `connect-src` includes `'self'` alongside the WebSocket.
 - **Live interactive rows:** show their process ID (FR-20). A row with neither ID has no Open.
 
 ### Requirements coverage

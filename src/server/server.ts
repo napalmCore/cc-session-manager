@@ -126,7 +126,7 @@ export async function startServer(
       "default-src 'none'",
       "script-src 'self'",
       `style-src ${styleSource}`,
-      `connect-src ws://${expectedHost()}`,
+      `connect-src 'self' ws://${expectedHost()}`,
       "base-uri 'none'",
       "form-action 'none'",
       "frame-ancestors 'none'",

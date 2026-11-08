@@ -211,7 +211,7 @@ describe("Content Security Policy", () => {
     expect(policy).toContain("script-src 'self'");
     expect(policy).toContain("style-src 'self'");
     expect(policy).toContain(
-      `connect-src ws://127.0.0.1:${String(server.port)}`,
+      `connect-src 'self' ws://127.0.0.1:${String(server.port)}`,
     );
     expect(policy).toContain("base-uri 'none'");
     expect(policy).toContain("form-action 'none'");

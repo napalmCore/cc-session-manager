@@ -180,3 +180,129 @@
   font-size: 0.875rem;
   color: var(--muted);
 }
+
+.button {
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--muted);
+  border-radius: 0.375rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.button[data-hovered] {
+  background: var(--attention-surface);
+}
+
+.button[data-focus-visible] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.button[data-disabled] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.button[data-pending] {
+  cursor: progress;
+}
+
+.dangerButton {
+  border-color: var(--attention);
+  color: var(--attention);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.result,
+.note,
+.lastResult {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+}
+
+.result[data-outcome="succeeded"],
+.result[data-outcome="started"],
+.lastResult[data-outcome="succeeded"] {
+  font-weight: 600;
+}
+
+.result:not([data-outcome="succeeded"], [data-outcome="started"]),
+.lastResult:not([data-outcome="succeeded"], [data-outcome="started"]) {
+  color: var(--attention);
+}
+
+.lastResult {
+  margin: 0 0 0.75rem;
+}
+
+.note {
+  color: var(--muted);
+}
+
+.row:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.row:focus:not(:focus-visible, [data-highlighted]) {
+  outline: none;
+}
+
+.groupTitle:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 50%);
+}
+
+.modal {
+  width: 100%;
+  max-width: 32rem;
+  max-height: 100%;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+  color: var(--text);
+}
+
+.dialog {
+  padding: 1rem 1.25rem;
+  outline: none;
+}
+
+.dialogTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.125rem;
+}
+
+.dialogTarget {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.dialogButtons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
