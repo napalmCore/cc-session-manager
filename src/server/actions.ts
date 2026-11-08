@@ -48,6 +48,7 @@ export interface ActionResult {
 
 export interface ListingState {
   sessions: SessionView[];
+  /** When the latest successful poll started, so its listing is at least this recent. */
   lastSuccessAt: number | null;
   lastPollFailed: boolean;
 }
@@ -225,17 +226,26 @@ export function createActionTracker(options: ActionTrackerOptions) {
           return { outcome: "unavailable", message: "Not available yet." };
         closeRecords.delete(sessionKey);
         ownActions.set(sessionKey, now());
-        return await executor(current, {
-          pid: record.pid,
-          processStartMs: record.processStartMs,
-        });
+        try {
+          return await executor(current, {
+            pid: record.pid,
+            processStartMs: record.processStartMs,
+          });
+        } finally {
+          ownActions.set(sessionKey, now());
+        }
       }
 
       const executor = options.executors[action];
       if (executor === undefined)
         return { outcome: "unavailable", message: "Not available yet." };
       if (DESTRUCTIVE.has(action)) ownActions.set(sessionKey, now());
-      const result = await executor(current);
+      let result: ActionResult;
+      try {
+        result = await executor(current);
+      } finally {
+        if (DESTRUCTIVE.has(action)) ownActions.set(sessionKey, now());
+      }
       if (action === "end" && result.closeRecord !== undefined) {
         closeRecords.set(sessionKey, { ...result.closeRecord, at: now() });
       }

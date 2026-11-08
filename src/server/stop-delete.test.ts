@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionView } from "../shared/protocol.js";
 import { toSessionView } from "./rules.js";
+import { homedir } from "node:os";
 import {
+  COMMAND_TIMEOUT_MS,
   createStopDeleteExecutors,
   runClaude,
   watchPoller,
@@ -64,6 +66,12 @@ describe("Stop", () => {
       expect((await executors.stop(background())).outcome).toBe("succeeded");
     },
   );
+
+  it("doesn't count a different stopped session as success", async () => {
+    const other = { ...stopped(), id: "eeee0000" };
+    const { executors } = setup(ok, [background(), other]);
+    expect((await executors.stop(background())).outcome).toBe("failed");
+  });
 
   it("fails when the session is still working", async () => {
     const { executors } = setup(ok, [background()]);
@@ -199,6 +207,33 @@ describe("runClaude", () => {
       stdout: "kept x",
       stderr: "",
     });
+  });
+
+  it("runs from the home folder with the identity variables removed", async () => {
+    const saved = process.env.CLAUDECODE;
+    process.env.CLAUDECODE = "1";
+    try {
+      const result = await runClaude(process.execPath, [
+        "-e",
+        "process.stdout.write(JSON.stringify({ cwd: process.cwd(), claude: process.env.CLAUDECODE ?? null }))",
+      ]);
+      expect(result.kind).toBe("exited");
+      const seen = JSON.parse(
+        result.kind === "exited" ? result.stdout : "{}",
+      ) as {
+        cwd: string;
+        claude: string | null;
+      };
+      expect(seen.cwd.toLowerCase()).toBe(homedir().toLowerCase());
+      expect(seen.claude).toBeNull();
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDECODE;
+      else process.env.CLAUDECODE = saved;
+    }
+  });
+
+  it("uses a 15-second limit", () => {
+    expect(COMMAND_TIMEOUT_MS).toBe(15_000);
   });
 
   it("reports a timeout", async () => {

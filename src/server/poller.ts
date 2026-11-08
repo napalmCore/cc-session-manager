@@ -99,6 +99,7 @@ export function createPoller({
   };
 
   const tick = async () => {
+    const pollStartedAt = Date.now();
     try {
       const parsed = parseSessions(await run(), listedLastPoll);
       listedLastPoll = parsed.listed;
@@ -117,7 +118,7 @@ export function createPoller({
         ...enriched.warnings,
         ...tracked.warnings,
       ];
-      lastSuccessAt = Date.now();
+      lastSuccessAt = pollStartedAt;
       lastPollFailed = false;
       if (running) report(null);
     } catch {
