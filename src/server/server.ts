@@ -17,10 +17,16 @@ import {
   type ActionResult,
 } from "./actions.js";
 import type { Snapshot, SnapshotMessage } from "../shared/protocol.js";
+import { type Identity, identitySchema, toIdentity } from "./protect.js";
 
 const LOOPBACK = "127.0.0.1";
 const PORT_ATTEMPTS = 20;
 const MAX_ACTION_BODY = 4096;
+export const HANDOVER_LINK_MS = 60_000;
+
+const handoverRequestSchema = z
+  .object({ secret: z.string().max(128), identity: identitySchema })
+  .strict();
 
 const actionRequestSchema = z
   .object({ action: z.enum(ACTION_NAMES), key: z.string().max(64) })
@@ -39,6 +45,9 @@ export interface ServerOptions {
   webDir?: string;
   /** Runs a session action. Without it, actions are reported as unavailable. */
   onAction?: (request: ActionRequest) => Promise<ActionResult>;
+  /** Lets a second start of the tool hand over to this one (U-15). */
+  handover?: { secret: string; onHandover: (identity: Identity) => void };
+  now?: () => number;
 }
 
 export interface RunningServer {
@@ -105,6 +114,8 @@ export async function startServer(
   const clients = new Set<WSContext>();
   let loginToken: string | null = randomBytes(32).toString("hex");
   const issuedToken = loginToken;
+  const handoverLinks = new Map<string, number>();
+  const now = options.now ?? Date.now;
   let port = 0;
   let latest: Snapshot | null = null;
 
@@ -146,16 +157,73 @@ export async function startServer(
     return undefined;
   });
 
+  // A second start has no cookie, so this comes before the cookie check. It needs the secret
+  // from the lock file, and a browser can't send it, because any Origin is refused.
+  app.post(
+    "/api/handover",
+    bodyLimit({
+      maxSize: MAX_ACTION_BODY,
+      onError: (c) => c.json({ message: "Request too large" }, 413),
+    }),
+    async (c) => {
+      const handover = options.handover;
+      if (handover === undefined) return c.json({ message: "Not found" }, 404);
+      if (c.req.header("origin") !== undefined) {
+        return c.json({ message: "Forbidden" }, 403);
+      }
+      const contentType = c.req.header("content-type") ?? "";
+      if (
+        contentType.split(";")[0]?.trim().toLowerCase() !== "application/json"
+      ) {
+        return c.json({ message: "Expected JSON" }, 415);
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await c.req.text());
+      } catch {
+        return c.json({ message: "Invalid request" }, 400);
+      }
+      const request = handoverRequestSchema.safeParse(parsed);
+      if (
+        !request.success ||
+        !secureEquals(request.data.secret, handover.secret)
+      ) {
+        return c.json({ message: "Forbidden" }, 403);
+      }
+      handover.onHandover(toIdentity(request.data.identity));
+      const token = randomBytes(32).toString("hex");
+      const current = now();
+      for (const [link, expires] of handoverLinks) {
+        if (expires <= current) handoverLinks.delete(link);
+      }
+      handoverLinks.set(token, current + HANDOVER_LINK_MS);
+      return c.json(
+        { loginUrl: `http://${expectedHost()}/auth?token=${token}` },
+        200,
+      );
+    },
+  );
+
+  const useHandoverLink = (supplied: string): boolean => {
+    for (const [link, expires] of handoverLinks) {
+      if (secureEquals(supplied, link)) {
+        handoverLinks.delete(link);
+        return expires > now();
+      }
+    }
+    return false;
+  };
+
   app.get("/auth", (c) => {
     const supplied = c.req.query("token");
-    if (
-      loginToken === null ||
-      !supplied ||
-      !secureEquals(supplied, loginToken)
-    ) {
+    const first =
+      loginToken !== null &&
+      supplied !== undefined &&
+      secureEquals(supplied, loginToken);
+    if (!supplied || (!first && !useHandoverLink(supplied))) {
       return c.text("This sign-in link is invalid or was already used.", 403);
     }
-    loginToken = null;
+    if (first) loginToken = null;
     setCookie(c, cookieName(), sessionSecret, {
       httpOnly: true,
       sameSite: "Strict",

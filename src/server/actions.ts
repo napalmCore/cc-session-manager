@@ -71,8 +71,10 @@ export interface ActionTrackerOptions {
   /** A fresh `claude agents` listing, taken just before a destructive action or Resume. */
   freshListing: () => Promise<SessionView[]>;
   executors: ActionExecutors;
-  /** True for a session that started or handed over to the tool (FR-22). */
-  isProtected: (session: SessionView) => boolean;
+  /**
+   * True, or a refusal message, for a session that started or handed over to the tool (FR-22).
+   */
+  isProtected: (session: SessionView) => boolean | string;
   now?: () => number;
 }
 
@@ -134,6 +136,14 @@ function sameSession(original: SessionView, fresh: SessionView): boolean {
   );
 }
 
+const PROTECTED =
+  "This session started the dashboard, so it can't be changed from here.";
+
+function protectedMessage(value: boolean | string): string | null {
+  if (typeof value === "string") return value === "" ? PROTECTED : value;
+  return value ? PROTECTED : null;
+}
+
 export function createActionTracker(options: ActionTrackerOptions) {
   const now = options.now ?? Date.now;
   const locks = new Set<string>();
@@ -152,10 +162,9 @@ export function createActionTracker(options: ActionTrackerOptions) {
     if (session === undefined) return refused("That session isn't listed.");
     if (!permits(action, session))
       return refused("That action isn't available for this session.");
-    if (DESTRUCTIVE.has(action) && options.isProtected(session)) {
-      return refused(
-        "This session started the dashboard, so it can't be changed from here.",
-      );
+    if (DESTRUCTIVE.has(action)) {
+      const protection = protectedMessage(options.isProtected(session));
+      if (protection !== null) return refused(protection);
     }
     if (
       NEEDS_FRESH.has(action) &&
@@ -200,11 +209,8 @@ export function createActionTracker(options: ActionTrackerOptions) {
           ) {
             return refused("The session has changed. Check it and try again.");
           }
-          if (options.isProtected(match)) {
-            return refused(
-              "This session started the dashboard, so it can't be changed from here.",
-            );
-          }
+          const protection = protectedMessage(options.isProtected(match));
+          if (protection !== null) return refused(protection);
           current = match;
         }
       }
