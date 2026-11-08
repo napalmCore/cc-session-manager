@@ -97,6 +97,9 @@ async function open(page: Page, data: Snapshot = snapshot()) {
   server.publish(data);
   await page.goto(server.loginUrl);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // The data arrives over the live connection after the heading, so wait for it. Otherwise a test
+  // that publishes again straight away could replace it before the page ever sees it.
+  await expect(page.getByText("Loading sessions…")).toHaveCount(0);
 }
 
 const section = (page: Page, name: RegExp) =>
