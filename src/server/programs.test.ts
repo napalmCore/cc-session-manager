@@ -351,6 +351,6 @@ describe.runIf(process.platform === "win32")(
         timeout: 10_000,
       });
       expect(existsSync(marker)).toBe(false);
-    });
+    }, 30_000);
   },
 );

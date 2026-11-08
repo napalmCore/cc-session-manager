@@ -84,6 +84,9 @@ async function open(page: Page, data: Snapshot = snapshot()) {
   server.publish(data);
   await page.goto(server.loginUrl);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // The data arrives over the live connection after the heading, so wait for it. Otherwise a test
+  // that publishes again straight away could replace it before the page ever sees it.
+  await expect(page.getByText("Loading sessions…")).toHaveCount(0);
 }
 
 const row = (page: Page, name: string) =>
@@ -196,6 +199,7 @@ test.describe("row actions", () => {
       name: "Stop…",
     });
     await stop.click();
+    await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(
       page.getByRole("button", { name: "Stop session" }),
@@ -438,6 +442,7 @@ test.describe("a finished session whose folder has gone", () => {
   test("offers no Resume", async ({ page }) => {
     await open(page, snapshot({ missingFolders: [ENDED_ID] }));
 
+    await expect(row(page, "earlier")).toBeVisible();
     await expect(actionsFor(page, /"earlier"/)).toHaveCount(0);
     await expect(
       actionsFor(page, /"worker"/).getByRole("button", { name: "Open" }),
@@ -463,6 +468,7 @@ test.describe("self-protection on the page (FR-22)", () => {
   }) => {
     await open(page, snapshot({ protectedSessions: [LIVE_ID] }));
 
+    await expect(row(page, "editor")).toBeVisible();
     await expect(actionsFor(page, /"editor"/)).toHaveCount(0);
     await expect(row(page, "editor")).toContainText(
       "The dashboard was started from this session",

@@ -97,6 +97,9 @@ async function open(page: Page, data: Snapshot = snapshot()) {
   server.publish(data);
   await page.goto(server.loginUrl);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // The data arrives over the live connection after the heading, so wait for it. Otherwise a test
+  // that publishes again straight away could replace it before the page ever sees it.
+  await expect(page.getByText("Loading sessions…")).toHaveCount(0);
 }
 
 const section = (page: Page, name: RegExp) =>
@@ -790,6 +793,11 @@ test.describe("accessibility", () => {
     page,
   }) => {
     await open(page, snapshot({ warnings: [WARNING] }));
+    // The sections arrive over the live connection after the heading, so Tab waits for them.
+    await expect(
+      page.getByRole("button", { name: /may be missing/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /stale/i })).toBeVisible();
 
     await page.keyboard.press("Tab");
     const focused = page.locator(":focus");
