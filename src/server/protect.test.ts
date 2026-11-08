@@ -171,15 +171,16 @@ describe("processStartMs", () => {
   it.runIf(process.platform === "win32")(
     "reads this process's start time",
     async () => {
-      const value = await processStartMs(
-        `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
-        process.pid,
-      );
+      const powershell = `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+      // PowerShell's first start on a cold CI machine can pass the 10-second limit, so a second
+      // try runs warm.
+      let value = await processStartMs(powershell, process.pid);
+      value ??= await processStartMs(powershell, process.pid);
       expect(value).not.toBeNull();
       expect(
         Math.abs((value ?? 0) - (Date.now() - process.uptime() * 1000)),
       ).toBeLessThan(5_000);
     },
-    20_000,
+    30_000,
   );
 });

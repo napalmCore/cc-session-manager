@@ -790,6 +790,11 @@ test.describe("accessibility", () => {
     page,
   }) => {
     await open(page, snapshot({ warnings: [WARNING] }));
+    // The sections arrive over the live connection after the heading, so Tab waits for them.
+    await expect(
+      page.getByRole("button", { name: /may be missing/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /stale/i })).toBeVisible();
 
     await page.keyboard.press("Tab");
     const focused = page.locator(":focus");
