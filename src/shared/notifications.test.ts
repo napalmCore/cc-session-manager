@@ -68,7 +68,7 @@ describe("nextEvents", () => {
     expect(run(ok([busy()]), ok([waiting("permission prompt")]))).toEqual([
       {
         kind: "needs-you",
-        key: "s1",
+        keys: ["s1"],
         folder: "alpha",
         reason: "permission prompt",
       },
@@ -125,7 +125,7 @@ describe("nextEvents", () => {
 
   it("notifies when a background session finishes or is stopped", () => {
     expect(run(ok([background("working")]), ok([background("done")]))).toEqual([
-      { kind: "finished", key: "abcd1234", folder: "alpha" },
+      { kind: "finished", keys: ["abcd1234"], folder: "alpha" },
     ]);
     expect(
       run(ok([background("working")]), ok([background("stopped")])),
@@ -135,7 +135,7 @@ describe("nextEvents", () => {
   it("notifies a failure only as a failure", () => {
     expect(
       run(ok([background("working")]), ok([background("failed")])),
-    ).toEqual([{ kind: "failed", key: "abcd1234", folder: "alpha" }]);
+    ).toEqual([{ kind: "failed", keys: ["abcd1234"], folder: "alpha" }]);
   });
 
   it("doesn't notify for a session that was already finished, or an interactive one ending", () => {
@@ -187,13 +187,47 @@ describe("nextEvents", () => {
   });
 });
 
+describe("a background row whose sessionId appears between polls", () => {
+  const SESSION = "33333333-3333-4333-8333-333333333333";
+  const row = (state: string, withSessionId: boolean, waitingFor?: string) =>
+    view({
+      id: "abcd1234",
+      ...(withSessionId ? { sessionId: SESSION } : {}),
+      kind: "background",
+      state,
+      ...(waitingFor === undefined ? {} : { status: "waiting", waitingFor }),
+    });
+
+  it("doesn't notify again while it keeps needing the user", () => {
+    expect(
+      run(
+        ok([row("working", false)]),
+        ok([row("blocked", false, "permission prompt")]),
+        ok([row("blocked", true, "permission prompt")]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("still notifies when it finishes", () => {
+    expect(run(ok([row("working", false)]), ok([row("done", true)]))).toEqual([
+      { kind: "finished", keys: ["abcd1234", SESSION], folder: "alpha" },
+    ]);
+  });
+
+  it("still notifies when it fails", () => {
+    expect(run(ok([row("working", false)]), ok([row("failed", true)]))).toEqual(
+      [{ kind: "failed", keys: ["abcd1234", SESSION], folder: "alpha" }],
+    );
+  });
+});
+
 describe("notificationContent", () => {
   it("shows the folder and reason, never a session name", () => {
     const content = notificationContent(
       [
         {
           kind: "needs-you",
-          key: "s1",
+          keys: ["s1"],
           folder: "alpha",
           reason: "permission prompt",
         },
@@ -211,8 +245,8 @@ describe("notificationContent", () => {
   it("combines the events in one snapshot", () => {
     const content = notificationContent(
       [
-        { kind: "finished", key: "a", folder: "alpha" },
-        { kind: "failed", key: "b", folder: "beta" },
+        { kind: "finished", keys: ["a"], folder: "alpha" },
+        { kind: "failed", keys: ["b"], folder: "beta" },
       ],
       8,
     );
@@ -225,6 +259,12 @@ describe("notificationContent", () => {
     const content = notificationContent([{ kind: "read-failure" }], 9);
     expect(content?.title).toBe("Can't read sessions");
     expect(content?.keys).toEqual([]);
+  });
+
+  it("includes the server's run, so a restarted server doesn't reuse a tag", () => {
+    expect(
+      notificationContent([{ kind: "read-failure" }], 3, "a1b2c3d4")?.tag,
+    ).toBe("cc-session-manager-a1b2c3d4-3");
   });
 
   it("is null with no events", () => {

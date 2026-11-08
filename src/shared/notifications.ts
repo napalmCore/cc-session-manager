@@ -7,9 +7,9 @@ export const GENERIC_REASON = "needs input";
 export const READ_FAILURES_BEFORE_ALERT = 3;
 
 export type NotifyEvent =
-  | { kind: "needs-you"; key: string; folder: string; reason: string }
-  | { kind: "finished"; key: string; folder: string }
-  | { kind: "failed"; key: string; folder: string }
+  | { kind: "needs-you"; keys: string[]; folder: string; reason: string }
+  | { kind: "finished"; keys: string[]; folder: string }
+  | { kind: "failed"; keys: string[]; folder: string }
   | { kind: "read-failure" };
 
 export interface NotifyState {
@@ -25,9 +25,23 @@ export const initialNotifyState: NotifyState = {
 
 const FINISHED = new Set(["done", "stopped"]);
 
-/** How a row and a notification refer to a session. */
-export function sessionKey(session: SessionView): string | undefined {
-  return session.sessionId ?? session.id;
+/**
+ * Every name a session goes by. A background row's short id comes first, because it's stable,
+ * while its sessionId can appear between polls.
+ */
+export function sessionKeys(session: SessionView): string[] {
+  const keys: string[] = [];
+  if (session.id !== undefined) keys.push(session.id);
+  if (session.sessionId !== undefined) keys.push(session.sessionId);
+  return keys;
+}
+
+function lookup<T>(map: Map<string, T>, keys: string[]): T | undefined {
+  for (const key of keys) {
+    const value = map.get(key);
+    if (value !== undefined) return value;
+  }
+  return undefined;
 }
 
 /** The project folder's own name, never the full path. */
@@ -77,14 +91,15 @@ export function nextEvents(
   // Needs you, using the dashboard's own groups, so Stale sessions don't count.
   const before = new Map<string, string>();
   for (const session of groupSessions(previous.sessions, now).needsYou) {
-    const key = sessionKey(session);
-    if (key !== undefined) before.set(key, session.attentionReason ?? "");
+    for (const key of sessionKeys(session)) {
+      before.set(key, session.attentionReason ?? "");
+    }
   }
   for (const session of groupSessions(snapshot.sessions, now).needsYou) {
-    const key = sessionKey(session);
-    if (key === undefined || isOwnAction(session, own)) continue;
+    const keys = sessionKeys(session);
+    if (keys.length === 0 || isOwnAction(session, own)) continue;
     const reason = session.attentionReason ?? GENERIC_REASON;
-    const earlier = before.get(key);
+    const earlier = lookup(before, keys);
     // A change to a specific reason notifies, but falling back to the generic label doesn't.
     if (
       earlier === undefined ||
@@ -92,7 +107,7 @@ export function nextEvents(
     ) {
       events.push({
         kind: "needs-you",
-        key,
+        keys,
         folder: folderName(session.cwd),
         reason,
       });
@@ -100,30 +115,29 @@ export function nextEvents(
   }
 
   // Finished and failed, for sessions that were listed before in another state.
-  const states = new Map<string, string | undefined>();
+  const states = new Map<string, string>();
   for (const session of previous.sessions) {
-    const key = sessionKey(session);
-    if (key !== undefined) states.set(key, session.state);
+    for (const key of sessionKeys(session)) {
+      states.set(key, session.state ?? "");
+    }
   }
   for (const session of snapshot.sessions) {
-    const key = sessionKey(session);
-    if (key === undefined || !states.has(key) || isOwnAction(session, own))
-      continue;
-    const earlier = states.get(key);
+    const keys = sessionKeys(session);
+    const earlier = lookup(states, keys);
+    if (earlier === undefined || isOwnAction(session, own)) continue;
     if (session.state === "failed" && earlier !== "failed") {
-      events.push({ kind: "failed", key, folder: folderName(session.cwd) });
+      events.push({ kind: "failed", keys, folder: folderName(session.cwd) });
     } else if (
       session.kind === "background" &&
       session.state !== undefined &&
       FINISHED.has(session.state) &&
-      earlier !== undefined &&
+      earlier !== "" &&
       !FINISHED.has(earlier) &&
       earlier !== "failed"
     ) {
-      events.push({ kind: "finished", key, folder: folderName(session.cwd) });
+      events.push({ kind: "finished", keys, folder: folderName(session.cwd) });
     }
   }
-
   return { state: next, events };
 }
 
@@ -152,10 +166,11 @@ function describe(event: NotifyEvent): string {
 export function notificationContent(
   events: NotifyEvent[],
   seq: number | undefined,
+  runId = "",
 ): NotificationContent | null {
   if (events.length === 0) return null;
   const keys = events.flatMap((event) =>
-    event.kind === "read-failure" ? [] : [event.key],
+    event.kind === "read-failure" ? [] : event.keys,
   );
   const title =
     events.length === 1
@@ -166,7 +181,8 @@ export function notificationContent(
   return {
     title,
     body: events.map(describe).join("\n"),
-    tag: `cc-session-manager-${String(seq ?? Date.now())}`,
+    // The run's id keeps a restarted server's numbers from replacing older notifications quietly.
+    tag: `cc-session-manager-${runId === "" ? "" : `${runId}-`}${String(seq ?? Date.now())}`,
     keys,
   };
 }

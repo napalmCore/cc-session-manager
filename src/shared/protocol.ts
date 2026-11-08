@@ -36,6 +36,8 @@ export interface Snapshot {
   failedPolls?: number;
   /** Increases with every snapshot the server sends, so a notification's tag is unique. */
   seq?: number;
+  /** Differs on each start of the server, so notification tags stay unique across restarts. */
+  runId?: string;
   /** Sessions acted on from the dashboard in the last 30 seconds, so their changes don't notify. */
   ownActions?: string[];
 }

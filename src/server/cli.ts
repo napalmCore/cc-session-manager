@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
@@ -125,6 +126,7 @@ removeStaleLock(dataFolder);
 const protection = createProtection([identity]);
 let lastSnapshot: Snapshot | null = null;
 let sequence = 0;
+const runId = randomBytes(4).toString("hex");
 const publish = (snapshot: Snapshot) => {
   lastSnapshot = snapshot;
   sequence += 1;
@@ -132,6 +134,7 @@ const publish = (snapshot: Snapshot) => {
     ...snapshot,
     actionsBlocked: protection.blockedReason(),
     seq: sequence,
+    runId,
     ownActions: actionsRef.current?.ownActionSessions() ?? [],
   });
 };

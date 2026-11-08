@@ -331,6 +331,8 @@ test.describe("desktop notifications", () => {
       .getByRole("button", { name: "Turn on desktop notifications" })
       .click();
     await expect(page.getByText("Desktop notifications are on.")).toBeVisible();
+    // The button has gone, so focus moves to the result.
+    await expect(page.getByText("Desktop notifications are on.")).toBeFocused();
 
     server.publish(waitingNow(2));
     await expect
@@ -374,6 +376,23 @@ test.describe("desktop notifications", () => {
         async () => (await shown(page)).length + (await shown(second)).length,
       )
       .toBe(1);
+  });
+
+  test("another tab takes over when the notifying tab closes", async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(fakeNotifications("granted"));
+    await open(page, busyOnly());
+    const second = await context.newPage();
+    await second.goto(`http://127.0.0.1:${String(server.port)}/`);
+    await expect(second.getByRole("heading", { level: 1 })).toBeVisible();
+
+    await page.close();
+    // Gives the second tab a moment to be granted the lock.
+    await second.waitForTimeout(500);
+    server.publish(waitingNow(2));
+    await expect.poll(async () => (await shown(second)).length).toBe(1);
   });
 
   test("highlights the session's row when the notification is clicked", async ({

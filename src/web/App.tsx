@@ -7,7 +7,7 @@ import {
 } from "react-aria-components";
 import { attentionKeys, newAttentionMessage } from "../shared/announcements.js";
 import { formatDuration } from "../shared/format.js";
-import { sessionKey } from "../shared/notifications.js";
+import { sessionKeys } from "../shared/notifications.js";
 import type { SessionView } from "../shared/protocol.js";
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
 import cssClasses from "./App.module.css";
@@ -108,13 +108,15 @@ function SessionList({
   return (
     <ul className={styles.list}>
       {sessions.map((session, index) => {
-        const key = sessionKey(session);
-        const isHighlighted = key !== undefined && highlighted.has(key);
+        const isHighlighted = sessionKeys(session).some((key) =>
+          highlighted.has(key),
+        );
         return (
           <li
-            key={key ?? index}
+            key={session.sessionId ?? session.id ?? index}
             className={rowClass(flagged, isHighlighted)}
             data-highlighted={isHighlighted ? "true" : undefined}
+            tabIndex={isHighlighted ? -1 : undefined}
           >
             <div className={styles.summary}>
               <span className={styles.name}>
@@ -207,14 +209,35 @@ function NotificationControl({
   permission: NotifyPermission;
   onTurnOn: () => void;
 }) {
+  const status = useRef<HTMLParagraphElement>(null);
+  const [asked, setAsked] = useState(false);
+
+  // The button goes away once the prompt is answered, so focus moves to the result.
+  useEffect(() => {
+    if (asked && permission !== "default") status.current?.focus();
+  }, [asked, permission]);
+
   return (
     <div className={styles.toolbar}>
       {permission === "default" ? (
-        <Button className={styles.notifyButton} onPress={onTurnOn}>
+        <Button
+          className={styles.notifyButton}
+          onPress={() => {
+            setAsked(true);
+            onTurnOn();
+          }}
+        >
           Turn on desktop notifications
         </Button>
       ) : (
-        <p className={styles.notifyStatus}>{PERMISSION_TEXT[permission]}</p>
+        <p
+          ref={status}
+          tabIndex={-1}
+          role="status"
+          className={styles.notifyStatus}
+        >
+          {PERMISSION_TEXT[permission]}
+        </p>
       )}
     </div>
   );
@@ -278,9 +301,11 @@ export function App() {
   // Brings the first highlighted row into view, and clears the highlight after a while.
   useEffect(() => {
     if (highlighted.size === 0) return;
-    document
-      .querySelector('[data-highlighted="true"]')
-      ?.scrollIntoView({ block: "center" });
+    const row = document.querySelector<HTMLElement>(
+      '[data-highlighted="true"]',
+    );
+    row?.scrollIntoView({ block: "center" });
+    row?.focus({ preventScroll: true });
     const timer = window.setTimeout(() => {
       setHighlighted(new Set());
     }, HIGHLIGHT_MS);

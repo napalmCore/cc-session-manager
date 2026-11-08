@@ -33,7 +33,35 @@ export function useNotifications(
     typeof navigator === "undefined" || !("locks" in navigator),
   );
   const clickHandler = useRef(onClick);
-  clickHandler.current = onClick;
+  useEffect(() => {
+    clickHandler.current = onClick;
+  }, [onClick]);
+
+  // Permission can change in another tab or in the browser's settings.
+  useEffect(() => {
+    const refresh = () => {
+      setPermission(currentPermission());
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    let status: PermissionStatus | undefined;
+    if ("permissions" in navigator) {
+      navigator.permissions
+        .query({ name: "notifications" })
+        .then((result) => {
+          status = result;
+          status.onchange = refresh;
+        })
+        .catch(() => {
+          // The focus and visibility checks still apply.
+        });
+    }
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      if (status !== undefined) status.onchange = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!("locks" in navigator)) return;
@@ -62,7 +90,11 @@ export function useNotifications(
     state.current = result.state;
     // Events from before notifications were turned on are never sent later.
     if (!leader.current || currentPermission() !== "granted") return;
-    const content = notificationContent(result.events, snapshot.seq);
+    const content = notificationContent(
+      result.events,
+      snapshot.seq,
+      snapshot.runId,
+    );
     if (content === null) return;
     try {
       const notification = new Notification(content.title, {
