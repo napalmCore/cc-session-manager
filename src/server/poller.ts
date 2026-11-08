@@ -87,11 +87,13 @@ export function createPoller({
   let warnings: string[] = [];
   let lastSuccessAt: number | null = null;
   let lastPollFailed = false;
+  let failedPolls = 0;
   let listedLastPoll = new Set<string>();
   let lastReported: string | undefined;
 
   const report = (error: string | null) => {
     const snapshot: Snapshot = { sessions, error, warnings };
+    if (error !== null && failedPolls > 0) snapshot.failedPolls = failedPolls;
     const serialized = JSON.stringify(snapshot);
     if (serialized === lastReported) return;
     lastReported = serialized;
@@ -120,9 +122,11 @@ export function createPoller({
       ];
       lastSuccessAt = pollStartedAt;
       lastPollFailed = false;
+      failedPolls = 0;
       if (running) report(null);
     } catch {
       lastPollFailed = true;
+      failedPolls += 1;
       if (running) report(POLL_FAILED);
     }
     if (running) timer = setTimeout(() => void tick(), intervalMs);

@@ -56,6 +56,32 @@ describe("createPoller", () => {
     poller.stop();
   });
 
+  it("counts failed polls in a row, and resets the count on success", async () => {
+    const snapshots: Snapshot[] = [];
+    const run = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce("[]")
+      .mockRejectedValueOnce(new Error("x"))
+      .mockRejectedValueOnce(new Error("x"))
+      .mockRejectedValueOnce(new Error("x"))
+      .mockResolvedValue("[]");
+    const poller = createPoller({
+      run,
+      intervalMs: 10,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(45);
+    poller.stop();
+    expect(snapshots.map((snapshot) => snapshot.failedPolls)).toEqual([
+      undefined,
+      1,
+      2,
+      3,
+      undefined,
+    ]);
+  });
+
   it("keeps the last good sessions and hides failure details", async () => {
     const snapshots: Snapshot[] = [];
     const good = JSON.stringify([

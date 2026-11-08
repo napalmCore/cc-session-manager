@@ -259,6 +259,155 @@ test.describe("live updates", () => {
   });
 });
 
+test.describe("desktop notifications", () => {
+  // A stand-in for the browser's Notification, which records what the page shows.
+  const fakeNotifications = (permission: string) => {
+    return `
+      window.__shown = [];
+      class FakeNotification {
+        static permission = ${JSON.stringify(permission)};
+        static requestPermission() {
+          FakeNotification.permission = "granted";
+          return Promise.resolve("granted");
+        }
+        constructor(title, options) {
+          this.title = title;
+          this.body = options.body;
+          this.tag = options.tag;
+          window.__shown.push(this);
+        }
+        close() {}
+      }
+      window.Notification = FakeNotification;
+    `;
+  };
+  const shown = (page: Page) =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          __shown: { title: string; body: string; tag: string }[];
+        }
+      ).__shown.map(({ title, body, tag }) => ({ title, body, tag })),
+    );
+
+  const busyOnly = (): Snapshot =>
+    snapshot({
+      sessions: [
+        toSessionView({
+          sessionId: "n1",
+          kind: "interactive",
+          status: "busy",
+          cwd: "C:/repos/alpha",
+          name: "Secret task name",
+        }),
+      ],
+      seq: 1,
+    });
+  const waitingNow = (seq: number): Snapshot =>
+    snapshot({
+      sessions: [
+        {
+          ...toSessionView({
+            sessionId: "n1",
+            kind: "interactive",
+            status: "waiting",
+            waitingFor: "permission prompt",
+            cwd: "C:/repos/alpha",
+            name: "Secret task name",
+          }),
+          lastActivityAt: Date.now(),
+        },
+      ],
+      seq,
+    });
+
+  test("turns on from the button, then notifies with the folder and reason only", async ({
+    page,
+  }) => {
+    await page.addInitScript(fakeNotifications("default"));
+    await open(page, busyOnly());
+
+    await page
+      .getByRole("button", { name: "Turn on desktop notifications" })
+      .click();
+    await expect(page.getByText("Desktop notifications are on.")).toBeVisible();
+
+    server.publish(waitingNow(2));
+    await expect
+      .poll(() => shown(page))
+      .toEqual([
+        {
+          title: "Claude Code session",
+          body: "alpha: permission prompt",
+          tag: "cc-session-manager-2",
+        },
+      ]);
+  });
+
+  test("doesn't send events from before notifications were turned on", async ({
+    page,
+  }) => {
+    await page.addInitScript(fakeNotifications("default"));
+    await open(page, busyOnly());
+    server.publish(waitingNow(2));
+    await expect(section(page, /needs you/i)).toBeVisible();
+
+    await page
+      .getByRole("button", { name: "Turn on desktop notifications" })
+      .click();
+    await expect(page.getByText("Desktop notifications are on.")).toBeVisible();
+    expect(await shown(page)).toEqual([]);
+  });
+
+  test("notifies once across two tabs", async ({ page, context }) => {
+    await context.addInitScript(fakeNotifications("granted"));
+    await open(page, busyOnly());
+    const second = await context.newPage();
+    await second.goto(`http://127.0.0.1:${String(server.port)}/`);
+    await expect(second.getByRole("heading", { level: 1 })).toBeVisible();
+
+    server.publish(waitingNow(2));
+    await expect(section(page, /needs you/i)).toBeVisible();
+    await expect(section(second, /needs you/i)).toBeVisible();
+    await expect
+      .poll(
+        async () => (await shown(page)).length + (await shown(second)).length,
+      )
+      .toBe(1);
+  });
+
+  test("highlights the session's row when the notification is clicked", async ({
+    page,
+  }) => {
+    await page.addInitScript(fakeNotifications("granted"));
+    await open(page, busyOnly());
+    server.publish(waitingNow(2));
+    await expect.poll(async () => (await shown(page)).length).toBe(1);
+
+    await page.evaluate(() => {
+      const list = (window as unknown as { __shown: { onclick: () => void }[] })
+        .__shown;
+      list[0]?.onclick();
+    });
+    await expect(
+      section(page, /needs you/i).locator('[data-highlighted="true"]'),
+    ).toContainText("Secret task name");
+  });
+
+  test("says when notifications are blocked or unavailable", async ({
+    page,
+  }) => {
+    await page.addInitScript(fakeNotifications("denied"));
+    await open(page);
+    await expect(
+      page.getByText(/Desktop notifications are blocked/),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Turn on desktop notifications" }),
+    ).toHaveCount(0);
+  });
+});
+
 test.describe("screen reader announcements", () => {
   // Announcements fire after a short delay, so checking for silence sooner proves nothing.
   const waitPastAnnouncementDelay = (page: Page) => page.waitForTimeout(400);

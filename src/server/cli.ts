@@ -124,11 +124,15 @@ removeStaleLock(dataFolder);
 
 const protection = createProtection([identity]);
 let lastSnapshot: Snapshot | null = null;
+let sequence = 0;
 const publish = (snapshot: Snapshot) => {
   lastSnapshot = snapshot;
+  sequence += 1;
   serverRef.current?.publish({
     ...snapshot,
     actionsBlocked: protection.blockedReason(),
+    seq: sequence,
+    ownActions: actionsRef.current?.ownActionSessions() ?? [],
   });
 };
 
