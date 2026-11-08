@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Session, SessionView } from "../shared/protocol.js";
-import { createFolderWatch, FOLDER_CHECK_MS } from "./folders.js";
+import { createFolderWatch, FOLDER_CHECK_MS, MAX_CHECKS } from "./folders.js";
 import { toSessionView } from "./rules.js";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -124,6 +124,27 @@ describe("createFolderWatch", () => {
       expect(isFolder).not.toHaveBeenCalled();
     },
   );
+
+  it("runs at most a few checks at once, so a hung drive can't take every thread", () => {
+    const isFolder = vi.fn(() => new Promise<boolean>(() => undefined));
+    const watch = createFolderWatch({ onChange: vi.fn(), isFolder });
+    watch.missing(["C:/a", "C:/b", "C:/c", "C:/d"].map((cwd) => finished(cwd)));
+
+    expect(isFolder).toHaveBeenCalledTimes(MAX_CHECKS);
+  });
+
+  it("keeps running when resending the snapshot throws", async () => {
+    const watch = createFolderWatch({
+      onChange: () => {
+        throw new Error("send failed");
+      },
+      isFolder: () => Promise.resolve(false),
+    });
+    watch.missing([finished("C:/gone")]);
+    await settle();
+
+    expect(watch.missing([finished("C:/gone")])).toEqual([ID]);
+  });
 
   it("treats a check that fails as a missing folder", async () => {
     const onChange = vi.fn();

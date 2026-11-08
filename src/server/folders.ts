@@ -6,6 +6,8 @@ import type { SessionView } from "../shared/protocol.js";
 export const FOLDER_CHECK_MS = 10_000;
 
 const NETWORK_PATH = /^[\\/]{2}/;
+/** Checks running at once, so a hung drive can't take every file-system thread. */
+export const MAX_CHECKS = 2;
 
 export interface FolderWatchOptions {
   /** Called when a check finds that a folder's state changed, so the snapshot can be resent. */
@@ -37,14 +39,20 @@ export function createFolderWatch(options: FolderWatchOptions) {
   const checking = new Set<string>();
 
   const schedule = (folder: string) => {
-    if (checking.has(folder)) return;
+    if (checking.has(folder) || checking.size >= MAX_CHECKS) return;
     checking.add(folder);
     void check(folder)
       .catch(() => false)
       .then((exists) => {
         const before = known.get(folder)?.exists ?? true;
         known.set(folder, { exists, at: now() });
-        if (exists !== before) options.onChange();
+        if (exists !== before) {
+          try {
+            options.onChange();
+          } catch {
+            // A failed resend waits for the next change rather than ending the tool.
+          }
+        }
       })
       .finally(() => {
         checking.delete(folder);
