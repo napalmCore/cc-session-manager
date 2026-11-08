@@ -6,6 +6,7 @@ import { toSessionView } from "./rules.js";
 import { startServer, type RunningServer } from "./server.js";
 
 let server: RunningServer;
+let pageKey = "";
 
 interface RawResponse {
   status: number;
@@ -35,6 +36,13 @@ function request(
   });
 }
 
+function keyFrom(location: string | undefined): string {
+  return /^\/#key=([0-9a-f]{64})$/.exec(location ?? "")?.[1] ?? "";
+}
+
+/** The protocols the page offers, carrying its key. */
+const protocols = (key: string) => ["ccsm", `ccsm-key-${key}`];
+
 function loginPath(): string {
   const url = new URL(server.loginUrl);
   return url.pathname + url.search;
@@ -44,19 +52,27 @@ async function login(): Promise<string> {
   const response = await request(loginPath());
   const cookie = response.headers["set-cookie"]?.[0];
   if (!cookie) throw new Error("login did not set a cookie");
+  pageKey = keyFrom(response.headers.location);
   return cookie.split(";")[0] ?? "";
 }
 
 function connect(
   headers: Record<string, string>,
-): Promise<{ opened: boolean; first?: string }> {
+  key: string | null = pageKey,
+): Promise<{ opened: boolean; first?: string; protocol?: string }> {
   return new Promise((resolve) => {
-    const socket = new WebSocket(`ws://127.0.0.1:${String(server.port)}/ws`, {
-      headers,
-    });
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${String(server.port)}/ws`,
+      key === null ? [] : protocols(key),
+      { headers },
+    );
     socket.on("message", (data: Buffer) => {
       socket.close();
-      resolve({ opened: true, first: data.toString() });
+      resolve({
+        opened: true,
+        first: data.toString(),
+        protocol: socket.protocol,
+      });
     });
     socket.on("error", () => {
       resolve({ opened: false });
@@ -107,7 +123,9 @@ describe("login", () => {
     const response = await request(loginPath());
 
     expect(response.status).toBe(303);
-    expect(response.headers.location).toBe("/");
+    // The page key travels in the fragment, which browsers never send to a server.
+    expect(response.headers.location).toMatch(/^\/#key=[0-9a-f]{64}$/);
+    expect(response.headers.location).not.toContain(token);
     const cookie = response.headers["set-cookie"]?.[0] ?? "";
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Strict");
@@ -197,6 +215,30 @@ describe("WebSocket", () => {
     };
     expect(message.type).toBe("snapshot");
     expect(message.snapshot.sessions).toHaveLength(1);
+    // The server echoes only the plain protocol, never the key.
+    expect(result.protocol).toBe("ccsm");
+  });
+
+  it("rejects a connection with the cookie but no page key, as another local program would", async () => {
+    const cookie = await login();
+    expect((await connect({ cookie, origin: origin() }, null)).opened).toBe(
+      false,
+    );
+  });
+
+  it("rejects a wrong page key", async () => {
+    const cookie = await login();
+    expect(
+      (await connect({ cookie, origin: origin() }, "0".repeat(64))).opened,
+    ).toBe(false);
+  });
+
+  it("gives every sign-in the same page key, so other tabs keep working", async () => {
+    await login();
+    const first = pageKey;
+    const url = new URL(server.loginUrl);
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+    expect(url.searchParams.get("token")).not.toBe(first);
   });
 });
 
@@ -270,9 +312,13 @@ describe("before the first poll", () => {
       const cookie =
         (response.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "";
       const messages: string[] = [];
-      const socket = new WebSocket(`ws://127.0.0.1:${String(fresh.port)}/ws`, {
-        headers: { cookie, origin: `http://127.0.0.1:${String(fresh.port)}` },
-      });
+      const socket = new WebSocket(
+        `ws://127.0.0.1:${String(fresh.port)}/ws`,
+        protocols(keyFrom(response.headers.location)),
+        {
+          headers: { cookie, origin: `http://127.0.0.1:${String(fresh.port)}` },
+        },
+      );
       socket.on("message", (data: Buffer) => messages.push(data.toString()));
       await new Promise((resolve) => socket.once("open", resolve));
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -321,9 +367,13 @@ describe("shutting down", () => {
     server = target;
     const cookie = await login();
     server = previous;
-    const socket = new WebSocket(`ws://127.0.0.1:${String(target.port)}/ws`, {
-      headers: { cookie, origin: `http://127.0.0.1:${String(target.port)}` },
-    });
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${String(target.port)}/ws`,
+      protocols(pageKey),
+      {
+        headers: { cookie, origin: `http://127.0.0.1:${String(target.port)}` },
+      },
+    );
     socket.on("error", () => undefined);
     await new Promise((resolve) => socket.once("message", resolve));
 

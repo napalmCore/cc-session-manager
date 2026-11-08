@@ -1,19 +1,26 @@
 import { useEffect, useState } from "react";
 import type { Snapshot, SnapshotMessage } from "../shared/protocol.js";
+import { readPageKey } from "./pageKey.js";
 
 const RECONNECT_MS = 2000;
 
 export function useSnapshot() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(true);
+  const [pageKey] = useState(readPageKey);
 
   useEffect(() => {
     let socket: WebSocket | undefined;
     let retry: number | undefined;
     let disposed = false;
 
+    if (pageKey === null) return;
     const connect = () => {
-      socket = new WebSocket(`ws://${location.host}/ws`);
+      // The server picks the first protocol, so the key is never echoed back.
+      socket = new WebSocket(`ws://${location.host}/ws`, [
+        "ccsm",
+        `ccsm-key-${pageKey}`,
+      ]);
       socket.onopen = () => {
         setConnected(true);
       };
@@ -34,7 +41,7 @@ export function useSnapshot() {
       window.clearTimeout(retry);
       socket?.close();
     };
-  }, []);
+  }, [pageKey]);
 
-  return { snapshot, connected };
+  return { snapshot, connected, signedIn: pageKey !== null };
 }

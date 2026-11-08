@@ -17,15 +17,25 @@ import {
   type ActionResult,
 } from "./actions.js";
 import type { Snapshot, SnapshotMessage } from "../shared/protocol.js";
+import { handoverProof, proofMatches } from "./instance.js";
 import { type Identity, identitySchema, toIdentity } from "./protect.js";
 
 const LOOPBACK = "127.0.0.1";
 const PORT_ATTEMPTS = 20;
 const MAX_ACTION_BODY = 4096;
 export const HANDOVER_LINK_MS = 60_000;
+/** The header that carries the page key on action requests. */
+export const PAGE_KEY_HEADER = "x-ccsm-key";
+/** The WebSocket subprotocol that carries the page key, since a browser can't add headers. */
+export const PAGE_KEY_PROTOCOL_PREFIX = "ccsm-key-";
+export const WS_PROTOCOL = "ccsm";
 
 const handoverRequestSchema = z
-  .object({ secret: z.string().max(128), identity: identitySchema })
+  .object({
+    nonce: z.string().regex(/^[0-9a-f]{64}$/),
+    proof: z.string().regex(/^[0-9a-f]{64}$/),
+    identity: identitySchema,
+  })
   .strict();
 
 const actionRequestSchema = z
@@ -110,11 +120,19 @@ export async function startServer(
     options.webDir ?? fileURLToPath(new URL("../web", import.meta.url));
   const assets = loadAssets(webDir);
   const sessionSecret = randomBytes(32).toString("hex");
+  // Browsers send cookies to every port on a host, so the cookie alone could reach another local
+  // program. The page key travels only in the sign-in redirect's fragment, which browsers never
+  // send to a server, and lives in the page's own storage, which is per port.
+  const pageKey = randomBytes(32).toString("hex");
+  const hasPageKey = (value: string | undefined) =>
+    value !== undefined && secureEquals(value, pageKey);
   const styleNonce = randomBytes(16).toString("hex");
   const clients = new Set<WSContext>();
   let loginToken: string | null = randomBytes(32).toString("hex");
   const issuedToken = loginToken;
   const handoverLinks = new Map<string, number>();
+  // A recorded handover request can't be sent again to get another link.
+  const usedNonces = new Set<string>();
   const now = options.now ?? Date.now;
   let port = 0;
   let latest: Snapshot | null = null;
@@ -186,10 +204,15 @@ export async function startServer(
       const request = handoverRequestSchema.safeParse(parsed);
       if (
         !request.success ||
-        !secureEquals(request.data.secret, handover.secret)
+        usedNonces.has(request.data.nonce) ||
+        !proofMatches(
+          request.data.proof,
+          handoverProof(handover.secret, "client", request.data.nonce),
+        )
       ) {
         return c.json({ message: "Forbidden" }, 403);
       }
+      usedNonces.add(request.data.nonce);
       handover.onHandover(toIdentity(request.data.identity));
       const token = randomBytes(32).toString("hex");
       const current = now();
@@ -198,7 +221,10 @@ export async function startServer(
       }
       handoverLinks.set(token, current + HANDOVER_LINK_MS);
       return c.json(
-        { loginUrl: `http://${expectedHost()}/auth?token=${token}` },
+        {
+          loginUrl: `http://${expectedHost()}/auth?token=${token}`,
+          proof: handoverProof(handover.secret, "server", request.data.nonce),
+        },
         200,
       );
     },
@@ -229,7 +255,7 @@ export async function startServer(
       sameSite: "Strict",
       path: "/",
     });
-    return c.redirect("/", 303);
+    return c.redirect(`/#key=${pageKey}`, 303);
   });
 
   app.use("*", async (c, next) => {
@@ -248,6 +274,13 @@ export async function startServer(
     "/ws",
     async (c, next) => {
       if (c.req.header("origin") !== `http://${expectedHost()}`) {
+        return c.text("Forbidden", 403);
+      }
+      const offered = (c.req.header("sec-websocket-protocol") ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .find((value) => value.startsWith(PAGE_KEY_PROTOCOL_PREFIX));
+      if (!hasPageKey(offered?.slice(PAGE_KEY_PROTOCOL_PREFIX.length))) {
         return c.text("Forbidden", 403);
       }
       await next();
@@ -276,6 +309,16 @@ export async function startServer(
     async (c) => {
       if (c.req.header("origin") !== `http://${expectedHost()}`) {
         return c.json({ outcome: "refused", message: "Forbidden" }, 403);
+      }
+      if (!hasPageKey(c.req.header(PAGE_KEY_HEADER))) {
+        return c.json(
+          {
+            outcome: "refused",
+            message:
+              "This page can't run actions. Open the dashboard again from the tool's sign-in link.",
+          },
+          403,
+        );
       }
       const contentType = c.req.header("content-type") ?? "";
       if (
