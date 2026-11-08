@@ -124,6 +124,15 @@ describe("createProtection", () => {
     expect(protection.isProtected(interactive(OTHER_ID, 200))).toBe(false);
   });
 
+  it("reports when a listing changes whether actions are turned off", () => {
+    const protection = createProtection([{ insideClaude: false }]);
+    protection.add({ insideClaude: true, sessionId: SESSION_ID });
+    expect(protection.observe([interactive(OTHER_ID, 200)])).toBe(false);
+    expect(protection.observe([interactive(SESSION_ID, 100)])).toBe(true);
+    expect(protection.blockedReason()).toBeNull();
+    expect(protection.observe([interactive(SESSION_ID, 100)])).toBe(false);
+  });
+
   it("keeps actions off when the start has no IDs at all", () => {
     const protection = createProtection([{ insideClaude: true }]);
     protection.observe([interactive(SESSION_ID, 100)]);

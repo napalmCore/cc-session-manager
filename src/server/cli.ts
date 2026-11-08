@@ -191,7 +191,11 @@ const poller = createPoller({
   intervalMs: POLL_INTERVAL_MS,
   onSnapshot: publish,
   track: (current) => {
-    protection.observe(current);
+    // The poller only publishes when the sessions change, so a change in whether actions are
+    // turned off, such as a handed-over session being found, is published here.
+    if (protection.observe(current) && lastSnapshot !== null) {
+      publish(lastSnapshot);
+    }
     return tracker.update(current);
   },
   enrich: createMetadataReader().enrich,

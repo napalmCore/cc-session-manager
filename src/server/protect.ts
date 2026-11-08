@@ -123,13 +123,18 @@ export function createProtection(initial: Identity[] = []) {
 
   return {
     add,
-    /** Called with each live listing, so a protected session counts as found once it's listed. */
-    observe(sessions: SessionView[]) {
+    /**
+     * Called with each live listing, so a protected session counts as found once it's listed.
+     * Returns true when that changes the blocked reason, so the caller can publish it.
+     */
+    observe(sessions: SessionView[]): boolean {
+      const before = identities.some((entry) => !entry.seen);
       for (const entry of identities) {
         if (sessions.some((session) => matches(entry.identity, session))) {
           entry.seen = true;
         }
       }
+      return identities.some((entry) => !entry.seen) !== before;
     },
     /**
      * Why actions are turned off for every session, or null. A start from inside Claude Code
