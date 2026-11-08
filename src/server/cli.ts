@@ -24,6 +24,7 @@ import {
   removeStaleLock,
   requestHandover,
 } from "./instance.js";
+import { createFolderWatch } from "./folders.js";
 import { createOpenExecutors } from "./open.js";
 import {
   createStopDeleteExecutors,
@@ -139,32 +140,19 @@ function folderExists(folder: string): boolean {
   }
 }
 
-/**
- * Finished sessions whose folder has gone, so the page doesn't offer Resume (BUG-31). A network
- * folder isn't checked here, because checking it on every poll would connect to that server.
- */
-function missingFolders(snapshot: Snapshot): string[] {
-  return snapshot.sessions
-    .filter(
-      (session) =>
-        session.kind === "interactive" &&
-        session.finished &&
-        session.cwd !== undefined &&
-        !/^[\\/]{2}/.test(session.cwd) &&
-        !folderExists(session.cwd),
-    )
-    .flatMap(sessionKeys);
-}
-
 const protection = createProtection([identity]);
 let lastSnapshot: Snapshot | null = null;
 let sequence = 0;
 const runId = randomBytes(4).toString("hex");
-let lastMissing = "";
+// A deleted folder doesn't change the sessions, so the watch resends the snapshot itself.
+const folderWatch = createFolderWatch({
+  onChange: () => {
+    if (lastSnapshot !== null) publish(lastSnapshot);
+  },
+});
 const publish = (snapshot: Snapshot) => {
   lastSnapshot = snapshot;
-  const missing = missingFolders(snapshot);
-  lastMissing = missing.join(",");
+  const missing = folderWatch.missing(snapshot.sessions);
   sequence += 1;
   serverRef.current?.publish({
     ...snapshot,
@@ -246,15 +234,8 @@ const poller = createPoller({
       publish(lastSnapshot);
     }
     const tracked = tracker.update(current);
-    // A deleted folder doesn't change the sessions either, so it's published here too.
-    if (
-      lastSnapshot !== null &&
-      missingFolders({ ...lastSnapshot, sessions: tracked.sessions }).join(
-        ",",
-      ) !== lastMissing
-    ) {
-      publish(lastSnapshot);
-    }
+    // Starts any due folder checks, even when nothing else changes.
+    folderWatch.missing(tracked.sessions);
     return tracked;
   },
   enrich: createMetadataReader().enrich,
