@@ -349,11 +349,13 @@ function NotificationControl({
 }
 
 function Banners({
+  signedIn,
   connected,
   error,
   warnings,
   actionsBlocked,
 }: {
+  signedIn: boolean;
   connected: boolean;
   error: string | null;
   warnings: string[];
@@ -364,7 +366,13 @@ function Banners({
       {actionsBlocked !== null && (
         <p className={styles.banner}>{actionsBlocked}</p>
       )}
-      {!connected && (
+      {!signedIn && (
+        <p role="alert" className={styles.banner}>
+          This page isn&apos;t signed in. Open the dashboard from the link the
+          tool printed when it started, or start the tool again.
+        </p>
+      )}
+      {signedIn && !connected && (
         <p role="alert" className={styles.banner}>
           Not connected to the local server. Trying to reconnect.
         </p>
@@ -397,7 +405,7 @@ function Banners({
 }
 
 export function App() {
-  const { snapshot, connected } = useSnapshot();
+  const { snapshot, connected, signedIn } = useSnapshot();
   const [now, setNow] = useState(() => Date.now());
   const [highlighted, setHighlighted] = useState<Set<string>>(() => new Set());
   const onNotificationClick = useCallback((keys: string[]) => {
@@ -580,6 +588,7 @@ export function App() {
       </div>
       <NotificationControl permission={permission} onTurnOn={request} />
       <Banners
+        signedIn={signedIn}
         connected={connected}
         error={snapshot?.error ?? null}
         warnings={snapshot?.warnings ?? []}
@@ -594,7 +603,7 @@ export function App() {
           {lastResultGone.reply.message}
         </p>
       )}
-      {snapshot === null && <p>Loading sessions…</p>}
+      {signedIn && snapshot === null && <p>Loading sessions…</p>}
       {snapshot?.sessions.length === 0 && <p>No sessions to show.</p>}
       <Group
         title="Needs you"

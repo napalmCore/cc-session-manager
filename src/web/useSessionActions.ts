@@ -9,6 +9,7 @@ import {
   type ActionReply,
   type SessionAction,
 } from "../shared/session-actions.js";
+import { readPageKey } from "./pageKey.js";
 
 export interface ActionResultView {
   action: SessionAction;
@@ -24,12 +25,18 @@ export interface FocusTarget {
   groupId: string;
 }
 
+/** When focus is checked again after an action or a dialog closing. */
+const FOCUS_RECHECK_MS = 50;
+
 async function post(action: SessionAction, key: string): Promise<ActionReply> {
   let response: Response;
   try {
     response = await fetch("/api/actions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CCSM-Key": readPageKey() ?? "",
+      },
       body: JSON.stringify({ action, key }),
       credentials: "same-origin",
       cache: "no-store",
@@ -49,9 +56,23 @@ async function post(action: SessionAction, key: string): Promise<ActionReply> {
  * the row has gone, but only when focus was lost, so it never pulls focus from somewhere the
  * user moved it.
  */
+// Counts focus moves, so a delayed check stands down once focus has gone anywhere.
+let focusMoves = 0;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "focusin",
+    () => {
+      focusMoves += 1;
+    },
+    true,
+  );
+}
+
 export function restoreFocus(target: FocusTarget | null): void {
   if (target === null) return;
-  requestAnimationFrame(() => {
+  const movesAtStart = focusMoves;
+  const attempt = () => {
+    if (focusMoves !== movesAtStart) return;
     const active = document.activeElement;
     if (active !== null && active !== document.body) return;
     const row = document.querySelector<HTMLElement>(
@@ -66,7 +87,11 @@ export function restoreFocus(target: FocusTarget | null): void {
       document.getElementById(target.groupId) ??
       document.querySelector<HTMLElement>("h1");
     next?.focus();
-  });
+  };
+  // React Aria restores focus from a closing dialog on its own schedule, and can leave it on the
+  // page body when its button has gone, so this checks again shortly after.
+  requestAnimationFrame(attempt);
+  window.setTimeout(attempt, FOCUS_RECHECK_MS);
 }
 
 export function useSessionActions(announce: (message: string) => void) {

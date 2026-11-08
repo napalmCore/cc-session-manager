@@ -167,7 +167,12 @@ An investigator agent tested on Windows 11 with Claude Code 2.1.319, installed t
 ### Access rules for actions (NFR-6, NFR-7)
 
 - **Request format:** only `POST` with `Content-Type: application/json`, and a body holding exactly an action name and a session key. Unknown fields are rejected.
-- **Rejected requests:** a missing or invalid session cookie, or a missing or mismatched `Origin` or `Host`. Reads and page loads can't trigger an action, and `frame-ancestors 'none'` stays.
+- **Rejected requests:** a missing or invalid session cookie, a missing or wrong page key, or a missing or mismatched `Origin` or `Host`. Reads and page loads can't trigger an action, and `frame-ancestors 'none'` stays.
+- **Page key:** browsers send a cookie to every port on a host, so the cookie alone could reach another program listening on the PC, which could then send any header it likes. The security review found this (NFR-9), and the owner chose to fix it before release.
+  - Sign-in redirects to `/#key=<key>`. Browsers never send the part after `#` to a server.
+  - The page moves the key into its own storage, which is separate for each port, and removes it from the address.
+  - Actions need the key in an `X-CCSM-Key` header. The WebSocket needs it as a subprotocol, `ccsm-key-<key>`, after a plain `ccsm` that the server echoes, so the key is never sent back. Without it, the connection is refused before it opens.
+  - The server never returns the key to a request that only has the cookie. A page without the key says it isn't signed in.
 - **Session key:** a short `id` of 8 hex characters, or a `sessionId` UUID.
 - **One action at a time:** the action tracker allows one action per session, keyed by `sessionId` when known, and nothing retries automatically (NFR-10).
 
@@ -280,8 +285,10 @@ Across 17 sessions, including one with a slow MCP server, processes started 0.9 
 ### Single instance (U-15)
 
 - **Lock file:** at startup, the tool creates `instance.json` in its data folder, with exclusive creation so two starts can't both win. It holds the tool's process ID, port, and a random handover secret. It's removed on a normal shutdown, only if it's still this instance's.
-- **Handover:** a second start sends `POST /api/handover` with the secret, and its own session values if any.
-  - The route requires the correct `Host`, rejects any request with a browser `Origin`, and compares the secret in constant time.
+- **Handover:** a second start sends `POST /api/handover` with its own session values, if any, and proves it knows the secret without sending it.
+  - It sends a random nonce and an HMAC of it keyed with the secret. The running tool answers with its own HMAC of the nonce, and the second start trusts the link only if that matches. A program answering on a stale lock's port learns nothing and can't pass itself off as the tool.
+  - The second start asks only if the lock's process is still running.
+  - The route requires the correct `Host`, rejects any request with a browser `Origin`, compares the proof in constant time, and refuses a nonce it has already seen.
   - It returns a one-time sign-in link that's valid for 60 seconds, which the second start opens before exiting.
   - It's an exception to NFR-2's single token, for the same user only.
 - **Stale lock:** if the lock's process is gone or doesn't answer, the tool replaces the file and starts normally.

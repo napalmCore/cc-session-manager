@@ -127,6 +127,56 @@ test.describe("sign-in", () => {
   });
 });
 
+test.describe("page key", () => {
+  test("keeps the key out of the address and lets another tab use it", async ({
+    page,
+    context,
+  }) => {
+    await open(page);
+    expect(page.url()).not.toContain("key");
+
+    const other = await context.newPage();
+    await other.goto(`http://127.0.0.1:${String(server.port)}/`);
+    await expect(
+      section(other, /active/i).getByText("running", { exact: true }),
+    ).toBeVisible();
+    await other.close();
+  });
+
+  test("a page with the cookie but no key gets no data and says how to sign in", async ({
+    page,
+  }) => {
+    await open(page);
+    await page.evaluate(() => {
+      localStorage.clear();
+    });
+
+    await page.reload();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "This page isn't signed in",
+    );
+    await expect(page.getByText("running")).toHaveCount(0);
+  });
+
+  test("an action request with only the cookie is refused", async ({
+    page,
+  }) => {
+    await open(page);
+
+    const status = await page.evaluate(async () => {
+      const response = await fetch("/api/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop", key: "abcd1234" }),
+      });
+      return response.status;
+    });
+
+    expect(status).toBe(403);
+  });
+});
+
 test.describe("session groups", () => {
   test("places sessions in the right groups", async ({ page }) => {
     await open(page);

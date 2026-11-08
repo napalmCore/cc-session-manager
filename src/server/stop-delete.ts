@@ -26,6 +26,8 @@ export interface StopDeleteOptions {
 }
 
 const FINISHED_STATES = new Set(["stopped", "done", "failed"]);
+// The short id goes to the CLI as an argument, so it must never look like a flag (C-8, NFR-7).
+const SHORT_ID = /^[0-9a-f]{8}$/;
 // The CLI prints "kept <id> — ..." when it keeps a session to protect its worktree. Matching
 // its wording means a change there only turns "Kept" into "Failed", never into success.
 const KEPT = /^kept\s/im;
@@ -100,7 +102,7 @@ export function createStopDeleteExecutors(options: StopDeleteOptions) {
     async stop(session: SessionView): Promise<ActionResult> {
       if (!options.claudeAvailable) return unavailable;
       const id = session.id;
-      if (id === undefined)
+      if (id === undefined || !SHORT_ID.test(id))
         return {
           outcome: "refused",
           message: "That session can't be stopped.",
@@ -130,7 +132,7 @@ export function createStopDeleteExecutors(options: StopDeleteOptions) {
     async delete(session: SessionView): Promise<ActionResult> {
       if (!options.claudeAvailable) return unavailable;
       const id = session.id;
-      if (id === undefined)
+      if (id === undefined || !SHORT_ID.test(id))
         return {
           outcome: "refused",
           message: "That session can't be deleted.",

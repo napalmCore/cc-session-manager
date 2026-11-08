@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createLock,
+  handoverProof,
   lockPath,
   newHandoverSecret,
   processAlive,
@@ -82,6 +83,17 @@ const lockFor = (): InstanceLock => ({
   secret,
 });
 
+/** A correctly signed request body, as a second start sends. */
+const signed = (
+  extra: Record<string, unknown> = {},
+  nonce = "a".repeat(64),
+) => ({
+  nonce,
+  proof: handoverProof(secret, "client", nonce),
+  identity,
+  ...extra,
+});
+
 const pathOf = (url: string) => {
   const parsed = new URL(url);
   return parsed.pathname + parsed.search;
@@ -139,7 +151,7 @@ describe("handover route", () => {
   });
 
   it("refuses any request with a browser Origin", async () => {
-    const response = await post(JSON.stringify({ secret, identity }), {
+    const response = await post(JSON.stringify(signed()), {
       "Content-Type": "application/json",
       Origin: `http://127.0.0.1:${String(server.port)}`,
     });
@@ -149,7 +161,7 @@ describe("handover route", () => {
 
   it("refuses the wrong Host", async () => {
     const response = await post(
-      JSON.stringify({ secret, identity }),
+      JSON.stringify(signed()),
       { "Content-Type": "application/json" },
       `localhost:${String(server.port)}`,
     );
@@ -158,18 +170,30 @@ describe("handover route", () => {
   });
 
   it.each([
-    ["unknown fields", { secret, identity, extra: 1 }],
-    ["a bad session ID", { secret, identity: { ...identity, sessionId: "x" } }],
-    ["no identity", { secret }],
+    ["unknown fields", () => signed({ extra: 1 })],
+    [
+      "a bad session ID",
+      () => signed({ identity: { ...identity, sessionId: "x" } }),
+    ],
+    ["no identity", () => ({ nonce: "a".repeat(64), proof: signed().proof })],
+    ["the secret itself instead of a proof", () => ({ secret, identity })],
+    [
+      "a proof made with another secret",
+      () => ({
+        nonce: "a".repeat(64),
+        proof: handoverProof(newHandoverSecret(), "client", "a".repeat(64)),
+        identity,
+      }),
+    ],
   ])("refuses a request with %s", async (_label, body) => {
-    expect((await post(JSON.stringify(body))).status).toBe(403);
+    expect((await post(JSON.stringify(body()))).status).toBe(403);
     expect(onHandover).not.toHaveBeenCalled();
   });
 
   it("refuses a request that isn't JSON", async () => {
     expect(
       (
-        await post(JSON.stringify({ secret, identity }), {
+        await post(JSON.stringify(signed()), {
           "Content-Type": "text/plain",
         })
       ).status,
@@ -179,7 +203,23 @@ describe("handover route", () => {
   it("isn't there without a handover secret", async () => {
     await server.close();
     server = await startServer({ preferredPort: 0 });
-    expect((await post(JSON.stringify({ secret, identity }))).status).toBe(404);
+    expect((await post(JSON.stringify(signed()))).status).toBe(404);
+  });
+});
+
+describe("handover proofs", () => {
+  it("refuses a recorded request sent again", async () => {
+    const body = JSON.stringify(signed({}, "b".repeat(64)));
+    expect((await post(body)).status).toBe(200);
+    expect((await post(body)).status).toBe(403);
+    expect(onHandover).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers with a proof that it knows the secret", async () => {
+    const nonce = "c".repeat(64);
+    const response = await post(JSON.stringify(signed({}, nonce)));
+    const body = JSON.parse(response.body) as { proof: string };
+    expect(body.proof).toBe(handoverProof(secret, "server", nonce));
   });
 });
 
@@ -196,11 +236,24 @@ describe("requestHandover's checks on the answer", () => {
   let fake: http.Server;
   let fakePort: number;
   let answer: { status: number; body: string };
+  let received: string[];
 
   beforeEach(async () => {
-    fake = http.createServer((_req, res) => {
-      res.writeHead(answer.status, { "Content-Type": "application/json" });
-      res.end(answer.body);
+    received = [];
+    fake = http.createServer((req, res) => {
+      let text = "";
+      req.on("data", (chunk: Buffer) => {
+        text += chunk.toString();
+      });
+      req.on("end", () => {
+        received.push(text);
+        const nonce =
+          (JSON.parse(text) as { nonce?: string }).nonce ?? "missing";
+        res.writeHead(answer.status, { "Content-Type": "application/json" });
+        res.end(
+          answer.body.replace("PROOF", handoverProof(secret, "server", nonce)),
+        );
+      });
     });
     await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", resolve));
     fakePort = (fake.address() as { port: number }).port;
@@ -218,9 +271,40 @@ describe("requestHandover's checks on the answer", () => {
 
   it("accepts a link for the lock's own port", async () => {
     const url = `http://127.0.0.1:${String(fakePort)}/auth?token=${token}`;
-    answer = { status: 200, body: JSON.stringify({ loginUrl: url }) };
+    answer = {
+      status: 200,
+      body: JSON.stringify({ loginUrl: url, proof: "PROOF" }),
+    };
     expect(await ask()).toBe(url);
   });
+
+  it("never sends the secret, so whatever answers on the port can't learn it", async () => {
+    answer = { status: 403, body: "{}" };
+    await ask();
+    expect(received).toHaveLength(1);
+    expect(received[0]).not.toContain(secret);
+  });
+
+  it.each([
+    ["no proof", () => ({})],
+    ["a wrong proof", () => ({ proof: "0".repeat(64) })],
+    [
+      "a proof for another secret",
+      () => ({
+        proof: handoverProof(newHandoverSecret(), "server", "x"),
+      }),
+    ],
+  ])(
+    "refuses a link that comes with %s, as an impostor would send",
+    async (_label, extra) => {
+      const url = `http://127.0.0.1:${String(fakePort)}/auth?token=${token}`;
+      answer = {
+        status: 200,
+        body: JSON.stringify({ loginUrl: url, ...extra() }),
+      };
+      expect(await ask()).toBeNull();
+    },
+  );
 
   it.each([
     [
@@ -240,7 +324,7 @@ describe("requestHandover's checks on the answer", () => {
   ])("refuses a link for %s", async (_label, link) => {
     answer = {
       status: 200,
-      body: JSON.stringify({ loginUrl: link(fakePort) }),
+      body: JSON.stringify({ loginUrl: link(fakePort), proof: "PROOF" }),
     };
     expect(await ask()).toBeNull();
   });

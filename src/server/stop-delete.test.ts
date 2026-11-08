@@ -193,6 +193,25 @@ describe("availability", () => {
     expect((await executors.stop(noId)).outcome).toBe("refused");
     expect(run).not.toHaveBeenCalled();
   });
+
+  it.each([
+    "--force-remove-worktree",
+    "--discard-unpushed",
+    "ABCD1234",
+    "abcd123",
+  ])(
+    "never passes a short ID that isn't 8 hex digits, such as %s (C-8)",
+    async (id) => {
+      const { executors, run } = setup(ok, []);
+      expect((await executors.stop(background({ id }))).outcome).toBe(
+        "refused",
+      );
+      expect((await executors.delete(background({ id }))).outcome).toBe(
+        "refused",
+      );
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("runClaude", () => {

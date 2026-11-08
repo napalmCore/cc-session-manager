@@ -114,6 +114,8 @@ const handOver = async (): Promise<boolean> => {
       if (!lockExists(dataFolder)) return false;
       continue;
     }
+    // A dead instance's port could be anyone's now, so don't ask it for anything.
+    if (!processAlive(existing.pid)) return false;
     const link = await requestHandover(existing, identity);
     if (link !== null) {
       console.log(

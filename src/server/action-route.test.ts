@@ -4,6 +4,7 @@ import type { ActionRequest, ActionResult } from "./actions.js";
 import { startServer, type RunningServer } from "./server.js";
 
 let server: RunningServer;
+let pageKey = "";
 let onAction: ReturnType<
   typeof vi.fn<(request: ActionRequest) => Promise<ActionResult>>
 >;
@@ -55,6 +56,8 @@ async function login(): Promise<string> {
     },
   );
   response.resume();
+  pageKey =
+    /#key=([0-9a-f]{64})$/.exec(response.headers.location ?? "")?.[1] ?? "";
   return (response.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "";
 }
 
@@ -78,7 +81,12 @@ describe("POST /api/actions", () => {
     const response = await send(
       "POST",
       "/api/actions",
-      { cookie, origin: origin(), "content-type": "application/json" },
+      {
+        cookie,
+        "x-ccsm-key": pageKey,
+        origin: origin(),
+        "content-type": "application/json",
+      },
       validBody,
     );
 
@@ -109,6 +117,7 @@ describe("POST /api/actions", () => {
     const cookie = await login();
     const headers: Record<string, string> = {
       cookie,
+      "x-ccsm-key": pageKey,
       "content-type": "application/json",
     };
     if (value !== undefined) headers.origin = value;
@@ -122,7 +131,12 @@ describe("POST /api/actions", () => {
     const response = await send(
       "POST",
       "/api/actions",
-      { cookie, origin: origin(), "content-type": "text/plain" },
+      {
+        cookie,
+        "x-ccsm-key": pageKey,
+        origin: origin(),
+        "content-type": "text/plain",
+      },
       validBody,
     );
     expect(response.status).toBe(415);
@@ -143,7 +157,12 @@ describe("POST /api/actions", () => {
     const response = await send(
       "POST",
       "/api/actions",
-      { cookie, origin: origin(), "content-type": "application/json" },
+      {
+        cookie,
+        "x-ccsm-key": pageKey,
+        origin: origin(),
+        "content-type": "application/json",
+      },
       body,
     );
     expect(response.status).toBe(400);
@@ -160,7 +179,12 @@ describe("POST /api/actions", () => {
     const response = await send(
       "POST",
       "/api/actions",
-      { cookie, origin: origin(), "content-type": "application/json" },
+      {
+        cookie,
+        "x-ccsm-key": pageKey,
+        origin: origin(),
+        "content-type": "application/json",
+      },
       body,
     );
     expect(response.status).toBe(413);
@@ -171,6 +195,7 @@ describe("POST /api/actions", () => {
     const cookie = await login();
     await send("GET", "/api/actions?action=stop&key=abcd1234", {
       cookie,
+      "x-ccsm-key": pageKey,
       origin: origin(),
     });
     expect(onAction).not.toHaveBeenCalled();
@@ -185,7 +210,12 @@ describe("POST /api/actions", () => {
       const response = await send(
         "POST",
         "/api/actions",
-        { cookie, origin: origin(), "content-type": "application/json" },
+        {
+          cookie,
+          "x-ccsm-key": pageKey,
+          origin: origin(),
+          "content-type": "application/json",
+        },
         validBody,
       );
       expect(response.status).toBe(503);
@@ -193,5 +223,47 @@ describe("POST /api/actions", () => {
       server = previous;
       await plain.close();
     }
+  });
+});
+
+describe("the page key", () => {
+  const post = (headers: Record<string, string>) =>
+    send(
+      "POST",
+      "/api/actions",
+      { origin: origin(), "content-type": "application/json", ...headers },
+      validBody,
+    );
+
+  it("refuses a request with the cookie but no page key, as another local program would send", async () => {
+    const cookie = await login();
+    const response = await post({ cookie });
+
+    expect(response.status).toBe(403);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a wrong page key", async () => {
+    const cookie = await login();
+    const response = await post({ cookie, "x-ccsm-key": "0".repeat(64) });
+
+    expect(response.status).toBe(403);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("refuses the page key without the cookie", async () => {
+    await login();
+    const response = await post({ "x-ccsm-key": pageKey });
+
+    expect(response.status).toBe(401);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("is never in a response that only needed the cookie", async () => {
+    const cookie = await login();
+    const page = await send("GET", "/", { cookie });
+
+    expect(pageKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(page.body).not.toContain(pageKey);
   });
 });

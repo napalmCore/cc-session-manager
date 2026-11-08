@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -23,11 +23,32 @@ const lockSchema = z.object({
 });
 export type InstanceLock = z.infer<typeof lockSchema>;
 
+const HEX_64 = /^[0-9a-f]{64}$/;
+
 const handoverResponseSchema = z.object({
   loginUrl: z
     .string()
     .regex(/^http:\/\/127\.0\.0\.1:\d{1,5}\/auth\?token=[0-9a-f]{64}$/),
+  proof: z.string().regex(HEX_64),
 });
+
+/**
+ * Each side of a handover proves it knows the lock's secret without sending it, so a program
+ * answering on a stale lock's port learns nothing and can't pass itself off as the tool.
+ */
+export function handoverProof(
+  secret: string,
+  side: "client" | "server",
+  nonce: string,
+): string {
+  return createHmac("sha256", secret).update(`${side}:${nonce}`).digest("hex");
+}
+
+export function proofMatches(supplied: string, expected: string): boolean {
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 export function newHandoverSecret(): string {
   return randomBytes(32).toString("hex");
@@ -102,7 +123,12 @@ export function requestHandover(
   lock: InstanceLock,
   identity: Identity,
 ): Promise<string | null> {
-  const body = JSON.stringify({ secret: lock.secret, identity });
+  const nonce = randomBytes(32).toString("hex");
+  const body = JSON.stringify({
+    nonce,
+    proof: handoverProof(lock.secret, "client", nonce),
+    identity,
+  });
   return new Promise((resolve) => {
     const req = request(
       {
@@ -130,7 +156,14 @@ export function requestHandover(
           }
           try {
             const parsed = handoverResponseSchema.safeParse(JSON.parse(text));
-            const url = parsed.success ? parsed.data.loginUrl : null;
+            const url =
+              parsed.success &&
+              proofMatches(
+                parsed.data.proof,
+                handoverProof(lock.secret, "server", nonce),
+              )
+                ? parsed.data.loginUrl
+                : null;
             // The link must be for the port in the lock, so a stale lock can't redirect us.
             resolve(
               url?.startsWith(`http://127.0.0.1:${String(lock.port)}/`) === true
