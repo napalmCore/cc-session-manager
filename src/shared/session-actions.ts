@@ -39,12 +39,15 @@ export interface ActionContext {
   /** Why Stop, Delete, and End are off for every session, if they are (FR-22). */
   blocked: string | null;
   protectedKeys: ReadonlySet<string>;
+  /** Finished sessions whose folder has gone, so Resume would be refused. */
+  missingFolderKeys?: ReadonlySet<string>;
 }
 
 export function actionContext(snapshot: Snapshot | null): ActionContext {
   return {
     blocked: snapshot?.actionsBlocked ?? null,
     protectedKeys: new Set(snapshot?.protectedSessions ?? []),
+    missingFolderKeys: new Set(snapshot?.missingFolders ?? []),
   };
 }
 
@@ -69,10 +72,14 @@ export function availableActions(
   if (session.id !== undefined && !isLiveInteractive(session)) {
     actions.push("open");
   }
+  const folderGone = sessionKeys(session).some(
+    (key) => context.missingFolderKeys?.has(key) === true,
+  );
   if (
     session.kind === "interactive" &&
     session.finished &&
-    session.sessionId !== undefined
+    session.sessionId !== undefined &&
+    !folderGone
   ) {
     actions.push("resume");
   }
@@ -137,13 +144,14 @@ export const DIALOGS: Record<RiskyAction, DialogText> = {
     title: "Stop this session?",
     body: [
       "Work in progress is interrupted. The conversation is kept, so you can open it again.",
+      "Programs the session started, such as a long-running command, may keep running.",
     ],
     confirm: "Stop session",
   },
   delete: {
     title: "Delete this session?",
     body: [
-      "The session is removed and any work it's doing stops.",
+      "The session is removed and any work it's doing stops. Programs it started, such as a long-running command, may keep running.",
       "A worktree Claude created for it is removed when that's safe. If removing it could lose work, Claude Code keeps the session and the page says so.",
     ],
     confirm: "Delete session",

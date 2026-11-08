@@ -266,7 +266,8 @@ export function createEndExecutors(options: EndOptions) {
       if (watched.sawSuccess && watched.met) {
         return {
           outcome: "succeeded",
-          message: "Force ended, with the programs it started.",
+          message:
+            "Force ended, with the programs it started that were still running under it.",
         };
       }
       return unknown;

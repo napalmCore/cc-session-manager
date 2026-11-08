@@ -131,12 +131,40 @@ const handOver = async (): Promise<boolean> => {
 if (await handOver()) process.exit(0);
 removeStaleLock(dataFolder);
 
+function folderExists(folder: string): boolean {
+  try {
+    return existsSync(folder) && statSync(folder).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Finished sessions whose folder has gone, so the page doesn't offer Resume (BUG-31). A network
+ * folder isn't checked here, because checking it on every poll would connect to that server.
+ */
+function missingFolders(snapshot: Snapshot): string[] {
+  return snapshot.sessions
+    .filter(
+      (session) =>
+        session.kind === "interactive" &&
+        session.finished &&
+        session.cwd !== undefined &&
+        !/^[\\/]{2}/.test(session.cwd) &&
+        !folderExists(session.cwd),
+    )
+    .flatMap(sessionKeys);
+}
+
 const protection = createProtection([identity]);
 let lastSnapshot: Snapshot | null = null;
 let sequence = 0;
 const runId = randomBytes(4).toString("hex");
+let lastMissing = "";
 const publish = (snapshot: Snapshot) => {
   lastSnapshot = snapshot;
+  const missing = missingFolders(snapshot);
+  lastMissing = missing.join(",");
   sequence += 1;
   serverRef.current?.publish({
     ...snapshot,
@@ -149,6 +177,7 @@ const publish = (snapshot: Snapshot) => {
         (session) => protection.isProtected(session) === PROTECTED_MESSAGE,
       )
       .flatMap(sessionKeys),
+    missingFolders: missing,
   });
 };
 
@@ -216,19 +245,23 @@ const poller = createPoller({
     if (protection.observe(current) && lastSnapshot !== null) {
       publish(lastSnapshot);
     }
-    return tracker.update(current);
+    const tracked = tracker.update(current);
+    // A deleted folder doesn't change the sessions either, so it's published here too.
+    if (
+      lastSnapshot !== null &&
+      missingFolders({ ...lastSnapshot, sessions: tracked.sessions }).join(
+        ",",
+      ) !== lastMissing
+    ) {
+      publish(lastSnapshot);
+    }
+    return tracked;
   },
   enrich: createMetadataReader().enrich,
 });
 const openExecutors = createOpenExecutors({
   programs,
-  folderExists: (folder) => {
-    try {
-      return existsSync(folder) && statSync(folder).isDirectory();
-    } catch {
-      return false;
-    }
-  },
+  folderExists,
   transcriptExists: (sessionId) => transcriptExists(sessionId),
   homeFolder: homedir(),
 });
