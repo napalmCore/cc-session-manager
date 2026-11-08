@@ -543,8 +543,12 @@ export function App() {
         },
         key,
       ).includes(action);
-    if (!offered) closeDialog();
-  }, [snapshot, confirming, forceOffers, onAction, closeDialog]);
+    if (offered) return;
+    announce(
+      `${ACTION_LABELS[action]} is no longer available for ${confirming.label}.`,
+    );
+    closeDialog();
+  }, [snapshot, confirming, forceOffers, onAction, closeDialog, announce]);
   const attentionCount = groups.needsYou.length;
 
   useEffect(() => {

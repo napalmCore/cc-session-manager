@@ -398,6 +398,9 @@ test.describe("after the review", () => {
     server.publish(snapshot({ protectedSessions: [LIVE_ID] }));
 
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.locator("[data-announcer]")).toHaveText(
+      'End is no longer available for "editor" in sample.',
+    );
     expect(requests).toEqual([]);
     // React Aria moves focus on when its trigger has gone, so it isn't lost.
     await expect
