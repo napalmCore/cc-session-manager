@@ -44,7 +44,7 @@ const LOOKUP_TIMEOUT_MS = 10_000;
 export const PROTECTED_MESSAGE =
   "This session started the dashboard, so it can't be changed from here.";
 export const UNKNOWN_MESSAGE =
-  "The dashboard was started from a Claude Code session it can't find in the list, so Stop, Delete, and End are turned off to keep that session safe. Restart the dashboard from a normal terminal to use them.";
+  "The dashboard was started, or started again, from a Claude Code session it can't find in the list, so Stop, Delete, and End are turned off to keep that session safe. To use them, stop the dashboard with Ctrl+C in its terminal, then start it from a normal terminal.";
 
 function flag(value: string | undefined): boolean {
   return value !== undefined && value !== "" && value !== "0";

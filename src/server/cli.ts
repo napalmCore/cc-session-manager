@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
@@ -14,7 +14,9 @@ import {
 import {
   createLock,
   type InstanceLock,
+  lockExists,
   newHandoverSecret,
+  processAlive,
   readLock,
   removeLock,
   removeStaleLock,
@@ -44,14 +46,45 @@ function browserCommand(url: string): [string, string[]] {
   return ["xdg-open", [url]];
 }
 
-function openBrowser(url: string): void {
+/**
+ * Starts the browser detached, because Windows ends a process's attached children, and what
+ * they start, when it exits. It settles once the command has finished, so a start that exits
+ * straight after still reports a failure.
+ */
+function openBrowser(url: string): Promise<void> {
   const [command, args] = browserCommand(url);
-  execFile(command, args, { cwd: homedir(), windowsHide: true }, (error) => {
-    if (error) {
-      console.log(`Could not open a browser. Open this one-time link: ${url}`);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (failed: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (failed) {
+        console.log(
+          `Could not open a browser. Open this one-time link: ${url}`,
+        );
+      }
+      resolve();
+    };
+    try {
+      const child = spawn(command, args, {
+        cwd: homedir(),
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      child.once("error", () => {
+        finish(true);
+      });
+      child.once("exit", (code) => {
+        finish(code !== 0);
+      });
+    } catch {
+      finish(true);
     }
   });
 }
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const programs = resolvePrograms();
 const dataFolder = dataDirectory();
@@ -64,16 +97,27 @@ if (identity.pid !== undefined) {
 }
 
 // A second start hands over to the running instance, so the port stays the same (U-15).
+// It tries twice, a second apart, so a lock that's still being written, or an instance that's
+// busy, isn't taken for a stale one.
 const handOver = async (): Promise<boolean> => {
-  const existing = readLock(dataFolder);
-  if (existing === null) return false;
-  const link = await requestHandover(existing, identity);
-  if (link === null) return false;
-  console.log(
-    `cc-session-manager is already running at http://127.0.0.1:${String(existing.port)}`,
-  );
-  openBrowser(link);
-  return true;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) await pause(1_000);
+    const existing = readLock(dataFolder);
+    if (existing === null) {
+      if (!lockExists(dataFolder)) return false;
+      continue;
+    }
+    const link = await requestHandover(existing, identity);
+    if (link !== null) {
+      console.log(
+        `cc-session-manager is already running at http://127.0.0.1:${String(existing.port)}`,
+      );
+      await openBrowser(link);
+      return true;
+    }
+    if (!processAlive(existing.pid)) return false;
+  }
+  return false;
 };
 if (await handOver()) process.exit(0);
 removeStaleLock(dataFolder);
@@ -215,7 +259,7 @@ console.log(
 );
 console.log("Press Ctrl+C to stop.");
 
-openBrowser(server.loginUrl);
+void openBrowser(server.loginUrl);
 
 let stopping = false;
 const shutdown = () => {

@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
 import { z } from "zod";
@@ -66,6 +72,20 @@ export function removeLock(directory: string, lock: InstanceLock): void {
   const current = readLock(directory);
   if (current?.secret === lock.secret && current.pid === lock.pid) {
     rmSync(lockPath(directory), { force: true });
+  }
+}
+
+export function lockExists(directory: string): boolean {
+  return existsSync(lockPath(directory));
+}
+
+/** Whether a process with this ID is running. Access denied still means it's running. */
+export function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 

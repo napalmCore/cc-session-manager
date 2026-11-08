@@ -1,4 +1,5 @@
 import type { SessionView } from "../shared/protocol.js";
+import { PROTECTED_MESSAGE as PROTECTED } from "./protect.js";
 import { isValidSessionId } from "./transcripts.js";
 
 /** The latest successful listing must be at most this old for a destructive action (C-9). */
@@ -135,9 +136,6 @@ function sameSession(original: SessionView, fresh: SessionView): boolean {
     fresh.pid === original.pid
   );
 }
-
-const PROTECTED =
-  "This session started the dashboard, so it can't be changed from here.";
 
 function protectedMessage(value: boolean | string): string | null {
   if (typeof value === "string") return value === "" ? PROTECTED : value;

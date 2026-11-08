@@ -7,6 +7,7 @@ import {
   createLock,
   lockPath,
   newHandoverSecret,
+  processAlive,
   readLock,
   removeLock,
   requestHandover,
@@ -188,6 +189,76 @@ describe("requestHandover", () => {
     await server.close();
     expect(await requestHandover(lock, identity)).toBeNull();
     server = await startServer({ preferredPort: 0 });
+  });
+});
+
+describe("requestHandover's checks on the answer", () => {
+  let fake: http.Server;
+  let fakePort: number;
+  let answer: { status: number; body: string };
+
+  beforeEach(async () => {
+    fake = http.createServer((_req, res) => {
+      res.writeHead(answer.status, { "Content-Type": "application/json" });
+      res.end(answer.body);
+    });
+    await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", resolve));
+    fakePort = (fake.address() as { port: number }).port;
+  });
+  afterEach(async () => {
+    await new Promise((resolve) => fake.close(resolve));
+  });
+
+  const ask = () =>
+    requestHandover(
+      { version: 1, pid: process.pid, port: fakePort, secret },
+      identity,
+    );
+  const token = "c".repeat(64);
+
+  it("accepts a link for the lock's own port", async () => {
+    const url = `http://127.0.0.1:${String(fakePort)}/auth?token=${token}`;
+    answer = { status: 200, body: JSON.stringify({ loginUrl: url }) };
+    expect(await ask()).toBe(url);
+  });
+
+  it.each([
+    [
+      "another port",
+      (port: number) =>
+        `http://127.0.0.1:${String(port + 1)}/auth?token=${token}`,
+    ],
+    [
+      "a port that starts the same",
+      (port: number) => `http://127.0.0.1:${String(port)}0/auth?token=${token}`,
+    ],
+    ["another host", () => `http://evil.example/auth?token=${token}`],
+    [
+      "another path",
+      (port: number) => `http://127.0.0.1:${String(port)}/x?token=${token}`,
+    ],
+  ])("refuses a link for %s", async (_label, link) => {
+    answer = {
+      status: 200,
+      body: JSON.stringify({ loginUrl: link(fakePort) }),
+    };
+    expect(await ask()).toBeNull();
+  });
+
+  it.each([
+    ["an error status", { status: 403, body: "{}" }],
+    ["a body that isn't JSON", { status: 200, body: "nope" }],
+    ["an oversized body", { status: 200, body: "x".repeat(10_000) }],
+  ])("is null for %s", async (_label, response) => {
+    answer = response;
+    expect(await ask()).toBeNull();
+  });
+});
+
+describe("processAlive", () => {
+  it("is true for this process and false for an unused process ID", () => {
+    expect(processAlive(process.pid)).toBe(true);
+    expect(processAlive(0x7ffffff0)).toBe(false);
   });
 });
 
