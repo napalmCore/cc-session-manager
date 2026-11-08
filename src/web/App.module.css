@@ -144,3 +144,39 @@
   white-space: nowrap;
   border: 0;
 }
+
+.highlighted {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.toolbar {
+  margin: 0 0 0.75rem;
+}
+
+.notifyButton {
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--muted);
+  border-radius: 0.375rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.notifyButton[data-hovered] {
+  background: var(--attention-surface);
+}
+
+.notifyButton[data-focus-visible] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.notifyStatus {
+  margin: 0;
+  outline: none;
+  font-size: 0.875rem;
+  color: var(--muted);
+}

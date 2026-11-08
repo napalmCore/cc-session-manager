@@ -32,6 +32,14 @@ export interface Snapshot {
   warnings: string[];
   /** Why Stop, Delete, and End are turned off for every session, if they are (FR-22). */
   actionsBlocked?: string | null;
+  /** Polls that have failed in a row since the last success, when any have. */
+  failedPolls?: number;
+  /** Increases with every snapshot the server sends, so a notification's tag is unique. */
+  seq?: number;
+  /** Differs on each start of the server, so notification tags stay unique across restarts. */
+  runId?: string;
+  /** Sessions acted on from the dashboard in the last 30 seconds, so their changes don't notify. */
+  ownActions?: string[];
 }
 
 export interface SnapshotMessage {
