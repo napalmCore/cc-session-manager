@@ -29,6 +29,8 @@ export interface EndOptions {
   run: HelperRun;
   /** Watches the listing for up to CLOSE_WAIT_MS after a signal. */
   watch: ListingWatch;
+  /** A listing taken now, or null if it couldn't be read. Confirms a "still running" result. */
+  confirmListing: () => Promise<SessionView[] | null>;
 }
 
 /** The helper script, shipped in the repository's assets folder. */
@@ -114,6 +116,7 @@ const REFUSALS: Record<string, string> = {
   "no-console": "This session has no terminal the tool can reach.",
   "access-denied": "The tool isn't allowed to end that process.",
 };
+const HELPER_FAILURES = new Set(["send-failed", "member-list-failed"]);
 const GIT_BASH_IMAGES = new Set(["bash", "sh"]);
 
 function reasonCode(result: Record<string, unknown>): string {
@@ -140,7 +143,7 @@ const unavailable: ActionResult = {
 };
 
 export function createEndExecutors(options: EndOptions) {
-  const stillListed = (session: SessionView) => (sessions: SessionView[]) =>
+  const goneFrom = (session: SessionView) => (sessions: SessionView[]) =>
     !sessions.some(
       (s) =>
         s.sessionId === session.sessionId &&
@@ -192,16 +195,26 @@ export function createEndExecutors(options: EndOptions) {
           closeRecord: { pid, processStartMs: startMs },
         };
       }
-      if (result.ok !== true || code !== "sent" || startMs === undefined)
-        return refusal(code);
+      if (HELPER_FAILURES.has(code)) {
+        return { outcome: "failed", message: "The session couldn't be ended." };
+      }
+      if (result.ok !== true || code !== "sent") return refusal(code);
+      // The break was sent, but without the start time there's no safe Force end.
+      if (startMs === undefined) return unknown;
 
-      const watched = await options.watch(stillListed(session));
+      const isGone = goneFrom(session);
+      const watched = await options.watch(isGone);
       if (!watched.sawSuccess) return unknown;
-      if (watched.met)
-        return {
-          outcome: "succeeded",
-          message: "Ended. The conversation is kept.",
-        };
+      const ended: ActionResult = {
+        outcome: "succeeded",
+        message: "Ended. The conversation is kept.",
+      };
+      if (watched.met) return ended;
+      // The last poll the watch saw may predate the close, so check once more with a listing
+      // taken now, before saying the session is still running.
+      const confirmed = await options.confirmListing();
+      if (confirmed === null) return unknown;
+      if (isGone(confirmed)) return ended;
       return {
         outcome: "not-closed",
         message:
@@ -216,7 +229,13 @@ export function createEndExecutors(options: EndOptions) {
     ): Promise<ActionResult> {
       if (!options.helperAvailable) return unavailable;
       const { pid, startedAt } = session;
-      if (pid === undefined || startedAt === undefined || pid !== record.pid) {
+      if (
+        pid === undefined ||
+        startedAt === undefined ||
+        pid !== record.pid ||
+        !Number.isInteger(record.processStartMs) ||
+        record.processStartMs <= 0
+      ) {
         return {
           outcome: "refused",
           message: "That process isn't the same session anymore.",
@@ -243,7 +262,7 @@ export function createEndExecutors(options: EndOptions) {
       }
       if (helper.result.ok !== true || code !== "ended") return refusal(code);
 
-      const watched = await options.watch(stillListed(session));
+      const watched = await options.watch(goneFrom(session));
       if (watched.sawSuccess && watched.met) {
         return {
           outcome: "succeeded",

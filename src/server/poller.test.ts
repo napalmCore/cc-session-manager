@@ -32,6 +32,30 @@ describe("createPoller", () => {
     poller.stop();
   });
 
+  it("records a successful poll's start time, not its finish time", async () => {
+    let finish: (output: string) => void = () => undefined;
+    const run = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const poller = createPoller({ run, intervalMs: 10, onSnapshot: vi.fn() });
+
+    const before = Date.now();
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    finish("[]");
+    await vi.advanceTimersByTimeAsync(0);
+
+    const { lastSuccessAt } = poller.state();
+    expect(lastSuccessAt).not.toBeNull();
+    expect(lastSuccessAt ?? 0).toBeLessThan(before + 5000);
+    poller.stop();
+  });
+
   it("keeps the last good sessions and hides failure details", async () => {
     const snapshots: Snapshot[] = [];
     const good = JSON.stringify([

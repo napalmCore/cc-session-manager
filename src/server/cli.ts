@@ -87,6 +87,15 @@ const endExecutors = createEndExecutors({
       ? () => Promise.resolve({ kind: "error" as const })
       : createHelperRunner(powershell, helperScript),
   watch: watchPoller(() => poller.state(), CLOSE_WAIT_MS),
+  confirmListing: async () => {
+    try {
+      return parseSessions(
+        await runClaudeAgents(programs.claude, FRESHNESS_MS),
+      ).sessions.map(toSessionView);
+    } catch {
+      return null;
+    }
+  },
 });
 actionsRef.current = createActionTracker({
   listing: () => poller.state(),

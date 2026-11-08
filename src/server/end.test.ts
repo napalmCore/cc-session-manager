@@ -19,6 +19,7 @@ const live = (): SessionView =>
 function setup(
   helper: Record<string, unknown> | "timeout" | "error",
   gone: boolean | "polls-failing",
+  confirmed: SessionView[] | null = [live()],
 ) {
   const run = vi.fn<HelperRun>(() =>
     Promise.resolve(
@@ -40,8 +41,14 @@ function setup(
       });
     },
   );
-  const executors = createEndExecutors({ helperAvailable: true, run, watch });
-  return { executors, run, watch };
+  const confirmListing = vi.fn(() => Promise.resolve(confirmed));
+  const executors = createEndExecutors({
+    helperAvailable: true,
+    run,
+    watch,
+    confirmListing,
+  });
+  return { executors, run, watch, confirmListing };
 }
 
 describe("End", () => {
@@ -76,6 +83,84 @@ describe("End", () => {
     const result = await executors.end(live());
     expect(result.outcome).toBe("not-closed");
     expect(result.closeRecord).toEqual({ pid: 100, processStartMs: 4000 });
+  });
+
+  it("succeeds when a listing taken after the wait shows the session gone", async () => {
+    const { executors, confirmListing } = setup(
+      { ok: true, reason: "sent", startMs: 4000 },
+      false,
+      [],
+    );
+    const result = await executors.end(live());
+    expect(confirmListing).toHaveBeenCalledTimes(1);
+    expect(result.outcome).toBe("succeeded");
+    expect(result.closeRecord).toBeUndefined();
+  });
+
+  it("is unknown when the confirming listing can't be read", async () => {
+    const { executors } = setup(
+      { ok: true, reason: "sent", startMs: 4000 },
+      false,
+      null,
+    );
+    const result = await executors.end(live());
+    expect(result.outcome).toBe("unknown");
+    expect(result.closeRecord).toBeUndefined();
+  });
+
+  it("doesn't take a confirming listing when the watch already saw the session go", async () => {
+    const { executors, confirmListing } = setup(
+      { ok: true, reason: "sent", startMs: 4000 },
+      true,
+    );
+    await executors.end(live());
+    expect(confirmListing).not.toHaveBeenCalled();
+  });
+
+  it.each(["bash", "sh", "BASH"])(
+    "treats a %s console member as Git Bash",
+    async (image) => {
+      const { executors } = setup(
+        {
+          ok: false,
+          reason: "unexpected-member:9",
+          unexpectedImage: image,
+          startMs: 4000,
+        },
+        false,
+      );
+      const result = await executors.end(live());
+      expect(result.outcome).toBe("not-closed");
+      expect(result.closeRecord).toEqual({ pid: 100, processStartMs: 4000 });
+    },
+  );
+
+  it("refuses a Git Bash session when the helper gave no start time", async () => {
+    const { executors } = setup(
+      { ok: false, reason: "unexpected-member:9", unexpectedImage: "bash" },
+      false,
+    );
+    const result = await executors.end(live());
+    expect(result.outcome).toBe("refused");
+    expect(result.closeRecord).toBeUndefined();
+  });
+
+  it.each([
+    { ok: false, reason: "send-failed:5" },
+    { ok: false, reason: "member-list-failed" },
+  ])("fails when the helper couldn't send the signal: %o", async (helper) => {
+    const { executors } = setup(helper, false);
+    const result = await executors.end(live());
+    expect(result.outcome).toBe("failed");
+    expect(result.closeRecord).toBeUndefined();
+  });
+
+  it("is unknown when the signal was sent but no start time came back", async () => {
+    const { executors, watch } = setup({ ok: true, reason: "sent" }, false);
+    const result = await executors.end(live());
+    expect(result.outcome).toBe("unknown");
+    expect(result.closeRecord).toBeUndefined();
+    expect(watch).not.toHaveBeenCalled();
   });
 
   it("offers Force end straight away for a session started from Git Bash", async () => {
@@ -215,6 +300,21 @@ describe("Force end", () => {
     expect((await executors.forceEnd(live(), record)).outcome).toBe("refused");
   });
 
+  it.each([0, -1, 1.5])(
+    "refuses a record with an unusable start time: %d",
+    async (processStartMs) => {
+      const { executors, run } = setup(
+        { ok: true, reason: "ended", ended: [100] },
+        true,
+      );
+      expect(
+        (await executors.forceEnd(live(), { pid: 100, processStartMs }))
+          .outcome,
+      ).toBe("refused");
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
+
   it("refuses when the record is for a different process ID", async () => {
     const { executors, run } = setup(
       { ok: true, reason: "ended", ended: [100] },
@@ -234,6 +334,7 @@ describe("availability", () => {
       helperAvailable: false,
       run,
       watch: vi.fn(),
+      confirmListing: vi.fn(),
     });
     expect((await executors.end(live())).outcome).toBe("unavailable");
     expect(

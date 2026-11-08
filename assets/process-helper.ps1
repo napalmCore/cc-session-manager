@@ -5,8 +5,8 @@
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File process-helper.ps1 `
 #     -Action <inspect|break|force> -TargetPid <n> -StartedAtMs <n> [-ExpectedStartMs <n>]
 #
-# -ExpectedStartMs, if given, must match the process's start time, so Force end only acts on
-# the process that got the normal close.
+# -ExpectedStartMs must match the process's start time, so Force end only acts on the process
+# that got the normal close. It's required for force.
 #
 # Arguments are numbers only. The helper writes one JSON object to stdout and exits 0 when it
 # ran, even if it refused or was unavailable. Exit code 1 means it couldn't run at all.
@@ -118,9 +118,9 @@ public static class CcsmConsole {
       Thread.Sleep(300);
       return "sent";
     } finally {
-      // Detach first, so a late Ctrl+Break can't reach this process once its handler is gone.
+      // Detach, and keep ignoring Ctrl+Break: a late event can't stop this process before it
+      // reports, and the process exits right after.
       FreeConsole();
-      SetConsoleCtrlHandler(Ignore, false);
     }
   }
 }
@@ -153,6 +153,10 @@ try {
   $imageName = $target.ProcessName
   if ($imageName -ne 'claude') {
     Write-Result @{ ok = $false; action = $Action; reason = 'wrong-image'; image = $imageName }
+    exit 0
+  }
+  if ($Action -eq 'force' -and $ExpectedStartMs -le 0) {
+    Write-Result @{ ok = $false; action = $Action; reason = 'start-time-mismatch'; startMs = $startMs }
     exit 0
   }
   if ($ExpectedStartMs -gt 0 -and [Math]::Abs($startMs - $ExpectedStartMs) -gt $StartToleranceMs) {
