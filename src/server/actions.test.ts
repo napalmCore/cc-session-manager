@@ -537,6 +537,29 @@ describe("protection and own-action markers", () => {
     ).toBe("started");
   });
 
+  it("refuses with the protection's own message, such as actions being turned off", async () => {
+    const stop = vi.fn(() =>
+      Promise.resolve({ outcome: "succeeded" as const, message: "" }),
+    );
+    const tracker = createActionTracker({
+      listing: () => ({
+        sessions: [background()],
+        lastSuccessAt: NOW,
+        lastPollFailed: false,
+      }),
+      freshListing: () => Promise.resolve([background()]),
+      executors: { stop },
+      isProtected: () => "Actions are turned off.",
+      now: () => NOW,
+    });
+    const result = await tracker.handle({ action: "stop", key: "abcd1234" });
+    expect(result).toEqual({
+      outcome: "refused",
+      message: "Actions are turned off.",
+    });
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it("marks a session after the user's own Stop, Delete, or End, for 30 seconds", async () => {
     const { tracker, advance } = setup({ listing: [background()] });
     await tracker.handle({ action: "stop", key: "abcd1234" });

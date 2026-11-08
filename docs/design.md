@@ -274,11 +274,12 @@ Across 17 sessions, including one with a slow MCP server, processes started 0.9 
 - **At startup:** the tool records `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, and that process's start time. These variables survive the parent exiting.
 - **On handover:** a second start's matching values are sent with the handover and added to the protected set.
 - **Protected rows:** a row matching a protected session ID, or a protected process ID with the same start time, gets no Stop, Delete, or End, and the server refuses them.
-- **Unknown session:** if `CLAUDECODE` or `CLAUDE_CODE_CHILD_SESSION` is set but no row matches, Stop, Delete, and End are blocked for every session, with a banner explaining why. Open still works.
+- **Unknown session:** if the start came from inside Claude Code, shown by `CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, or either ID variable, but no row has matched yet, Stop, Delete, and End are blocked for every session, with a banner explaining why. Open still works. Once a protected session has been listed, it stays protected after it leaves the list, without blocking the others.
+- **Matching by process ID:** a row's listed start time must be within 1 second before to 5 seconds after the process's start time. If either time is unknown, the row is protected anyway, because blocking a reused process ID is the safe mistake.
 
 ### Single instance (U-15)
 
-- **Lock file:** at startup, the tool creates `instance.json` in its data folder, with exclusive creation so two starts can't both win. It holds the tool's process ID and start time, port, and a random handover secret.
+- **Lock file:** at startup, the tool creates `instance.json` in its data folder, with exclusive creation so two starts can't both win. It holds the tool's process ID, port, and a random handover secret. It's removed on a normal shutdown, only if it's still this instance's.
 - **Handover:** a second start sends `POST /api/handover` with the secret, and its own session values if any.
   - The route requires the correct `Host`, rejects any request with a browser `Origin`, and compares the secret in constant time.
   - It returns a one-time sign-in link that's valid for 60 seconds, which the second start opens before exiting.

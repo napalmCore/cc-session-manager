@@ -30,6 +30,8 @@ export interface Snapshot {
   sessions: SessionView[];
   error: string | null;
   warnings: string[];
+  /** Why Stop, Delete, and End are turned off for every session, if they are (FR-22). */
+  actionsBlocked?: string | null;
 }
 
 export interface SnapshotMessage {
