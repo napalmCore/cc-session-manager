@@ -56,6 +56,15 @@ describe("availableActions", () => {
     expect(availableActions(ended(), open)).toEqual(["resume"]);
   });
 
+  it("doesn't offer Resume once the session's folder has gone (BUG-31)", () => {
+    expect(
+      availableActions(ended(), {
+        ...open,
+        missingFolderKeys: new Set([SESSION_ID]),
+      }),
+    ).toEqual([]);
+  });
+
   it("offers nothing for a session with neither ID", () => {
     expect(
       availableActions(view({ kind: "background", state: "working" }), open),
@@ -101,6 +110,7 @@ describe("actionContext", () => {
     expect(actionContext(null)).toEqual({
       blocked: null,
       protectedKeys: new Set(),
+      missingFolderKeys: new Set(),
     });
   });
 });

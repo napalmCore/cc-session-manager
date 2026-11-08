@@ -204,6 +204,7 @@ An investigator agent tested on Windows 11 with Claude Code 2.1.319, installed t
 - **Resume:**
   - Runs `claude.exe --resume <sessionId>` in the session's original folder.
   - Offered only when the session's transcript exists, the original folder still exists, and the recheck passes.
+  - The server checks finished sessions' folders in the background, at most once per folder every 10 seconds, and lists the missing ones in each snapshot so the page leaves out Resume (BUG-31). A network folder isn't checked this way, because every check would connect to that server. The server still checks the folder when Resume is pressed.
 - **Result:** "terminal started", because `wt.exe` exits 0 even when its arguments are wrong, and a `claude attach` failure shows in the new terminal.
 - **Repeated clicks:** a second Open or Resume for the same session within 10 seconds is ignored, and the page says a terminal was just started.
 
@@ -322,7 +323,7 @@ Across 17 sessions, including one with a slow MCP server, processes started 0.9 
   - End also mentions the "Terminate batch job (Y/N)?" prompt with npm's `claude.cmd`, and that a Git Bash session is offered Force end instead.
   - One dialog serves the page, so a row moving between groups doesn't close it. Cancel has focus when it opens, so Enter alone never confirms.
   - Open and Resume run straight away, because they're non-destructive.
-- **Which buttons:** match what the server allows. Background rows offer Open, Stop, and Delete. Live interactive rows with a process ID offer End. Finished interactive rows offer Resume. Force end appears only after End reports the session wasn't closed, for the 2 minutes the server accepts it.
+- **Which buttons:** match what the server allows. Background rows offer Open, Stop, and Delete. Live interactive rows with a process ID offer End. Finished interactive rows offer Resume, unless their folder is known to be gone. Force end appears only after End reports the session wasn't closed, for the 2 minutes the server accepts it.
 - **Self-protection on the page:** snapshots list the protected sessions, so their rows leave out Stop, Delete, and End and say why. When actions are off for every session, the page shows the reason as a banner and leaves those buttons out. The server still refuses either way (NFR-10).
 - **Focus:** returns to the button, or its row, afterward, or to the group heading if the row has gone (NFR-8). It's only moved when focus was lost, and never after the user has clicked elsewhere.
 - **Results:** appear in the existing announcement region and next to the row. Once a row has gone, such as after Delete, the last result stays visible above the list. An answer the page can't read, or no answer, is shown as unknown.

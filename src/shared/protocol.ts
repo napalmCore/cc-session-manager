@@ -42,6 +42,8 @@ export interface Snapshot {
   ownActions?: string[];
   /** Sessions that started or handed over to the tool, so Stop, Delete, and End aren't offered. */
   protectedSessions?: string[];
+  /** Finished sessions whose folder no longer exists, so Resume isn't offered. */
+  missingFolders?: string[];
 }
 
 export interface SnapshotMessage {

@@ -434,6 +434,17 @@ test.describe("after the review", () => {
   });
 });
 
+test.describe("a finished session whose folder has gone", () => {
+  test("offers no Resume", async ({ page }) => {
+    await open(page, snapshot({ missingFolders: [ENDED_ID] }));
+
+    await expect(actionsFor(page, /"earlier"/)).toHaveCount(0);
+    await expect(
+      actionsFor(page, /"worker"/).getByRole("button", { name: "Open" }),
+    ).toBeVisible();
+  });
+});
+
 test.describe("self-protection on the page (FR-22)", () => {
   test("hides Stop, Delete, and End for every session while actions are turned off, and says why", async ({
     page,

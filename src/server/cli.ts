@@ -24,6 +24,7 @@ import {
   removeStaleLock,
   requestHandover,
 } from "./instance.js";
+import { createFolderWatch } from "./folders.js";
 import { createOpenExecutors } from "./open.js";
 import {
   createStopDeleteExecutors,
@@ -131,12 +132,27 @@ const handOver = async (): Promise<boolean> => {
 if (await handOver()) process.exit(0);
 removeStaleLock(dataFolder);
 
+function folderExists(folder: string): boolean {
+  try {
+    return existsSync(folder) && statSync(folder).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 const protection = createProtection([identity]);
 let lastSnapshot: Snapshot | null = null;
 let sequence = 0;
 const runId = randomBytes(4).toString("hex");
+// A deleted folder doesn't change the sessions, so the watch resends the snapshot itself.
+const folderWatch = createFolderWatch({
+  onChange: () => {
+    if (lastSnapshot !== null) publish(lastSnapshot);
+  },
+});
 const publish = (snapshot: Snapshot) => {
   lastSnapshot = snapshot;
+  const missing = folderWatch.missing(snapshot.sessions);
   sequence += 1;
   serverRef.current?.publish({
     ...snapshot,
@@ -149,6 +165,7 @@ const publish = (snapshot: Snapshot) => {
         (session) => protection.isProtected(session) === PROTECTED_MESSAGE,
       )
       .flatMap(sessionKeys),
+    missingFolders: missing,
   });
 };
 
@@ -216,19 +233,16 @@ const poller = createPoller({
     if (protection.observe(current) && lastSnapshot !== null) {
       publish(lastSnapshot);
     }
-    return tracker.update(current);
+    const tracked = tracker.update(current);
+    // Starts any due folder checks, even when nothing else changes.
+    folderWatch.missing(tracked.sessions);
+    return tracked;
   },
   enrich: createMetadataReader().enrich,
 });
 const openExecutors = createOpenExecutors({
   programs,
-  folderExists: (folder) => {
-    try {
-      return existsSync(folder) && statSync(folder).isDirectory();
-    } catch {
-      return false;
-    }
-  },
+  folderExists,
   transcriptExists: (sessionId) => transcriptExists(sessionId),
   homeFolder: homedir(),
 });
