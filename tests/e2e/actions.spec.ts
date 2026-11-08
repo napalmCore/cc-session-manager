@@ -351,6 +351,86 @@ test.describe("End and Force end", () => {
   });
 });
 
+test.describe("after the review", () => {
+  test("keeps Force end offered when a second End is refused", async ({
+    page,
+  }) => {
+    let calls = 0;
+    reply = () => {
+      calls += 1;
+      return calls === 1
+        ? {
+            outcome: "not-closed",
+            message: "The session is still running.",
+            closeRecord: { pid: 4321, processStartMs: 1 },
+          }
+        : {
+            outcome: "refused",
+            message: "Another action on this session is still running.",
+          };
+    };
+    await open(page);
+    const actions = actionsFor(page, /"editor"/);
+
+    for (let i = 0; i < 2; i += 1) {
+      await actions.getByRole("button", { name: "End…", exact: true }).click();
+      await page.getByRole("button", { name: "End session" }).click();
+      await expect(row(page, "editor")).toContainText(
+        i === 0 ? "still running" : "still running.",
+      );
+    }
+    await expect(row(page, "editor")).toContainText("Another action");
+    await expect(
+      actions.getByRole("button", { name: "Force end…" }),
+    ).toBeVisible();
+  });
+
+  test("closes the dialog when the session becomes protected while it's open", async ({
+    page,
+  }) => {
+    await open(page);
+    const end = actionsFor(page, /"editor"/).getByRole("button", {
+      name: "End…",
+    });
+    await end.click();
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+
+    server.publish(snapshot({ protectedSessions: [LIVE_ID] }));
+
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    expect(requests).toEqual([]);
+    // React Aria moves focus on when its trigger has gone, so it isn't lost.
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.tagName))
+      .not.toBe("BODY");
+  });
+
+  test("doesn't pull keyboard focus back once the user has moved on", async ({
+    page,
+  }) => {
+    await open(page);
+    await actionsFor(page, /"worker"/)
+      .getByRole("button", { name: "Open" })
+      .press("Enter");
+    await expect(row(page, "worker")).toContainText("Open: Done.");
+
+    const elsewhere = actionsFor(page, /Unnamed background session/).getByRole(
+      "button",
+      { name: "Open" },
+    );
+    await elsewhere.focus();
+    await elsewhere.evaluate((node) => {
+      (node as HTMLElement).blur();
+    });
+    server.publish(snapshot({ warnings: ["changed"] }));
+    await expect(page.getByText(/may be missing/)).toBeVisible();
+
+    await expect(
+      actionsFor(page, /"worker"/).getByRole("button", { name: "Open" }),
+    ).not.toBeFocused();
+  });
+});
+
 test.describe("self-protection on the page (FR-22)", () => {
   test("hides Stop, Delete, and End for every session while actions are turned off, and says why", async ({
     page,

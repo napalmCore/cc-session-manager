@@ -410,12 +410,20 @@ export function App() {
 
   const [announcement, setAnnouncement] = useState("");
   const announceTimer = useRef<number | undefined>(undefined);
+  const queued = useRef<string[]>([]);
   const announce = useCallback((message: string) => {
+    // An empty message only clears the region, and never cancels one that's about to be read.
+    if (message === "") {
+      if (queued.current.length === 0) setAnnouncement("");
+      return;
+    }
     // Clearing first means identical text still counts as a change to a screen reader.
     setAnnouncement("");
+    queued.current.push(message);
     window.clearTimeout(announceTimer.current);
     announceTimer.current = window.setTimeout(() => {
-      setAnnouncement(message);
+      setAnnouncement(queued.current.join(" "));
+      queued.current = [];
     }, ANNOUNCE_DELAY_MS);
   }, []);
   useEffect(
@@ -512,6 +520,31 @@ export function App() {
     )
       ? lastResult
       : null;
+
+  // A dialog whose action is no longer offered, such as after the session finished or became
+  // protected, closes rather than offering something the server would refuse.
+  const forceOffers = actions.forceOffers;
+  useEffect(() => {
+    if (confirming === null) return;
+    const { key, action } = confirming.target;
+    const current = (snapshot?.sessions ?? []).find(
+      (session) => actionKey(session) === key,
+    );
+    const offered =
+      current !== undefined &&
+      rowActions(
+        current,
+        {
+          context: actionContext(snapshot),
+          pending: new Map(),
+          results: new Map(),
+          forceOffers,
+          onAction,
+        },
+        key,
+      ).includes(action);
+    if (!offered) closeDialog();
+  }, [snapshot, confirming, forceOffers, onAction, closeDialog]);
   const attentionCount = groups.needsYou.length;
 
   useEffect(() => {

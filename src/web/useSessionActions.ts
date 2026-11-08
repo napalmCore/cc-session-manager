@@ -87,13 +87,22 @@ export function useSessionActions(announce: (message: string) => void) {
 
   useEffect(() => {
     const pendingTimers = timers.current;
-    // A click anywhere means the user has moved on, so a later refresh never pulls focus back.
+    // A click anywhere, or focus moving outside the row, means the user has moved on, so a
+    // later refresh never pulls focus back.
     const forget = () => {
       lastTarget.current = null;
     };
+    const focusMoved = (event: FocusEvent) => {
+      const target = lastTarget.current;
+      if (target === null || !(event.target instanceof Element)) return;
+      const row = event.target.closest("[data-session-key]");
+      if (row?.getAttribute("data-session-key") !== target.key) forget();
+    };
     document.addEventListener("pointerdown", forget, true);
+    document.addEventListener("focusin", focusMoved, true);
     return () => {
       document.removeEventListener("pointerdown", forget, true);
+      document.removeEventListener("focusin", focusMoved, true);
       for (const timer of pendingTimers.values()) window.clearTimeout(timer);
     };
   }, []);
@@ -138,10 +147,14 @@ export function useSessionActions(announce: (message: string) => void) {
       const result = { action, reply, label };
       setResults((current) => new Map(current).set(key, result));
       setLastResult({ ...result, key });
-      if (action === "end") setOffer(key, reply.outcome === "not-closed");
-      if (action === "forceEnd" && reply.outcome !== "refused") {
-        setOffer(key, false);
+      // A refused or unknown attempt leaves an earlier Force end offer alone, since the server
+      // may still accept it.
+      const settled =
+        reply.outcome !== "refused" && reply.outcome !== "unknown";
+      if (action === "end" && settled) {
+        setOffer(key, reply.outcome === "not-closed");
       }
+      if (action === "forceEnd" && settled) setOffer(key, false);
       announce(`${ACTION_LABELS[action]}, ${label}: ${reply.message}`);
       restoreFocus(lastTarget.current);
     },
