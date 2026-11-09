@@ -378,3 +378,188 @@ Each step is a separate pull request, approved by an independent agent before me
   - A notification in a hidden tab, and a real notification click.
   - `claude rm` on a real worktree with uncommitted, untracked, and ignored files (U-10).
 - **Security review:** of the action routes and handover, before release (NFR-9).
+
+## Iteration 3 design
+
+- **Status:** Draft, under review
+- **Requirements:** FR-23 to FR-31, C-12 to C-14, NFR-11 to NFR-13 in [requirements.md](requirements.md)
+- **Decisions:** [0018](decisions/0018-iteration-3-plan.md), [0019](decisions/0019-iteration-3-requirements.md), [0020](decisions/0020-iteration-3-design.md)
+
+### Evidence
+
+**Transcripts (U-17, U-18), checked on 2026-11-09 by reading only usage, ID, and model fields:**
+
+- Every assistant line with a `usage` object has `message.id`. One response is written on several lines, and in 15 main and 15 subagent transcripts (8,584 usage lines across all local transcripts) every repeat of an ID carried identical usage. Counting each `message.id` once counts each response once.
+- Usage holds `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `cache_creation.ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens`, `server_tool_use`, `speed`, and `inference_geo`. All local responses so far are `standard` speed and `global` routing.
+- Subagent transcripts are `<session ID>/subagents/agent-*.jsonl`, with a `.meta.json` beside each. Their lines have `isSidechain: true`, and none of their response IDs appear in the main transcript, so adding them doesn't double count.
+- `<synthetic>` appears as a model on a few entries Claude Code writes itself.
+- All local transcripts together are about 104 MB. The largest single transcript is 24 MB.
+
+**Leftover programs (U-16), from a live experiment on throwaway sessions:**
+
+- One shared `claude.exe daemon run` runs per user. Under it, each background session has its own `--bg-pty-host` process, whose child is the session process, `claude.exe --session-id <ID>`. The listing's `pid` is that session process. A stopped session has no `pid`.
+- Each Bash tool command runs as `bash.exe` under `bash.exe`, with its own hidden console. Programs started through Git Bash, such as `sleep.exe`, have a parent process ID that already points to an exited process while the session is still running, because Git Bash starts programs by fork then exec. Native programs keep their parent link.
+- Job objects don't contain the session's programs, which is why they outlive it.
+- After `claude stop`, the bash wrappers and their programs survive. After `claude rm`, or after End, only programs started through Git Bash survive, with no parent, no console, and no Claude variables. Their working folder is the session's folder.
+- The only reliable link from a surviving program to its session is a record taken before the action, matched by process ID and creation time. That match held live.
+- Taking the record took about 0.85 seconds, almost all in one process query.
+- The experiment's agent used a folder path left trusted by an earlier proof, because `claude --bg` refuses untrusted folders and agents don't accept trust prompts. Force end wasn't re-run live; the expected result is the same as End.
+
+**Prices:** Anthropic's [pricing page](https://platform.claude.com/docs/en/about-claude/pricing), read on 2026-11-09.
+
+### New components
+
+| Component         | Responsibility                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Transcript reader | Replaces the metadata reader. Reads each transcript from where it last stopped, and keeps the branch, model, last activity, and usage. |
+| Price table       | A dated table of API list prices in the tool, and the cost rules.                                                                      |
+| Leftover tracker  | Holds, in memory, the programs recorded before each action, checks which still run, and keeps Deleted rows.                            |
+| Process helper    | Gains `record`, `check`, and `end-leftovers` modes alongside its End and Force end modes.                                              |
+
+### Transcript reader (FR-23, FR-26, NFR-11)
+
+- **Incremental reading:** for each transcript, the reader keeps the byte offset it has read to, any unfinished last line, and the file's size and modified time. On each poll it reads only new bytes. If the file is smaller than the offset, or its creation time changed, it starts again from the beginning.
+- **First reads:** a new or restarted reader reads at most 8 MB per transcript per poll, newest sessions first, so a large backlog never delays session updates (FR-9). Until a transcript is fully read, its usage shows as "counting", and totals say so. At 8 MB per poll, a 24 MB transcript takes three polls; the NFR-11 test uses 50 MB in total.
+- **Cheap filtering:** a line is parsed only if it contains `"usage"`, `"timestamp"`, or `"gitBranch"`. An allow-list then copies only `message.id`, `message.model`, the usage numbers, `speed`, `inference_geo`, `timestamp`, and `gitBranch` (C-4, C-12).
+- **Counting once:** each transcript keeps a set of the response IDs it has counted. The set is in memory only, and isn't saved (C-12). After a restart, the store's saved totals stand for finished sessions, and live sessions are re-read from the start.
+- **Subagents:** the reader lists `<session ID>/subagents/agent-*.jsonl` when that folder's modified time changes, and reads each file the same way. Their usage is kept apart, as "subagents".
+- **Grouping:** usage is summed per group of model, speed, routing, and main or subagent. For Claude Haiku 5.5, each response is also marked as over or under 100,000 prompt tokens (input plus cache reads plus cache writes), because the price differs.
+- **Metadata:** the same pass keeps the latest branch, model, and timestamp, so the 256 KB tail read goes away. This also removes BUG-24's large-line case.
+- **Left out:** entries whose model is `<synthetic>`.
+- **CPU:** filtering by substring before parsing keeps steady-state cost to the new bytes only. Testing measures it against U-5 (NFR-11).
+
+### Estimated cost (FR-24, FR-25)
+
+- **Price table:** `src/shared/prices.ts`, dated 2026-11-09, with the source URL. One row per model ID, with input, output, 5-minute cache write, 1-hour cache write, and cache read prices per million tokens, from the pricing page:
+
+| Model                         | Input | 5m write | 1h write | Read | Output |
+| ----------------------------- | ----- | -------- | -------- | ---- | ------ |
+| Fable 5.1, Mythos 5.1         | 10    | 12.50    | 20       | 0.25 | 50     |
+| Fable 5, Mythos 5             | 10    | 12.50    | 20       | 1    | 50     |
+| Opus 5.5                      | 4     | 5        | 8        | 0.20 | 20     |
+| Opus 5, 4.8, 4.7, 4.6, 4.5    | 5     | 6.25     | 10       | 0.50 | 25     |
+| Opus 4.1, 4                   | 15    | 18.75    | 30       | 1.50 | 75     |
+| Sonnet 5.5                    | 2     | 2.50     | 4        | 0.10 | 10     |
+| Sonnet 5                      | 2     | 2.50     | 4        | 0.20 | 10     |
+| Sonnet 4.6, 4.5, 4            | 3     | 3.75     | 6        | 0.30 | 15     |
+| Haiku 5.5, prompts up to 100K | 0.10  | 0.125    | 0.20     | 0.01 | 0.50   |
+| Haiku 5.5, prompts over 100K  | 0.50  | 0.625    | 1        | 0.05 | 2.50   |
+| Haiku 4.5                     | 1     | 1.25     | 2        | 0.10 | 5      |
+
+- **Matching:** a model ID matches a row exactly, or with a trailing date such as `-20250929`. Anything else is unknown, and its cost is unavailable (FR-24).
+- **Fast mode:** responses with `speed: "fast"` use the fast input and output prices (Opus 5.5: 8 and 40; Opus 5 and 4.8: 10 and 50), with the cache multipliers applied to the fast input price.
+- **US-only routing:** responses with `inference_geo: "us"` cost 1.1 times as much.
+- **Web search:** `server_tool_use.web_search_requests` costs $10 per 1,000 searches. Other server tools aren't priced, and the label says the estimate covers tokens and web searches.
+- **Labels:** "Estimated cost at API list prices of 9 November 2026. Not what a Pro or Max plan costs." A session with an unknown model shows its tokens and "Cost unavailable for <model>".
+- **Totals:** a summary bar under the page heading shows the totals of each token type and the estimated cost for the listed sessions, and "leaves out N sessions" or "still counting" when that applies (FR-25).
+- **Where the cost is worked out:** on the server, which sends each session's usage groups and its estimate in the snapshot. The page only adds them up.
+
+### Saved usage (FR-26)
+
+- When a session finishes, its usage groups are saved in its store record: per group, the model ID, speed, routing, main or subagent, the Haiku threshold side, and the six counts. No names, response IDs, or text (C-7, C-12).
+- The cost is worked out again from the table when shown, so a later price table applies to saved sessions too.
+- Older versions ignore unknown fields in a record, because the schema layer is tolerant. A test confirms an iteration 2 reader accepts a record with usage.
+
+### Leftover programs (FR-27, C-14, NFR-13)
+
+**Recording, before each action:**
+
+- Before Stop, Delete, End, and Force end, the server runs the helper's `record` mode for the session's process, after the same ownership check End uses (process ID, image, start time against `startedAt`, and the listing's session ID).
+- For End and Force end, the record is taken in the same helper run as the ownership check, before the signal.
+- A stopped background session has no process, so nothing is recorded and no offer appears.
+- The record lists:
+  - descendants found through parent links, each started after its parent, and
+  - members of each console owned by one of those descendants, if they started after the session did. The session's own console is never used, because it can include the user's shell and terminal.
+- It never includes the tool's own processes, the helper, the shared daemon, or any `claude.exe` process.
+- Each entry keeps the process ID, creation time, image path, and name. The environment of other processes isn't read (0020).
+- **If recording fails or takes over 10 seconds**, the action goes ahead, and its result says leftover programs can't be checked for this session (0020).
+
+**Checking:**
+
+- After the action, the tracker keeps the record in memory, under the session's key, with the action and time. Records aren't saved, so they're gone after a restart.
+- The helper's `check` mode reports which recorded entries still run with the same process ID and creation time. While bash wrappers survive (after Stop), it also adds programs whose parent is a recorded, still-running entry and that started after it.
+- The tracker checks 5 seconds after the action, then every 10 seconds while any entry runs. When none runs, the record is dropped.
+- **The row:** shows "Programs still running" with each program's name and process ID, up to 10 and then "and N more", and an "End leftover programs" button. For a deleted session, the row stays at the top of Finished, marked Deleted, showing only this (0020).
+
+**Ending:**
+
+- The page sends `{ action: "endLeftovers", key }`, naming only the session (NFR-13). The server takes the program list from its own record.
+- The server refuses it for a protected session (FR-22), while the latest poll has failed or the list is over 10 seconds old (C-9), when there's no record for that key, and while another action runs on that session (NFR-10). A Deleted row isn't listed by Claude Code, so for it the record from the tool's own Delete, plus the per-process check below, stands in for the listing.
+- The dialog lists the programs and says unsaved work in them is lost.
+- The helper's `end-leftovers` mode, for each entry, opens a handle, requires the same creation time and image path through it, and ends the process through that same handle (C-14). It never ends a process tree. Entries that fail the check are skipped.
+- **Result:** "Ended N of M programs", with any skipped or failed ones named. Nothing retries automatically.
+
+**Limits, in the release notes:** programs started outside the session's process tree and consoles, or in the second between recording and the action, or later by a program whose wrapper has gone, aren't found. Nothing is offered for a session stopped, deleted, or ended outside the dashboard, or while the tool is off.
+
+### Other changes
+
+| Bug or requirement | Change                                                                                                                                                                                                                                                    | Expected result, tested                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| BUG-6, FR-28       | Active is sorted by start time, newest first, then by session ID. The first start time seen is kept (BUG-23).                                                                                                                                             | Activity changes don't reorder Active.                                                      |
+| BUG-8, FR-29       | A printed link's token gets an expiry 2 minutes after it's printed. The terminal says "This link works once, for 2 minutes. Restart cc-session-manager for a new one."                                                                                    | The token is refused after 2 minutes, and after one use.                                    |
+| BUG-9              | The server sends the time of the last successful poll. When it's over 10 seconds old, a status line says "Last updated N seconds ago. Claude Code is slow to respond, so actions are paused." (0020)                                                      | The line appears after 10 seconds without a successful poll, and goes when one succeeds.    |
+| BUG-10             | Decorative triangles and dots are hidden from screen readers. Each row's accessible text separates name, status, and reason with punctuation, such as "Fix login bug. Needs you: permission to run Bash."                                                 | Accessible names in browser tests; NVDA output in Testing.                                  |
+| BUG-11             | When a focused expandable section disappears, focus moves to its group's heading, or to the main heading if the group has gone.                                                                                                                           | Focus never falls to the page body in that case.                                            |
+| BUG-12, FR-30      | A store that parses as JSON but fails the schema has every `name` and `title` field removed, and is saved as `finished-sessions.corrupt.json`, replacing an earlier copy. A file that doesn't parse is deleted, and the log says so without its contents. | Both cases, with names in the input.                                                        |
+| BUG-13             | A session's last known activity time is kept in memory. If its transcript becomes unreadable, the last known time is used, so a Stale session stays Stale.                                                                                                | No announcement or move to Needs you when a stale session's transcript disappears.          |
+| BUG-14             | Announcements for a session with no ID and no name are keyed by folder, kind, and start time.                                                                                                                                                             | Two such sessions are both announced.                                                       |
+| BUG-16             | Announcements are queued, and each stays in the live region for at least 1 second before the next replaces it.                                                                                                                                            | Two updates 50 ms apart are both announced.                                                 |
+| BUG-17             | Before the first successful poll, a failed poll shows "Can't read sessions yet" and the reason, instead of "showing last known data" and "No sessions to show".                                                                                           | The empty state never contradicts the banner.                                               |
+| BUG-18             | An interactive session first seen less than 10 seconds ago, with no status, shows "Starting" (0020).                                                                                                                                                      | "Starting", not "unknown", on that refresh.                                                 |
+| BUG-19, BUG-20     | The missing-status excuse is keyed by process ID and start time, not session ID, and applies only to a session whose start time is within 10 seconds of when the tool first saw it.                                                                       | Existing sessions at the tool's start, and a session that gains an ID, warn as they should. |
+| BUG-23             | The start-time shift is fixed by keeping the first start time seen. `claude -p` runs listed as interactive are Claude Code's behaviour, and stay documented (0020).                                                                                       | Start time doesn't change once a process ID appears.                                        |
+| BUG-24             | Full reading removes the large-line case. Known header line types are listed in one place, and a warning needs 20 complete lines with no usable entry.                                                                                                    | No warning for a large `api-request-blob` line, or a header-only new file.                  |
+| BUG-26             | A warning is raised when 20 or more complete lines yield no object, or when lines have timestamps but no assistant line has a `message` object.                                                                                                           | Both cases warn.                                                                            |
+| BUG-27             | A finished session's transcript is read for 30 seconds after it finishes, so late lines update its Finished row.                                                                                                                                          | A short run's Finished row shows its model.                                                 |
+| BUG-29             | A guard test: the tool's output pipe closes when the tool exits after an Open. BUG-29 stays open as not reproduced unless the test fails (0020).                                                                                                          | The pipe closes.                                                                            |
+
+### Screen-reader testing (NFR-12, U-19)
+
+- **Setup:** a portable copy of NVDA, made from the NVDA installer with its portable-copy option into a scratch folder, with no install (0020). The owner approves the download when Testing starts.
+- **Speech output:** NVDA's log level set to input/output, which logs speech. The speech synthesizer is set to silence where possible. Keystrokes are logged too, so the test runs while the owner isn't typing, and the log and folder are deleted afterwards.
+- **Driving:** the agent sends keyboard input to the dashboard in a test browser window, and reads what NVDA spoke from the log.
+- **Fallback:** if the log doesn't show speech, the agent tries NVDA's Speech Viewer. If neither works, the gap goes back to the owner with options (NFR-12).
+- **Scripts:** the session list and groups, a new Needs you announcement, the notification button, each action and its dialog, results, the usage details, the summary bar, and the leftover-programs offer.
+
+### Requirements coverage
+
+| Requirements   | Covered by                                             |
+| -------------- | ------------------------------------------------------ |
+| FR-23, FR-26   | Transcript reader, saved usage                         |
+| FR-24, FR-25   | Estimated cost                                         |
+| FR-27          | Leftover programs                                      |
+| FR-28 to FR-31 | Other changes                                          |
+| C-12           | Transcript reader allow-list                           |
+| C-13           | No hooks or prompts in any component                   |
+| C-14, NFR-13   | Leftover programs                                      |
+| NFR-11         | Transcript reader                                      |
+| NFR-12         | Screen-reader testing                                  |
+| NFR-9          | Security review of the new action and the helper modes |
+
+### Build plan
+
+Each step is a separate pull request, approved by an independent agent before merge.
+
+| Step | Pull request                                                                           | Covers                                                        |
+| ---- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 1    | Transcript reader: incremental reading, allow-list, counting once, subagents, metadata | FR-23, C-12, NFR-11, BUG-24, BUG-27                           |
+| 2    | Price table and cost rules                                                             | FR-24                                                         |
+| 3    | Usage in the snapshot, details, and summary bar                                        | FR-23 to FR-25                                                |
+| 4    | Saved usage in the store, and scrubbing a corrupt store                                | FR-26, FR-30                                                  |
+| 5    | Helper `record`, `check`, and `end-leftovers` modes, proven on throwaway sessions      | FR-27, C-14                                                   |
+| 6    | Leftover tracker, the action, the Deleted row, and the dialog                          | FR-27, NFR-13                                                 |
+| 7    | Session-rule bugs                                                                      | BUG-6, BUG-13, BUG-14, BUG-18, BUG-19, BUG-20, BUG-23, BUG-26 |
+| 8    | Page bugs                                                                              | BUG-9, BUG-10, BUG-11, BUG-16, BUG-17                         |
+| 9    | Printed link expiry and the BUG-29 guard test                                          | FR-29, BUG-29                                                 |
+
+### Testing approach
+
+- **Unit tests:** the reader's offsets, restarts, truncation, and counting once; the allow-list, with message text in the input; the cost rules for every price row, fast mode, US routing, the Haiku threshold, and unknown models; the store with usage; and each bug's expected result above.
+- **Browser tests:** the usage details, the summary bar, the Deleted row, the leftover dialog, focus, the stale-data line, and accessible names.
+- **Live checks:**
+  - Usage figures for a real session, compared with its transcript.
+  - CPU per poll against U-5 (NFR-11), and the first read of 50 MB of transcripts.
+  - Leftover programs after Stop, Delete, End, and Force end on throwaway sessions.
+  - L10, with the owner accepting the trust prompt.
+  - NVDA testing (NFR-12).
+- **Security review:** the new action, the helper modes, and the printed link, before release (NFR-9).
