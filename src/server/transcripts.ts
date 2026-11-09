@@ -15,8 +15,11 @@ export const READ_BUDGET_BYTES = 8 * 1024 * 1024;
 /** Complete lines in a row with no usable entry before a format warning (BUG-24, BUG-26). */
 export const FORMAT_RUN = 20;
 
-/** A line longer than this is dropped rather than held in memory until it ends. */
-const MAX_PENDING_BYTES = 64 * 1024 * 1024;
+/** A line longer than this is dropped, up to its end, rather than held in memory. */
+const MAX_PENDING_BYTES = 8 * 1024 * 1024;
+
+/** While a transcript is still being counted, its metadata comes from this much of its end. */
+export const TAIL_BYTES = 256 * 1024;
 
 /** The first bytes of a file, compared on each read to notice a replaced file. */
 const HEAD_BYTES = 64;
@@ -233,13 +236,17 @@ export function consumeLines(state: TextState, chunk: string): void {
     }
     if (line.includes('"usage"')) {
       const parsed = parse(line);
-      if (
-        parsed?.message !== undefined &&
-        validTime(parsed.timestamp) !== undefined
-      ) {
-        state.badRun = 0;
-      } else {
-        noteBad(state);
+      // Only assistant lines are judged: other line types, such as attachments, can
+      // mention usage without being a model response.
+      if (line.includes('"type":"assistant"')) {
+        if (
+          parsed?.message !== undefined &&
+          validTime(parsed.timestamp) !== undefined
+        ) {
+          state.badRun = 0;
+        } else {
+          noteBad(state);
+        }
       }
       if (parsed) recordUsage(state, parsed);
       continue;
@@ -310,15 +317,25 @@ interface FileState {
   file: string;
   offset: number;
   pending: Buffer;
+  /** True after an overlong line was dropped, until the next newline. */
+  skipping: boolean;
   size: number;
   mtimeMs: number;
   head: Buffer;
   text: TextState;
 }
 
+interface TailMetadata {
+  size: number;
+  mtimeMs: number;
+  metadata: TranscriptMetadata;
+}
+
 interface SessionState {
   main: FileState;
-  subagentDir?: { path: string; mtimeMs: number };
+  /** Metadata from the end of the main transcript, used until it's fully read. */
+  tail?: TailMetadata | undefined;
+  subagentDir?: { path: string; mtimeMs: number } | undefined;
   subagents: Map<string, FileState>;
   lastAsked: number;
 }
@@ -328,6 +345,7 @@ function newFile(file: string, source: Source): FileState {
     file,
     offset: 0,
     pending: Buffer.alloc(0),
+    skipping: false,
     size: 0,
     mtimeMs: 0,
     head: Buffer.alloc(0),
@@ -438,13 +456,23 @@ export function createTranscriptReader(
 
     const bytes = await internals.readBytes(state.file, state.offset, length);
     budget.left -= bytes.length;
-    if (state.offset === 0) {
-      state.head = Buffer.from(bytes.subarray(0, HEAD_BYTES));
-    }
+    const start = state.offset;
     state.offset += bytes.length;
+    if (state.head.length < HEAD_BYTES && start < HEAD_BYTES) {
+      state.head = Buffer.concat([state.head, bytes]).subarray(0, HEAD_BYTES);
+      state.head = Buffer.from(state.head);
+    }
+
+    let data = bytes;
+    if (state.skipping) {
+      const next = data.indexOf(0x0a);
+      if (next === -1) return true;
+      state.skipping = false;
+      data = data.subarray(next + 1);
+    }
 
     // Lines are split as bytes, so a character cut across two reads is decoded whole.
-    const combined = Buffer.concat([state.pending, bytes]);
+    const combined = Buffer.concat([state.pending, data]);
     const end = combined.lastIndexOf(0x0a);
     if (end === -1) {
       state.pending = combined;
@@ -454,29 +482,41 @@ export function createTranscriptReader(
     }
     if (state.pending.length > MAX_PENDING_BYTES) {
       state.pending = Buffer.alloc(0);
+      state.skipping = true;
       noteBad(state.text);
     }
     return true;
   };
 
-  const refreshSubagents = async (session: SessionState, sessionId: string) => {
-    const path = join(dirname(session.main.file), sessionId, "subagents");
-    let mtimeMs: number;
+  /** A real folder, not a link or junction, or null. */
+  const statFolder = async (path: string) => {
     try {
       const stats = await lstat(path);
-      if (!stats.isDirectory()) return;
-      mtimeMs = stats.mtimeMs;
+      return stats.isDirectory() && !stats.isSymbolicLink() ? stats : null;
     } catch {
+      return null;
+    }
+  };
+
+  const refreshSubagents = async (session: SessionState, sessionId: string) => {
+    const sessionFolder = join(dirname(session.main.file), sessionId);
+    const path = join(sessionFolder, "subagents");
+    const stats = (await statFolder(sessionFolder))
+      ? await statFolder(path)
+      : null;
+    if (!stats) {
+      session.subagentDir = undefined;
       return;
     }
     if (
       session.subagentDir?.path === path &&
-      session.subagentDir.mtimeMs === mtimeMs
+      session.subagentDir.mtimeMs === stats.mtimeMs
     ) {
       return;
     }
-    session.subagentDir = { path, mtimeMs };
+    // Remembered only once the listing succeeds, so a failed listing is retried.
     const entries = await readdir(path, { withFileTypes: true });
+    session.subagentDir = { path, mtimeMs: stats.mtimeMs };
     for (const entry of entries) {
       if (!entry.isFile() || !SUBAGENT_FILE.test(entry.name)) continue;
       const file = join(path, entry.name);
@@ -484,6 +524,39 @@ export function createTranscriptReader(
         session.subagents.set(file, newFile(file, "subagent"));
       }
     }
+  };
+
+  /**
+   * The main transcript's metadata. While it's still being counted, the lines read so far
+   * are old, so the metadata comes from its last 256 KB instead.
+   */
+  const currentMetadata = async (
+    session: SessionState,
+  ): Promise<TranscriptMetadata> => {
+    const main = session.main;
+    if (main.offset >= main.size) {
+      session.tail = undefined;
+      return metadataOf(main.text);
+    }
+    const cached = session.tail;
+    if (cached?.size === main.size && cached.mtimeMs === main.mtimeMs) {
+      return { ...cached.metadata };
+    }
+    const length = Math.min(main.size, TAIL_BYTES);
+    const bytes = await internals.readBytes(
+      main.file,
+      main.size - length,
+      length,
+    );
+    const end = bytes.lastIndexOf(0x0a);
+    let text = end === -1 ? "" : bytes.subarray(0, end).toString("utf8");
+    // The first line is usually cut off, so it's left out.
+    if (length < main.size) text = text.slice(text.indexOf("\n") + 1);
+    const state = createTextState();
+    consumeLines(state, text);
+    const metadata = metadataOf(state);
+    session.tail = { size: main.size, mtimeMs: main.mtimeMs, metadata };
+    return { ...metadata };
   };
 
   const read = async (
@@ -518,13 +591,18 @@ export function createTranscriptReader(
       }
       await refreshSubagents(session, sessionId).catch(() => undefined);
       for (const [file, state] of session.subagents) {
-        if (!(await readFile(state, budget).catch(() => false))) {
-          session.subagents.delete(file);
+        let present: boolean;
+        try {
+          present = await readFile(state, budget);
+        } catch {
+          // A locked file is read again next poll; only a file that's gone is dropped.
+          present = (await statFile(file)) !== null;
         }
+        if (!present) session.subagents.delete(file);
       }
 
       const files = [session.main, ...session.subagents.values()];
-      const metadata = metadataOf(session.main.text);
+      const metadata = await currentMetadata(session);
       // Without this, an idle session whose newest line can't be read would look newly
       // blocked, because Stale depends on knowing its last activity.
       metadata.lastActivityAt ??= Math.floor(session.main.mtimeMs);

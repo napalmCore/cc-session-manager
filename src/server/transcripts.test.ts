@@ -587,6 +587,75 @@ describe("createTranscriptReader", () => {
     expect(only(sessions[0]?.usage?.groups).output).toBe(4);
   });
 
+  it("starts again when a file of the same or larger size is replaced", async () => {
+    const file = writeTranscript(`${reply({ id: "a", output: 5 })}
+`);
+    const reader = createTranscriptReader(root);
+    await reader.enrich([view(ID)]);
+
+    const different = JSON.stringify({
+      gitBranch: "other",
+      timestamp: TIME,
+      type: "assistant",
+      message: {
+        id: "z",
+        model: "claude-opus-5-5",
+        usage: { input_tokens: 1, output_tokens: 9 },
+      },
+    });
+    writeFileSync(
+      file,
+      `${different}
+${different.replace('"z"', '"y"')}
+`,
+    );
+    const { sessions } = await reader.enrich([view(ID)]);
+
+    expect(only(sessions[0]?.usage?.groups).output).toBe(18);
+    expect(sessions[0]?.gitBranch).toBe("other");
+  });
+
+  it("takes metadata from the end of a file it's still counting", async () => {
+    const old = JSON.stringify({
+      gitBranch: "old",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { model: "old-model" },
+    });
+    writeTranscript(`${old}
+${"x".repeat(5000)}
+${reply()}
+`);
+    const reader = createTranscriptReader(root, { budgetBytes: 1000 });
+
+    const { sessions } = await reader.enrich([view(ID)]);
+
+    expect(sessions[0]?.usage?.counting).toBe(true);
+    expect(sessions[0]?.model).toBe("claude-opus-5-5");
+    expect(sessions[0]?.gitBranch).toBe("main");
+    expect(sessions[0]?.lastActivityAt).toBe(Date.parse(TIME));
+  });
+
+  it("still reports metadata with no read budget", async () => {
+    writeTranscript(`${reply()}
+`);
+    const reader = createTranscriptReader(root, { budgetBytes: 0 });
+
+    const { sessions } = await reader.enrich([view(ID)]);
+
+    expect(sessions[0]?.usage).toEqual({ groups: [], counting: true });
+    expect(sessions[0]?.model).toBe("claude-opus-5-5");
+  });
+
+  it("doesn't count attachment lines that mention usage as bad", () => {
+    const attachment = JSON.stringify({
+      type: "attachment",
+      note: "usage",
+    }).replace('"note"', '"usage"');
+    const state = createTextState();
+    consumeLines(state, `${attachment}\n`.repeat(FORMAT_RUN));
+    expect(state.formatChanged).toBe(false);
+  });
+
   it("includes subagent transcripts as subagent usage", async () => {
     writeTranscript(`${reply({ id: "main" })}\n`);
     writeSubagent(
@@ -617,6 +686,77 @@ describe("createTranscriptReader", () => {
     const { sessions } = await reader.enrich([view(ID)]);
     expect(sessions[0]?.usage?.groups).toHaveLength(2);
   });
+
+  it("keeps a subagent's usage through a read error", async () => {
+    writeTranscript(`${reply({ id: "main" })}
+`);
+    const sub = writeSubagent(`${reply({ id: "sub" })}
+`);
+    const reader = createTranscriptReader(root);
+    const real = reader.internals.readBytes;
+    let failed = false;
+    reader.internals.readBytes = async (file, position, length) => {
+      if (file === sub && !failed) {
+        failed = true;
+        throw new Error("EBUSY");
+      }
+      return real(file, position, length);
+    };
+
+    const first = await reader.enrich([view(ID)]);
+    expect(first.sessions[0]?.usage?.groups).toHaveLength(1);
+
+    const { sessions } = await reader.enrich([view(ID)]);
+    expect(sessions[0]?.usage?.groups).toHaveLength(2);
+  });
+
+  it("drops subagents whose folder has gone", async () => {
+    writeTranscript(`${reply({ id: "main" })}
+`);
+    writeSubagent(`${reply({ id: "sub" })}
+`);
+    const reader = createTranscriptReader(root);
+    expect(
+      (await reader.enrich([view(ID)])).sessions[0]?.usage?.groups,
+    ).toHaveLength(2);
+
+    rmSync(join(root, "project-a", ID), { recursive: true, force: true });
+    const { sessions } = await reader.enrich([view(ID)]);
+    expect(sessions[0]?.usage?.groups).toHaveLength(1);
+  });
+
+  it.each(["subagents folder", "session folder"])(
+    "doesn't follow a linked %s",
+    async (which) => {
+      writeTranscript(`${reply({ id: "main" })}
+`);
+      const outside = join(root, "outside");
+      const outsideSubagents =
+        which === "session folder" ? join(outside, "subagents") : outside;
+      mkdirSync(outsideSubagents, { recursive: true });
+      writeFileSync(
+        join(outsideSubagents, "agent-x.jsonl"),
+        `${reply({ id: "sub" })}
+`,
+      );
+      const sessionFolder = join(root, "project-a", ID);
+      try {
+        if (which === "session folder") {
+          symlinkSync(outside, sessionFolder, "junction");
+        } else {
+          mkdirSync(sessionFolder);
+          symlinkSync(outside, join(sessionFolder, "subagents"), "junction");
+        }
+      } catch {
+        return; // Links aren't available here.
+      }
+
+      const { sessions } = await createTranscriptReader(root).enrich([
+        view(ID),
+      ]);
+      expect(sessions[0]?.usage?.groups).toHaveLength(1);
+    },
+  );
 
   it("forgets sessions it isn't asked about for 10 minutes", async () => {
     writeTranscript(`${reply()}\n`);
