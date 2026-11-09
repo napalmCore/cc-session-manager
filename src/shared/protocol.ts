@@ -11,6 +11,32 @@ export interface Session {
   name?: string;
 }
 
+/** Token counts for one group of a session's model responses (FR-23). */
+export interface UsageCounts {
+  input: number;
+  output: number;
+  cacheWrite5m: number;
+  cacheWrite1h: number;
+  cacheRead: number;
+  webSearches: number;
+}
+
+/** Responses that share a model, speed, routing, and source, which price the same (FR-24). */
+export interface UsageGroup extends UsageCounts {
+  model: string;
+  speed: string;
+  geo: string;
+  source: "main" | "subagent";
+  /** Claude Haiku 5.5 prompts over 100,000 tokens, which cost more. */
+  longContext: boolean;
+}
+
+export interface SessionUsage {
+  groups: UsageGroup[];
+  /** True until every transcript of the session has been read to its end. */
+  counting: boolean;
+}
+
 export interface SessionView extends Session {
   needsAttention: boolean;
   attentionReason: string | null;
@@ -20,6 +46,7 @@ export interface SessionView extends Session {
   gitBranch?: string;
   model?: string;
   lastActivityAt?: number;
+  usage?: SessionUsage;
 }
 
 export interface FinishedSession extends SessionView {
