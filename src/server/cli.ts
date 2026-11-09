@@ -44,7 +44,7 @@ import { parseSessions } from "./schema.js";
 import { startServer } from "./server.js";
 import { createFileStore, dataDirectory } from "./store.js";
 import type { Snapshot } from "../shared/protocol.js";
-import { createSessionTracker } from "./tracker.js";
+import { createSessionTracker, enrichWithFinished } from "./tracker.js";
 import { createTranscriptReader, transcriptExists } from "./transcripts.js";
 
 function browserCommand(url: string): [string, string[]] {
@@ -238,7 +238,7 @@ const poller = createPoller({
     folderWatch.missing(tracked.sessions);
     return tracked;
   },
-  enrich: createTranscriptReader().enrich,
+  enrich: enrichWithFinished(tracker, createTranscriptReader()),
 });
 const openExecutors = createOpenExecutors({
   programs,

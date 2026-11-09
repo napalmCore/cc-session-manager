@@ -1,5 +1,13 @@
 # Release notes
 
+## Unreleased
+
+Notes gathered for 0.2.0 while it's built.
+
+- Finished sessions keep their token use and estimated cost after a restart. Going back to 0.1.0 drops the saved usage the next time it saves the list (FR-26).
+- A corrupt saved list is set aside once, with names removed, or deleted if it isn't JSON. Copies that 0.1.0 set aside are reduced to the newest one, scrubbed the same way (FR-30, BUG-12).
+- A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
+
 ## 0.1.0
 
 The first release. It covers iterations 1 and 2. Get it from the GitHub release: clone the repository at the `v0.1.0` tag, then follow the README. It isn't published to npm.
