@@ -381,7 +381,7 @@ Each step is a separate pull request, approved by an independent agent before me
 
 ## Iteration 3 design
 
-- **Status:** Draft, under review
+- **Status:** Signed off on 2026-11-09, by agent review and merge
 - **Requirements:** FR-23 to FR-31, C-12 to C-14, NFR-11 to NFR-13 in [requirements.md](requirements.md)
 - **Decisions:** [0018](decisions/0018-iteration-3-plan.md), [0019](decisions/0019-iteration-3-requirements.md), [0020](decisions/0020-iteration-3-design.md)
 

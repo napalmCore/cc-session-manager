@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 3, Phase 3: Design.** 0.1.0 is released ([0017](decisions/0017-first-release.md)). Iteration 3 covers cost and token use, bug fixes, L10, and screen-reader testing, for release as 0.2.0 ([0018](decisions/0018-iteration-3-plan.md)). Requirements are signed off ([0019](decisions/0019-iteration-3-requirements.md)), and the design is in review ([0020](decisions/0020-iteration-3-design.md)).
+**Iteration 3, Phase 4: Implementation.** 0.1.0 is released ([0017](decisions/0017-first-release.md)). Iteration 3 covers cost and token use, bug fixes, L10, and screen-reader testing, for release as 0.2.0 ([0018](decisions/0018-iteration-3-plan.md)). Requirements are signed off ([0019](decisions/0019-iteration-3-requirements.md)), and so is the design ([0020](decisions/0020-iteration-3-design.md)). Implementation is next.
 
 ## How these docs work
 
@@ -16,7 +16,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | Document                               | Status                            |
 | -------------------------------------- | --------------------------------- |
 | [`requirements.md`](requirements.md)   | Signed off for iteration 3        |
-| [`design.md`](design.md)               | Iteration 3 in review             |
+| [`design.md`](design.md)               | Signed off for iteration 3        |
 | [`test-plan.md`](test-plan.md)         | Exit criteria met for iteration 2 |
 | [`release-notes.md`](release-notes.md) | 0.1.0                             |
 
