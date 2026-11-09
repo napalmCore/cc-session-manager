@@ -174,9 +174,9 @@ Decisions are in [0018](decisions/0018-iteration-3-plan.md) and [0019](decisions
 
 ### Known unknowns
 
-| ID   | Question                                                                                                                                                                                                                  | Resolve in |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| U-16 | How can a background session's leftover programs be found once it's stopped or deleted? Its programs may be children of a Claude Code process that has exited, or of a shared supervisor process.                         | Design     |
-| U-17 | Partly resolved: transcripts record `usage` with input, output, cache write (split by 5-minute and 1-hour), and cache read tokens. One response can appear on several lines, so Design must confirm how to count it once. | Design     |
-| U-18 | Partly resolved: subagent transcripts are in `<session ID>/subagents/` next to the main transcript. Design confirms they hold their own usage and aren't also counted in the main transcript.                             | Design     |
-| U-19 | Can an agent read NVDA's speech output reliably, for example through its speech viewer or a log, without the owner listening?                                                                                             | Design     |
+| ID   | Question                                                                                                                                        | Resolve in |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| U-16 | Resolved: only from a record taken just before the tool's own action, matched by process ID and creation time. See design.md and decision 0020. | Done       |
+| U-17 | Resolved: every repeat of a response ID carries identical usage, so each `message.id` is counted once. See design.md.                           | Done       |
+| U-18 | Resolved: subagent transcripts hold their own usage, and none of their response IDs appear in the main transcript. See design.md.               | Done       |
+| U-19 | Partly resolved: NVDA's input/output log level records speech, and a portable copy needs no install. Testing confirms it reads reliably.        | Testing    |
