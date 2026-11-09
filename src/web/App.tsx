@@ -21,6 +21,12 @@ import {
   type SessionAction,
 } from "../shared/session-actions.js";
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
+import {
+  ESTIMATE_NOTE,
+  sessionUsageLines,
+  totalsLines,
+  usageTotals,
+} from "../shared/usage-summary.js";
 import cssClasses from "./App.module.css";
 import {
   ConfirmDialog,
@@ -53,6 +59,9 @@ const styles = cssClasses as Record<
   | "notifyButton"
   | "notifyStatus"
   | "toolbar"
+  | "usage"
+  | "usageNote"
+  | "usageTitle"
   | "list"
   | "marker"
   | "name"
@@ -103,7 +112,24 @@ function details(session: SessionView, now: number): string[] {
       ? "Last activity unavailable"
       : `Last active ${formatDuration(now - session.lastActivityAt)} ago`,
   );
+  items.push(...sessionUsageLines(session.usage));
   return items;
+}
+
+/** Totals for the listed sessions, under the page heading (FR-25). */
+function UsageSummary({ sessions }: { sessions: SessionView[] }) {
+  const lines = totalsLines(usageTotals(sessions));
+  return (
+    <section aria-labelledby="usage-title" className={styles.usage}>
+      <h2 id="usage-title" className={styles.usageTitle}>
+        Usage
+      </h2>
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+      <p className={styles.usageNote}>{ESTIMATE_NOTE}</p>
+    </section>
+  );
 }
 
 function statusText(session: SessionView): string {
@@ -602,6 +628,9 @@ export function App() {
           {ACTION_LABELS[lastResultGone.action]}, {lastResultGone.label}:{" "}
           {lastResultGone.reply.message}
         </p>
+      )}
+      {snapshot !== null && snapshot.sessions.length > 0 && (
+        <UsageSummary sessions={snapshot.sessions} />
       )}
       {signedIn && snapshot === null && <p>Loading sessions…</p>}
       {snapshot?.sessions.length === 0 && <p>No sessions to show.</p>}

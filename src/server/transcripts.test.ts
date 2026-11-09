@@ -662,7 +662,12 @@ ${late}
 
     const { sessions } = await reader.enrich([view(ID)]);
 
-    expect(sessions[0]?.usage).toEqual({ groups: [], counting: true });
+    expect(sessions[0]?.usage).toEqual({
+      groups: [],
+      counting: true,
+      cost: 0,
+      unpriced: [],
+    });
     expect(sessions[0]?.model).toBe("claude-opus-5-5");
   });
 

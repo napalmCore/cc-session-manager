@@ -2,6 +2,7 @@ import { lstat, open, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { estimateCost } from "../shared/prices.js";
 import type {
   SessionUsage,
   SessionView,
@@ -607,6 +608,7 @@ export function createTranscriptReader(
       }
 
       const files = [session.main, ...session.subagents.values()];
+      const groups = summarizeUsage(files.map((file) => file.text));
       const metadata = await currentMetadata(session);
       // Without this, an idle session whose newest line can't be read would look newly
       // blocked, because Stale depends on knowing its last activity.
@@ -614,8 +616,9 @@ export function createTranscriptReader(
       return {
         metadata,
         usage: {
-          groups: summarizeUsage(files.map((file) => file.text)),
+          groups,
           counting: files.some((file) => file.offset < file.size),
+          ...estimateCost(groups),
         },
         formatChanged: session.main.text.formatChanged,
       };
