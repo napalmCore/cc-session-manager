@@ -1,10 +1,16 @@
-import type { FinishedSession, SessionView } from "../shared/protocol.js";
+import type {
+  FinishedSession,
+  SessionUsage,
+  SessionView,
+} from "../shared/protocol.js";
 import type { SessionStore } from "./store.js";
 import type { EnrichResult } from "./transcripts.js";
 
 export const RETENTION_MS = 24 * 60 * 60 * 1000;
 /** A finished session's transcript is read this long after it finishes, for late lines (BUG-27). */
 export const READ_AFTER_FINISH_MS = 30_000;
+/** Failed reads in a row, after the window, before a still-counting session is given up on. */
+export const READS_BEFORE_GIVING_UP = 20;
 
 /** Which sessions the transcript reader should read on this poll. */
 export interface ReadPlan {
@@ -44,7 +50,7 @@ function keyOf(session: SessionView): string | null {
 
 /** What the transcript reader adds to a session, kept for a finished session it no longer reads. */
 function transcriptFields(
-  session: SessionView | undefined,
+  session: Partial<SessionView> | undefined,
 ): Partial<SessionView> {
   if (!session) return {};
   const fields: Partial<SessionView> = {};
@@ -54,6 +60,50 @@ function transcriptFields(
     fields.lastActivityAt = session.lastActivityAt;
   }
   if (session.usage !== undefined) fields.usage = session.usage;
+  return fields;
+}
+
+function tokenCount(usage: SessionUsage): number {
+  return usage.groups.reduce(
+    (sum, group) =>
+      sum +
+      group.input +
+      group.output +
+      group.cacheWrite5m +
+      group.cacheWrite1h +
+      group.cacheRead,
+    0,
+  );
+}
+
+/**
+ * Saved usage stands until a new read is as complete and counts at least as much, so a
+ * re-read from the start after a restart doesn't replace it with a partial count.
+ */
+function preferUsage(
+  previous: SessionUsage | undefined,
+  next: SessionUsage | undefined,
+): SessionUsage | undefined {
+  if (!previous) return next;
+  if (!next) return previous;
+  if (next.counting && !previous.counting) return previous;
+  if (
+    next.counting === previous.counting &&
+    tokenCount(next) < tokenCount(previous)
+  ) {
+    return previous;
+  }
+  return next;
+}
+
+/** A finished session's fields after a read, keeping saved usage where it's better. */
+function merged(
+  previous: FinishedSession | undefined,
+  next: SessionView,
+): Partial<SessionView> {
+  const fields: Partial<SessionView> = { ...next };
+  const usage = preferUsage(previous?.usage, next.usage);
+  if (usage) fields.usage = usage;
   return fields;
 }
 
@@ -84,7 +134,7 @@ export function createSessionTracker({
   store,
   now = Date.now,
 }: TrackerOptions): SessionTracker {
-  const loaded = store.load();
+  let loaded = store.load();
   const records = new Map<string, FinishedSession>();
   for (const record of loaded.records) {
     const key = keyOf(record);
@@ -96,17 +146,29 @@ export function createSessionTracker({
   let running = new Map<string, SessionView>();
   // Finished sessions being read, so the reader can be told when each stops.
   let reading = new Set<string>();
-  // Finished sessions whose transcript couldn't be read after the window, until a restart.
-  const unreadable = new Set<string>();
+  // Failed reads in a row of finished sessions still being counted, after the window.
+  const failures = new Map<string, number>();
 
   /**
    * A finished session is read for 30 seconds, and after that until it's fully counted, so
    * late lines and a large transcript are both taken in (FR-26, BUG-27).
    */
-  const stillReading = (key: string, record: FinishedSession, time: number) =>
-    !unreadable.has(key) &&
-    (time - record.finishedAt < READ_AFTER_FINISH_MS ||
-      record.usage?.counting === true);
+  const stillReading = (record: FinishedSession, time: number) =>
+    time - record.finishedAt < READ_AFTER_FINISH_MS ||
+    record.usage?.counting === true;
+
+  /** A file that couldn't be opened at the start is tried again, and merged in once it opens. */
+  const retryLoad = () => {
+    if (loaded.locked !== true) return;
+    const again = store.load();
+    if (again.locked === true) return;
+    for (const record of again.records) {
+      const key = keyOf(record);
+      if (key && !records.has(key)) records.set(key, record);
+    }
+    loaded = again;
+    lastSaved = null;
+  };
 
   return {
     readPlan(current) {
@@ -122,13 +184,13 @@ export function createSessionTracker({
         const record = records.get(key);
         // First seen finished, so it's read until its record exists.
         if (!record) return true;
-        if (!stillReading(key, record, time)) return false;
+        if (!stillReading(record, time)) return false;
         next.add(key);
         return true;
       });
       const finished: FinishedSession[] = [];
       for (const [key, record] of records) {
-        if (listed.has(key) || !stillReading(key, record, time)) continue;
+        if (listed.has(key) || !stillReading(record, time)) continue;
         next.add(key);
         finished.push(record);
       }
@@ -147,20 +209,39 @@ export function createSessionTracker({
         const record = records.get(key);
         if (!record) continue;
         if (after === before) {
-          // Nothing could be read. Past the window, it isn't tried again until a restart.
-          if (time - record.finishedAt >= READ_AFTER_FINISH_MS) {
-            unreadable.add(key);
+          // Nothing could be read, perhaps for a moment, as when another program has the file
+          // open. Only many failures in a row, after the window, end the count, as partial.
+          const usage = record.usage;
+          if (
+            time - record.finishedAt < READ_AFTER_FINISH_MS ||
+            !usage?.counting
+          ) {
+            continue;
+          }
+          const failed = (failures.get(key) ?? 0) + 1;
+          failures.set(key, failed);
+          if (failed >= READS_BEFORE_GIVING_UP) {
+            failures.delete(key);
+            records.set(key, {
+              ...record,
+              usage: { ...usage, counting: false, partial: true },
+            });
           }
           continue;
         }
+        failures.delete(key);
         // A listed session is updated from the listing itself, in update().
         if (record === before) {
-          records.set(key, { ...record, ...transcriptFields(after) });
+          records.set(key, {
+            ...record,
+            ...transcriptFields(merged(record, after)),
+          });
         }
       }
     },
 
     update(current) {
+      retryLoad();
       const time = now();
       const listedKeys = new Set(current.map(keyOf));
       const listedPids = new Set(current.map((session) => session.pid));
@@ -175,10 +256,13 @@ export function createSessionTracker({
           const previous = records.get(key);
           const finishedAt = previous?.finishedAt ?? time;
           // A session the reader didn't read this time keeps what it last had.
-          const kept = session.usage ? {} : transcriptFields(previous);
-          records.set(key, { ...kept, ...session, finishedAt });
+          const kept = session.usage
+            ? merged(previous, session)
+            : { ...transcriptFields(previous), ...session };
+          records.set(key, { ...session, ...kept, finishedAt });
         } else {
           records.delete(key);
+          failures.delete(key);
           live.push(session);
           nextRunning.set(key, session);
         }

@@ -23,7 +23,7 @@ const OLD_CORRUPT = /^finished-sessions\.corrupt-(\d+)\.json$/;
 const LOAD_PROBLEM =
   "The saved list of finished sessions could not be read, so it was reset.";
 const LOCKED_PROBLEM =
-  "The saved list of finished sessions could not be opened, so it was left as it is. Finished sessions won't be saved until cc-session-manager restarts.";
+  "The saved list of finished sessions could not be opened, so it was left as it is. Finished sessions won't be saved until it can be opened.";
 const SAVE_PROBLEM =
   "Finished sessions could not be saved, and may be lost when the tool stops.";
 
@@ -46,6 +46,7 @@ const usageSchema = z.object({
   groups: z.array(usageGroupSchema),
   /** True while a finished session's transcripts haven't been fully read (FR-26). */
   counting: z.boolean(),
+  partial: z.boolean().optional(),
 });
 
 /**
@@ -82,6 +83,8 @@ export interface LoadResult {
   /** True when the file holds data the store no longer keeps, such as a name. */
   needsRewrite: boolean;
   notice: string | null;
+  /** True when the file exists but couldn't be opened, so loading should be tried again. */
+  locked?: boolean;
 }
 
 export interface StoreOptions {
@@ -229,10 +232,12 @@ export function createFileStore(
       } catch (error) {
         const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
         if (!missing) leaveFileAlone = true;
+        if (missing) return { records: [], notice: null, needsRewrite: false };
         return {
           records: [],
-          notice: missing ? null : LOCKED_PROBLEM,
+          notice: LOCKED_PROBLEM,
           needsRewrite: false,
+          locked: true,
         };
       }
       leaveFileAlone = false;

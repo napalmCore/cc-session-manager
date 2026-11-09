@@ -11,6 +11,7 @@ import {
   createSessionTracker,
   enrichWithFinished,
   READ_AFTER_FINISH_MS,
+  READS_BEFORE_GIVING_UP,
   RETENTION_MS,
 } from "./tracker.js";
 
@@ -369,7 +370,7 @@ describe("reading finished sessions (FR-26, BUG-27)", () => {
     expect(asked.at(-1)).toEqual([]);
   });
 
-  it("stops trying a transcript that can't be read after the window", async () => {
+  it("rides out failed reads, and marks a count partial only after many", async () => {
     const { poll, transcripts, advance, asked } = reading();
     transcripts.set(id, { usage: usage(1, true) });
     await poll(interactive);
@@ -377,10 +378,125 @@ describe("reading finished sessions (FR-26, BUG-27)", () => {
     transcripts.delete(id);
     advance(READ_AFTER_FINISH_MS);
 
-    const { sessions } = await poll();
-    expect(sessions[0]?.usage).toEqual(usage(1, true));
+    for (let index = 0; index < READS_BEFORE_GIVING_UP - 1; index += 1) {
+      await poll();
+    }
+    // Readable again, as after another program lets go of the file.
+    transcripts.set(id, { usage: usage(4, true) });
+    let { sessions } = await poll();
+    expect(sessions[0]?.usage).toEqual(usage(4, true));
+
+    transcripts.delete(id);
+    for (let index = 0; index < READS_BEFORE_GIVING_UP; index += 1) {
+      ({ sessions } = await poll());
+    }
+    expect(sessions[0]?.usage).toEqual({
+      ...usage(4),
+      partial: true,
+    });
     await poll();
     expect(asked.at(-1)).toEqual([]);
+  });
+
+  it("reads a session again in full after it's resumed and ends again", async () => {
+    const { poll, transcripts, advance } = reading();
+    transcripts.set(id, { usage: usage(1, true) });
+    await poll(interactive);
+    await poll();
+    transcripts.delete(id);
+    advance(READ_AFTER_FINISH_MS);
+    for (let index = 0; index < READS_BEFORE_GIVING_UP; index += 1) {
+      await poll();
+    }
+
+    transcripts.set(id, { model: "resumed", usage: usage(6) });
+    await poll(interactive);
+    await poll();
+    transcripts.set(id, { model: "late", usage: usage(7) });
+    const { sessions } = await poll();
+    expect(sessions[0]?.model).toBe("late");
+    expect(sessions[0]?.usage).toEqual(usage(7));
+  });
+
+  it("keeps complete saved usage while a re-read after a restart catches up", async () => {
+    const saved: FinishedSession = {
+      ...toSessionView(interactive),
+      finished: true,
+      statusLabel: "finished",
+      finishedAt: 45_000,
+      usage: usage(50),
+    };
+    const { poll, transcripts } = reading([saved]);
+    transcripts.set(id, { usage: usage(10, true) });
+
+    let { sessions } = await poll();
+    expect(sessions[0]?.usage).toEqual(usage(50));
+
+    transcripts.set(id, { usage: usage(60) });
+    ({ sessions } = await poll());
+    expect(sessions[0]?.usage).toEqual(usage(60));
+  });
+
+  it("keeps the listing's order", async () => {
+    const { reader, transcripts } = reading();
+    const tracker = createSessionTracker({
+      store: {
+        load: () => ({ records: [], notice: null, needsRewrite: false }),
+        save: () => null,
+      },
+    });
+    transcripts.set(id, { model: "m" });
+    const views = [working, interactive, { kind: "interactive" }].map(
+      toSessionView,
+    );
+
+    const result = await enrichWithFinished(tracker, reader)(views);
+
+    expect(result.sessions.map((session) => session.sessionId)).toEqual([
+      working.sessionId,
+      interactive.sessionId,
+      undefined,
+    ]);
+    expect(result.sessions[1]?.model).toBe("m");
+  });
+
+  it("loads a store that couldn't be opened once it opens, keeping both", async () => {
+    const saved: FinishedSession = {
+      ...toSessionView({
+        ...interactive,
+        sessionId: "33333333-3333-4333-8333-333333333333",
+      }),
+      finished: true,
+      statusLabel: "finished",
+      finishedAt: 49_000,
+    };
+    let locked = true;
+    const save = vi.fn<SessionStore["save"]>(() => null);
+    const tracker = createSessionTracker({
+      store: {
+        load: () =>
+          locked
+            ? {
+                records: [],
+                notice: "locked",
+                needsRewrite: false,
+                locked: true,
+              }
+            : { records: [saved], notice: null, needsRewrite: false },
+        save,
+      },
+      now: () => 50_000,
+    });
+    tracker.update([toSessionView(interactive)]);
+    expect(tracker.update([]).warnings).toEqual(["locked"]);
+
+    locked = false;
+    const { sessions, warnings } = tracker.update([]);
+    expect(warnings).toEqual([]);
+    expect(sessions.map((session) => session.sessionId).sort()).toEqual(
+      [interactive.sessionId, saved.sessionId].sort(),
+    );
+    expect(save.mock.lastCall?.[0]).toHaveLength(2);
   });
 
   it("stops reading a listed background session, and keeps what it read", async () => {

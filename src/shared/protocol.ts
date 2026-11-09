@@ -35,6 +35,8 @@ export interface SessionUsage {
   groups: UsageGroup[];
   /** True until every transcript of the session has been read to its end. */
   counting: boolean;
+  /** True when reading stopped before the end, because the transcript couldn't be read. */
+  partial?: boolean;
   /** The estimated cost in US dollars of every group that could be priced (FR-24). */
   cost: number;
   /** Models whose usage couldn't be priced, so the cost leaves them out. */
