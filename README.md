@@ -7,8 +7,9 @@ cc-session-manager is an independent, open-source tool. It isn't made, endorsed,
 ## Requirements
 
 - Windows. Other platforms aren't tested, and opening a terminal is Windows-only.
+- Git.
 - [Node.js](https://nodejs.org/) 24 or later.
-- [pnpm](https://pnpm.io/). Running `corepack enable` once sets up the version this project uses.
+- [pnpm](https://pnpm.io/). On Node 24, running `corepack enable` once sets up the version this project uses. Later Node versions don't include corepack, so install it or pnpm first.
 - [Claude Code](https://code.claude.com/), installed and signed in.
 
 ## Install and run
@@ -35,7 +36,7 @@ See the [release notes](docs/release-notes.md) for details, the safety rules for
 
 ## Privacy
 
-Everything stays on your computer. The tool runs `claude agents --json --all`, reads a little metadata from session transcripts, and saves finished sessions, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager`.
+The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open and Resume start Claude Code, which works as it normally does. It reads a little metadata from session transcripts, and saves finished sessions, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager`. A damaged older file is set aside unchanged, so it could still hold names.
 
 ## Development
 
