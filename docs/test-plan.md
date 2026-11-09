@@ -1,7 +1,7 @@
 # Test plan
 
 - **Status:** Exit criteria met for iteration 1 on 2026-11-06, with M2 not run by decision 0013, and L3 to L5 not fully repeated on the final code, as described under How checks are approved
-- **Iteration 2:** exit criteria met on 2026-11-08, with L10 deferred by decision 0016, see [Iteration 2](#iteration-2)
+- **Iteration 2:** exit criteria met on 2026-11-08, closed by the owner with L10 deferred and the limits in decision 0016, see [Iteration 2](#iteration-2)
 - **Requirements:** [requirements.md](requirements.md)
 
 ## Exit criteria
@@ -106,7 +106,7 @@ On the first live run, across 6 measured changes, the slowest upper bound was 23
   - FR-16's kept worktree (L10) wasn't checked live. The owner deferred it to a later iteration (decision 0016).
   - L6 to L8 were repeated on the secured code, with the fixes from #31, and passed. L6 now records which processes ended and survived.
   - A notification to a truly hidden tab (FR-11, L11) is unverified, because the test browser always reported the page as visible.
-  - NFR-8 hasn't been checked with a screen reader. Decision 0013 accepted the same for iteration 1's NFR-5, and extending it to NFR-8 is the owner's decision.
+  - NFR-8 hasn't been checked with a screen reader. The owner extended decision 0013 to NFR-8 and closed Testing with these limits (decision 0016).
 - **Exit criteria:** the same as iteration 1. Every iteration 2 requirement and constraint has been checked, and no Critical or High bug is open. NFR-9 also needs a security review with no open Critical or High finding.
 
 ### Requirements coverage
