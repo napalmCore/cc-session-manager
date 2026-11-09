@@ -2,8 +2,9 @@ import { exec, execFile } from "node:child_process";
 import { homedir } from "node:os";
 import type { SessionView, Snapshot } from "../shared/protocol.js";
 import { sessionLaunchEnv } from "./programs.js";
-import { toSessionView } from "./rules.js";
+import { toSessionViewAt } from "./rules.js";
 import { parseSessions } from "./schema.js";
+import { createSessionMemory } from "./session-memory.js";
 import type { ListingState } from "./actions.js";
 import type { TrackedSessions } from "./tracker.js";
 import type { EnrichResult } from "./transcripts.js";
@@ -88,7 +89,7 @@ export function createPoller({
   let lastSuccessAt: number | null = null;
   let lastPollFailed = false;
   let failedPolls = 0;
-  let listedLastPoll = new Set<string>();
+  const memory = createSessionMemory();
   let lastReported: string | undefined;
 
   const report = (error: string | null) => {
@@ -103,13 +104,19 @@ export function createPoller({
   const tick = async () => {
     const pollStartedAt = Date.now();
     try {
-      const parsed = parseSessions(await run(), listedLastPoll);
-      listedLastPoll = parsed.listed;
-      const views = parsed.sessions.map(toSessionView);
-      const enriched = (await enrich?.(views)) ?? {
+      const output = await run();
+      const parsed = parseSessions(output, (session) =>
+        memory.isStarting(session),
+      );
+      memory.observe(parsed.sessions);
+      const views = parsed.sessions.map((session) =>
+        toSessionViewAt(session, memory.isStarting(session)),
+      );
+      const read = (await enrich?.(views)) ?? {
         sessions: views,
         warnings: [],
       };
+      const enriched = { ...read, sessions: memory.recall(read.sessions) };
       const tracked = track?.(enriched.sessions) ?? {
         sessions: enriched.sessions,
         warnings: [],

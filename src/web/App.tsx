@@ -81,14 +81,15 @@ function formatTime(time: number): string {
 }
 
 function details(session: SessionView, now: number): string[] {
+  const startedAt = session.firstStartedAt ?? session.startedAt;
   const items = [
     session.cwd ?? "Project unknown",
     session.kind ?? "Kind unknown",
     session.gitBranch ?? "Branch unavailable",
     session.model ?? "Model unavailable",
-    session.startedAt === undefined
+    startedAt === undefined
       ? "Start time unknown"
-      : `Started ${formatTime(session.startedAt)}`,
+      : `Started ${formatTime(startedAt)}`,
   ];
   // Helps find a live session's terminal, since it has no Open (FR-20).
   if (
@@ -99,12 +100,12 @@ function details(session: SessionView, now: number): string[] {
     items.push(`Process ID ${String(session.pid)}`);
   }
 
-  if (session.startedAt !== undefined) {
+  if (startedAt !== undefined) {
     if (session.finishedAt !== undefined) {
-      const ran = session.finishedAt - session.startedAt;
+      const ran = session.finishedAt - startedAt;
       items.push(`Ran for ${formatDuration(ran)}`);
     } else if (!session.finished) {
-      items.push(`Running for ${formatDuration(now - session.startedAt)}`);
+      items.push(`Running for ${formatDuration(now - startedAt)}`);
     }
   }
 

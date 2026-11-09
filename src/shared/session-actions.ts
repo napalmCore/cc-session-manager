@@ -107,10 +107,11 @@ export function sessionLabel(
     session.kind === "background" || session.kind === "interactive"
       ? `${session.kind} session`
       : "session";
+  const startedAt = session.firstStartedAt ?? session.startedAt;
   const started =
-    session.startedAt === undefined
+    startedAt === undefined
       ? "start time unknown"
-      : `started ${formatTime(session.startedAt)}`;
+      : `started ${formatTime(startedAt)}`;
   return `Unnamed ${kind} in ${folder}, ${started}`;
 }
 

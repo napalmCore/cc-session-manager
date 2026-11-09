@@ -53,6 +53,8 @@ export interface SessionView extends Session {
   model?: string;
   lastActivityAt?: number;
   usage?: SessionUsage;
+  /** The first start time seen, which stays put when Claude Code's changes (BUG-23). */
+  firstStartedAt?: number;
 }
 
 export interface FinishedSession extends SessionView {
