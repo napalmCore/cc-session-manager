@@ -58,6 +58,12 @@ describe("formatting", () => {
     [1_043_430, "1.04M"],
     [260_774_567, "261M"],
     [2_600_000_000, "2.60B"],
+    [99_999, "100K"],
+    [999_499, "999K"],
+    [999_500, "1.00M"],
+    [999_999, "1.00M"],
+    [99_950_000, "100M"],
+    [9_999, "10.0K"],
   ])("shows %d tokens as %s", (count, text) => {
     expect(formatTokens(count)).toBe(text);
   });
@@ -68,6 +74,8 @@ describe("formatting", () => {
     [0.42, "$0.42"],
     [12.345, "$12.35"],
     [1234.4, "$1,234"],
+    [999.996, "$1,000"],
+    [999.99, "$999.99"],
   ])("shows $%d as %s", (dollars, text) => {
     expect(formatCost(dollars)).toBe(text);
   });
@@ -122,6 +130,57 @@ describe("sessionUsageLines", () => {
         }),
       )[1],
     ).toBe("Cost unavailable for claude-new");
+  });
+
+  it("treats a $0 priced part as priced, and says when it's still counting", () => {
+    const lines = sessionUsageLines(
+      usage({
+        groups: [
+          group({
+            input: 0,
+            output: 0,
+            cacheWrite5m: 0,
+            cacheWrite1h: 0,
+            cacheRead: 0,
+          }),
+          group({ model: "claude-new" }),
+        ],
+        cost: 0,
+        unpriced: ["claude-new"],
+        counting: true,
+      }),
+    );
+    expect(lines.at(-1)).toBe(
+      "Estimated cost $0.00, leaving out claude-new (still counting)",
+    );
+    expect(
+      sessionUsageLines(
+        usage({
+          groups: [group({ model: "claude-new" })],
+          cost: 0,
+          unpriced: ["claude-new"],
+          counting: true,
+        }),
+      ).at(-1),
+    ).toBe("Cost unavailable for claude-new (still counting)");
+  });
+
+  it("says more than 99% when the main transcript has a few tokens", () => {
+    const lines = sessionUsageLines(
+      usage({
+        groups: [
+          group({
+            input: 1,
+            output: 0,
+            cacheWrite5m: 0,
+            cacheWrite1h: 0,
+            cacheRead: 0,
+          }),
+          group({ source: "subagent", cacheRead: 10_000_000 }),
+        ],
+      }),
+    );
+    expect(lines).toContain("Subagents: more than 99% of tokens");
   });
 
   it("names a model a partly priced cost leaves out", () => {

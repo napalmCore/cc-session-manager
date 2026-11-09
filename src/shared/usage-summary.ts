@@ -1,4 +1,4 @@
-import { PRICE_TABLE_DATE } from "./prices.js";
+import { groupCost, PRICE_TABLE_DATE } from "./prices.js";
 import type { SessionUsage, SessionView, UsageGroup } from "./protocol.js";
 
 export interface TokenTotals {
@@ -64,16 +64,21 @@ function allTokens(totals: TokenTotals): number {
 export function formatTokens(count: number): string {
   if (count < 1000) return String(count);
   const units: [number, string][] = [
-    [1e9, "B"],
-    [1e6, "M"],
     [1e3, "K"],
+    [1e6, "M"],
+    [1e9, "B"],
   ];
-  for (const [size, unit] of units) {
-    if (count >= size) {
-      const value = count / size;
-      const digits = value >= 100 ? 0 : value >= 10 ? 1 : 2;
-      return `${value.toFixed(digits)}${unit}`;
+  for (const [index, [size, unit]] of units.entries()) {
+    const value = count / size;
+    const digits = value < 10 ? 2 : value < 100 ? 1 : 0;
+    let text = value.toFixed(digits);
+    // Rounding can cross a boundary: 99.999 becomes 100, and 999.5 belongs to the next unit.
+    if (Number(text) >= 1000 && index < units.length - 1) continue;
+    if (digits > 0 && Number(text) >= (digits === 2 ? 10 : 100)) {
+      text = value.toFixed(digits - 1);
+      if (digits === 2 && Number(text) >= 100) text = value.toFixed(0);
     }
+    return `${text}${unit}`;
   }
   return String(count);
 }
@@ -82,7 +87,7 @@ export function formatTokens(count: number): string {
 export function formatCost(dollars: number): string {
   if (dollars === 0) return "$0.00";
   if (dollars < 0.01) return "less than $0.01";
-  if (dollars >= 1000) {
+  if (dollars >= 999.995) {
     return `$${Math.round(dollars).toLocaleString("en-US")}`;
   }
   return `$${dollars.toFixed(2)}`;
@@ -110,19 +115,19 @@ export function sessionUsageLines(usage: SessionUsage | undefined): string[] {
   );
   if (subagents > 0 && all > 0) {
     const percent = Math.round((subagents / all) * 100);
-    lines.push(
-      percent < 1
-        ? "Subagents: less than 1% of tokens"
-        : `Subagents: ${String(percent)}% of tokens`,
-    );
+    let share = `${String(percent)}%`;
+    if (percent < 1) share = "less than 1%";
+    else if (percent > 99 && subagents < all) share = "more than 99%";
+    lines.push(`Subagents: ${share} of tokens`);
   }
 
   if (usage.unpriced.length > 0) {
     const models = usage.unpriced.join(", ");
+    const somePriced = usage.groups.some((group) => groupCost(group) !== null);
     lines.push(
-      usage.cost > 0
-        ? `Estimated cost ${formatCost(usage.cost)}, leaving out ${models}`
-        : `Cost unavailable for ${models}`,
+      somePriced
+        ? `Estimated cost ${formatCost(usage.cost)}, leaving out ${models}${counting}`
+        : `Cost unavailable for ${models}${counting}`,
     );
   } else {
     lines.push(`Estimated cost ${formatCost(usage.cost)}${counting}`);
@@ -182,4 +187,11 @@ export function totalsLines(totals: UsageTotals): string[] {
   if (totals.counting) notes.push("still counting");
   if (notes.length > 0) lines.push(`${notes.join("; ")}.`);
   return lines;
+}
+
+/** Whether a details line states a cost, so it can point to the price note. */
+export function isCostLine(line: string): boolean {
+  return (
+    line.startsWith("Estimated cost") || line.startsWith("Cost unavailable")
+  );
 }

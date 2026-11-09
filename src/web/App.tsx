@@ -23,6 +23,7 @@ import {
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
 import {
   ESTIMATE_NOTE,
+  isCostLine,
   sessionUsageLines,
   totalsLines,
   usageTotals,
@@ -116,6 +117,8 @@ function details(session: SessionView, now: number): string[] {
   return items;
 }
 
+const ESTIMATE_NOTE_ID = "usage-estimate-note";
+
 /** Totals for the listed sessions, under the page heading (FR-25). */
 function UsageSummary({ sessions }: { sessions: SessionView[] }) {
   const lines = totalsLines(usageTotals(sessions));
@@ -127,7 +130,9 @@ function UsageSummary({ sessions }: { sessions: SessionView[] }) {
       {lines.map((line) => (
         <p key={line}>{line}</p>
       ))}
-      <p className={styles.usageNote}>{ESTIMATE_NOTE}</p>
+      <p id={ESTIMATE_NOTE_ID} className={styles.usageNote}>
+        {ESTIMATE_NOTE}
+      </p>
     </section>
   );
 }
@@ -227,7 +232,15 @@ function SessionList({
             </div>
             <ul className={styles.details}>
               {details(session, now).map((item) => (
-                <li key={item}>{item}</li>
+                <li
+                  key={item}
+                  // Ties each cost to the note giving the price table's date (FR-24).
+                  aria-describedby={
+                    isCostLine(item) ? ESTIMATE_NOTE_ID : undefined
+                  }
+                >
+                  {item}
+                </li>
               ))}
             </ul>
             {isProtectedSession(session, actionProps.context) && (
