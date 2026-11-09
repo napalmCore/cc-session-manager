@@ -1,7 +1,7 @@
 # Requirements
 
-- **Status:** Iteration 1 tested on 2026-11-06. Iteration 2 requirements signed off on 2026-11-06.
-- **Scope:** Iteration 1 is live monitoring. Iteration 2 adds desktop notifications and session control. Windows first.
+- **Status:** Iterations 1 and 2 released as 0.1.0. Iteration 3 requirements drafted on 2026-11-09, awaiting sign-off.
+- **Scope:** Iteration 1 is live monitoring. Iteration 2 adds desktop notifications and session control. Iteration 3 adds token use and estimated cost, ends leftover programs, and fixes open bugs. Windows first.
 
 ## Functional requirements
 
@@ -125,3 +125,58 @@ The [agent view docs](https://code.claude.com/docs/en/agent-view) and [sessions 
 | U-13 | Resolved in design: `claude stop` is offered on every background state, and success comes from the listing. Its exit codes aren't in the logs, so Testing confirms them.                                                                                    | Testing    |
 | U-14 | Resolved: the listing has no field that separates IDE or desktop sessions.                                                                                                                                                                                  | Done       |
 | U-15 | Resolved: a second start hands over to the running instance, by decision 0015.                                                                                                                                                                              | Done       |
+
+## Iteration 3
+
+Decisions are in [0018](decisions/0018-iteration-3-plan.md). Bug IDs refer to [test-plan.md](test-plan.md).
+
+### Functional requirements
+
+| ID    | Requirement                       | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-23 | Show a session's token use        | A session's details show its input, output, cache write, and cache read tokens across its whole transcript, not only the end. The figures include its subagents' transcripts, and the details show how much of the total came from subagents. Each model response is counted once.                                                                                                                  |
+| FR-24 | Show an estimated cost            | Each session shows an estimated cost at Anthropic's API list prices, from a price table built into the tool. It's labelled as an estimate, with the table's date, and the page says it isn't what a Pro or Max subscription costs. A session that used several models is priced per response. If a model isn't in the table, its tokens are shown and its cost reads as unavailable for that model. |
+| FR-25 | Show totals                       | A summary shows total tokens and estimated cost for the sessions listed on the page: live sessions, and finished sessions still shown. If any session's cost is unavailable, the total says how many sessions it leaves out.                                                                                                                                                                        |
+| FR-26 | Keep usage after a restart        | A finished session's token counts and models are saved in the store, so its figures come back after a restart even if its transcript has gone. The store holds only numbers and model IDs (C-7).                                                                                                                                                                                                    |
+| FR-27 | End leftover programs (BUG-30)    | After Stop, Delete, End, or Force end, if programs the session started are still running, the row lists them by program name and process ID, and offers "End leftover programs". A confirmation dialog lists them first. The offer stays while any of them runs, and the list updates as they exit. The tool never offers its own processes, or anything belonging to a protected session (FR-22).  |
+| FR-28 | Keep Active rows in place (BUG-6) | Active is ordered by start time, newest first, so rows move only when sessions arrive or leave. Needs you keeps its urgency order.                                                                                                                                                                                                                                                                  |
+| FR-29 | Short-lived printed link (BUG-8)  | When the browser can't be opened, the printed sign-in link works once and expires 2 minutes after it's printed. The terminal says so, and says to restart the tool for a new link.                                                                                                                                                                                                                  |
+| FR-30 | Scrub a corrupt store (BUG-12)    | A corrupt store file is set aside with name fields removed wherever it can still be partly read. A file that can't be read at all is deleted, and the deletion is logged without its contents.                                                                                                                                                                                                      |
+| FR-31 | Fix the other open bugs           | BUG-9, BUG-10, BUG-11, BUG-13, BUG-14, BUG-16, BUG-17, BUG-18, BUG-19, BUG-20, BUG-23, BUG-24, BUG-26, BUG-27, and BUG-29 are fixed, each with a test. If Design finds one can't be fixed, or only by changing behaviour the owner chose, it goes back to the owner with options.                                                                                                                   |
+
+### Constraints
+
+| ID   | Constraint                                                                                                                                            |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-12 | Usage reading keeps only token counts, model IDs, and response IDs, never message text (C-4).                                                         |
+| C-13 | Iteration 3 doesn't use hooks, and doesn't send prompts or answer permission requests (as C-10).                                                      |
+| C-14 | Ending leftover programs ends only processes the tool can show the session started, after checking each one's identity immediately before it's ended. |
+
+### Non-functional requirements
+
+| ID     | Requirement                   | Acceptance criteria                                                                                                                                                                                                                                                                              |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| NFR-11 | Usage reading stays cheap     | After the first read, a transcript is read only from where the last read stopped. Reading usage never delays session updates beyond FR-9's 5 seconds, including the first read of large transcripts after a start. Steady-state polling CPU stays within 1.5 times the iteration 1 figure (U-5). |
+| NFR-12 | Screen-reader testing         | An agent tests the dashboard with NVDA, covering the session list, announcements, notifications, actions, dialogs, and the new usage figures. No open High issue remains. The release notes say what was tested and how, and make no WCAG claim (0018).                                          |
+| NFR-13 | Leftover programs are guarded | Ending leftover programs meets NFR-6, NFR-7, and NFR-10. The page names a session, not process IDs; the server works out the programs from its own data. The security review (NFR-9) covers it.                                                                                                  |
+
+### Testing
+
+- L10 runs live, with the owner accepting one trust prompt for a throwaway repository (0018).
+
+### Out of scope for iteration 3
+
+- History and search, and starting, renaming, or forking sessions (planned for iteration 4)
+- Answering prompts, sending messages, and hooks (planned for iteration 5)
+- macOS and Linux (planned for iteration 5)
+- Daily or longer-term usage totals, which need history
+- BUG-7 and BUG-22, which are Claude Code's own behaviour
+
+### Known unknowns
+
+| ID   | Question                                                                                                                                                                                                                  | Resolve in |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| U-16 | How can a background session's leftover programs be found once it's stopped? Its programs may be children of a Claude Code process that has exited, or of a shared supervisor process.                                    | Design     |
+| U-17 | Partly resolved: transcripts record `usage` with input, output, cache write (split by 5-minute and 1-hour), and cache read tokens. One response can appear on several lines, so Design must confirm how to count it once. | Design     |
+| U-18 | Partly resolved: subagent transcripts are in `<session ID>/subagents/` next to the main transcript. Design confirms they hold their own usage and aren't also counted in the main transcript.                             | Design     |
+| U-19 | Can an agent read NVDA's speech output reliably, for example through its speech viewer or a log, without the owner listening?                                                                                             | Design     |
