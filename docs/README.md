@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 2, Phase 6: Release.** Iterations 1 and 2 are released together as 0.1.0. See [0016](decisions/0016-defer-l10.md) and [0017](decisions/0017-first-release.md).
+**Iteration 3, Phase 2: Requirements.** 0.1.0 is released ([0017](decisions/0017-first-release.md)). Planning for iterations 3 to 5 is done: iteration 3 covers cost and token use, bug fixes, L10, and screen-reader testing, for release as 0.2.0 ([0018](decisions/0018-iteration-3-plan.md)).
 
 ## How these docs work
 
@@ -36,8 +36,9 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0010](decisions/0010-style-nonce.md)                   | Per-run style nonce                                 | Accepted                  |
 | [0011](decisions/0011-testing-bug-fixes.md)             | Fixes for High bugs found in testing                | Accepted                  |
 | [0012](decisions/0012-agent-approved-merges.md)         | Agent-approved merges and BUG-4                     | Accepted                  |
-| [0013](decisions/0013-release-without-wcag-claim.md)    | Release without a WCAG claim                        | Accepted                  |
+| [0013](decisions/0013-release-without-wcag-claim.md)    | Release without a WCAG claim                        | Accepted, amended by 0018 |
 | [0014](decisions/0014-iteration-2-scope.md)             | Iteration 2 scope                                   | Accepted                  |
 | [0015](decisions/0015-iteration-2-design.md)            | Iteration 2 design choices                          | Accepted                  |
-| [0016](decisions/0016-defer-l10.md)                     | Defer L10 and close iteration 2 testing             | Accepted                  |
+| [0016](decisions/0016-defer-l10.md)                     | Defer L10 and close iteration 2 testing             | Accepted, amended by 0018 |
 | [0017](decisions/0017-first-release.md)                 | First release, 0.1.0                                | Accepted                  |
+| [0018](decisions/0018-iteration-3-plan.md)              | Plan for iterations 3 to 5, and iteration 3 scope   | Accepted                  |
