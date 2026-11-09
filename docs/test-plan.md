@@ -1,7 +1,7 @@
 # Test plan
 
 - **Status:** Exit criteria met for iteration 1 on 2026-11-06, with M2 not run by decision 0013, and L3 to L5 not fully repeated on the final code, as described under How checks are approved
-- **Iteration 2:** testing in progress: L10 is pending, see [Iteration 2](#iteration-2)
+- **Iteration 2:** exit criteria met on 2026-11-08, with L10 deferred by decision 0016, see [Iteration 2](#iteration-2)
 - **Requirements:** [requirements.md](requirements.md)
 
 ## Exit criteria
@@ -102,8 +102,8 @@ On the first live run, across 6 measured changes, the slowest upper bound was 23
 
 ## Iteration 2
 
-- **Status:** in progress. No Critical or High bug is open, and the security review passed after the fix in pull request #29. Still open:
-  - FR-16's kept worktree (L10), which the owner chose to run in a repository they trust.
+- **Status:** exit criteria met. Every requirement and constraint has been checked, to the levels below, and no Critical or High bug is open. The security review passed after the fix in pull request #29. These limits remain:
+  - FR-16's kept worktree (L10) wasn't checked live. The owner deferred it to a later iteration (decision 0016).
   - L6 to L8 were repeated on the secured code, with the fixes from #31, and passed. L6 now records which processes ended and survived.
   - A notification to a truly hidden tab (FR-11, L11) is unverified, because the test browser always reported the page as visible.
   - NFR-8 hasn't been checked with a screen reader. Decision 0013 accepted the same for iteration 1's NFR-5, and extending it to NFR-8 is the owner's decision.
@@ -118,7 +118,7 @@ On the first live run, across 6 measured changes, the slowest upper bound was 23
 | FR-13  | `notifications`, `dashboard` tests                             | P8                   | Passing                                                                                                                                                                               |
 | FR-14  | `open`, `programs`, `actions` tests                            | P4, P9, L8           | Passing live for Open and Resume, including Resume hidden once the folder is deleted (BUG-31, fixed)                                                                                  |
 | FR-15  | `stop-delete`, `actions` tests                                 | P5, P9, L9           | Passing live                                                                                                                                                                          |
-| FR-16  | `stop-delete`, `actions` tests                                 | P5, P9, L10          | Passing live for a plain delete. A kept worktree isn't checked live, because the CLI needs a trust prompt accepted (L10).                                                             |
+| FR-16  | `stop-delete`, `actions` tests                                 | P5, P9, L10          | Passing live for a plain delete. The kept case is covered by unit tests and review only, because L10 was deferred (decision 0016).                                                    |
 | FR-17  | `end`, `actions` tests, helper tests with throwaway processes  | P1, P6, P9, L6, L7   | Passing live: normal close, the batch prompt, and Force end of a Git Bash session, which ended the session, an MCP server, and its child, while the shells and terminal survived (L6) |
 | FR-18  | `stop-delete`, `end`, `open`, `session-actions`, `actions` e2e | P5, P6, P9           | Passing                                                                                                                                                                               |
 | FR-19  | `session-actions`, `actions` e2e tests                         | P9                   | Passing                                                                                                                                                                               |
@@ -168,7 +168,7 @@ The NFR-9 review, by an independent agent on `2a0dba7`, found one High issue and
 | L7  | End a session started through npm's `claude.cmd`                                             | The "Terminate batch job (Y/N)?" prompt appears as the dialog says, and the shell survives | Passed on `2a0dba7` and repeated on `4628537`. End took 5.7 s and 3.3 s on `2a0dba7`, and 3.3 s on the repeat. `cmd.exe` and the terminal survived each time. The `2a0dba7` run read the console: the resume hint, then "Terminate batch job (Y/N)?". The repeat couldn't read it.                                                                                                     |
 | L8  | Resume a finished session, and try it after deleting its folder                              | A terminal opens in the original folder, and a missing folder is refused                   | Passed on `2a0dba7` and repeated on `4628537`. Resume took 0.5 s on the repeat, started `claude --resume`, and the row went back to live. End then closed it in 5.3 s. After the folder was deleted, Resume was refused on `2a0dba7`. With the fix for BUG-31, on `56f16c4`, Resume disappeared about 10 s after the folder was deleted.                                               |
 | L9  | Record `claude stop` exit codes for working, stopped, and unknown sessions                   | The listing decides the result, whatever the exit code                                     | Recorded on `2a0dba7`: 0 for a working session, which stopped within 2 s, 0 for one already stopped, and 1 for an unknown ID. The result doesn't depend on the exit code, as designed.                                                                                                                                                                                                 |
-| L10 | Delete a session whose worktree has uncommitted, untracked, and ignored files                | The page shows Kept with the FR-16 message, and the files survive (U-10)                   | Pending. `claude --bg` refuses an untrusted git repository, and a git repository doesn't inherit trust. The owner chose to trust a throwaway repository for this check.                                                                                                                                                                                                                |
+| L10 | Delete a session whose worktree has uncommitted, untracked, and ignored files                | The page shows Kept with the FR-16 message, and the files survive (U-10)                   | Deferred by decision 0016. `claude --bg` refuses an untrusted git repository, a git repository doesn't inherit trust, and agents don't accept trust prompts.                                                                                                                                                                                                                           |
 | L11 | Trigger a real permission prompt with the tab in the background, then click the notification | One notification with the folder and reason. The click highlights and focuses the row.     | Partly passed on `2a0dba7` to `76ab779`, with permission granted. A real permission prompt produced one notification, "l11-notify: permission prompt", within 5.5 to 9.6 s, and a click focused and highlighted only that row. The page always reported itself visible, and the window was unfocused only in the headed runs, so delivery to a background or hidden tab is unverified. |
 
 ## Bugs
