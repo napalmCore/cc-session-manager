@@ -71,7 +71,8 @@ function tokenCount(usage: SessionUsage): number {
       group.output +
       group.cacheWrite5m +
       group.cacheWrite1h +
-      group.cacheRead,
+      group.cacheRead +
+      group.webSearches,
     0,
   );
 }

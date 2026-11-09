@@ -33,6 +33,16 @@ const newestFirst = (time: (session: SessionView) => number | undefined) => {
 };
 
 const lastActivity = (session: SessionView) => session.lastActivityAt;
+
+/** Newest start first, then by ID, so activity never reorders Active (BUG-6). */
+function byStart(a: SessionView, b: SessionView): number {
+  const started = (session: SessionView) =>
+    session.firstStartedAt ?? session.startedAt ?? -Infinity;
+  const difference = started(b) - started(a);
+  if (difference !== 0 && !Number.isNaN(difference)) return difference;
+  const id = (session: SessionView) => session.sessionId ?? session.id ?? "";
+  return id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : 0;
+}
 const finishedAt = (session: SessionView) => session.finishedAt;
 
 export function groupSessions(
@@ -55,7 +65,7 @@ export function groupSessions(
 
   groups.needsYou.sort(oldestFirst(lastActivity));
   groups.stale.sort(newestFirst(lastActivity));
-  groups.active.sort(newestFirst(lastActivity));
+  groups.active.sort(byStart);
   groups.finished.sort(newestFirst(finishedAt));
   return groups;
 }

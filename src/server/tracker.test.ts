@@ -439,9 +439,24 @@ describe("reading finished sessions (FR-26, BUG-27)", () => {
 
   it("keeps the listing's order", async () => {
     const { reader, transcripts } = reading();
+    // A recently finished session not in the listing, which the reader is also given.
+    const finishedRecord: FinishedSession = {
+      ...toSessionView({
+        ...interactive,
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        startedAt: 9_000,
+      }),
+      finished: true,
+      statusLabel: "finished",
+      finishedAt: Date.now(),
+    };
     const tracker = createSessionTracker({
       store: {
-        load: () => ({ records: [], notice: null, needsRewrite: false }),
+        load: () => ({
+          records: [finishedRecord],
+          notice: null,
+          needsRewrite: false,
+        }),
         save: () => null,
       },
     });
@@ -458,6 +473,8 @@ describe("reading finished sessions (FR-26, BUG-27)", () => {
       undefined,
     ]);
     expect(result.sessions[1]?.model).toBe("m");
+    // The reader saw the finished session too, but it isn't added to the listing.
+    expect(reader.enrich.mock.lastCall?.[0]).toHaveLength(4);
   });
 
   it("loads a store that couldn't be opened once it opens, keeping both", async () => {

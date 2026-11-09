@@ -95,18 +95,22 @@ describe("groupSessions", () => {
     ]);
   });
 
-  it("lists active sessions with the most recent activity first", () => {
+  it("lists active sessions newest start first, whatever their activity (BUG-6)", () => {
     const groups = groupSessions(
       [
-        session({ name: "older", lastActivityAt: NOW - 20 }),
+        session({ name: "older", startedAt: 10, lastActivityAt: NOW - 1 }),
         session({ name: "unknown" }),
-        session({ name: "newer", lastActivityAt: NOW - 10 }),
+        session({ name: "b", sessionId: "b", startedAt: 20 }),
+        session({ name: "a", sessionId: "a", startedAt: 20 }),
+        session({ name: "moved", startedAt: 25, firstStartedAt: 5 }),
       ],
       NOW,
     );
     expect(groups.active.map((s) => s.name)).toEqual([
-      "newer",
+      "a",
+      "b",
       "older",
+      "moved",
       "unknown",
     ]);
   });

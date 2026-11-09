@@ -222,14 +222,18 @@ describe("createPoller", () => {
       sessionId,
       cwd: "C:/a",
       kind: "interactive",
-      startedAt: 1,
+      startedAt: Date.now(),
       ...fields,
     });
-    const noStatus = (sessionId: string) => listing(sessionId, {});
+    const noStatus = (sessionId: string, fields = {}) =>
+      listing(sessionId, fields);
+    const old = { startedAt: 1, status: "busy" };
+    const oldNoStatus = { startedAt: 1 };
     const FAIL = Symbol("failed poll");
     type Poll = unknown[] | typeof FAIL;
+    const INTERVAL = 3_000;
 
-    /** The warnings in effect after each poll. */
+    /** The warnings in effect after each poll, with polls 3 seconds apart. */
     const warningsPerPoll = async (polls: Poll[]) => {
       let current: Snapshot | undefined;
       const results: string[][] = [];
@@ -242,89 +246,103 @@ describe("createPoller", () => {
             ? Promise.reject(new Error("failed"))
             : Promise.resolve(JSON.stringify(poll ?? []));
         },
-        intervalMs: 10,
+        intervalMs: INTERVAL,
         onSnapshot: (snapshot) => {
           current = snapshot;
         },
       });
       poller.start();
       for (let poll = 0; poll < polls.length; poll += 1) {
-        await vi.advanceTimersByTimeAsync(poll === 0 ? 0 : 10);
+        await vi.advanceTimersByTimeAsync(poll === 0 ? 0 : INTERVAL);
         results.push(current?.warnings ?? []);
       }
       poller.stop();
       return results;
     };
 
-    it("excuses a session's first listing without a status", async () => {
-      expect(await warningsPerPoll([[noStatus("a")], [listing("a")]])).toEqual([
-        [],
-        [],
+    it("excuses a new session's missing status for up to 10 seconds", async () => {
+      const entry = noStatus("a");
+      const results = await warningsPerPoll(
+        [entry, entry, entry, entry, entry].map((e) => [e]),
+      );
+      expect(results.slice(0, 4)).toEqual([[], [], [], []]);
+      expect(results[4]).toEqual([expect.stringContaining("status")]);
+    });
+
+    it("shows a new session with no status as starting, then unknown", async () => {
+      const entry = noStatus("a");
+      const labels: string[] = [];
+      let index = 0;
+      const poller = createPoller({
+        run: () => {
+          index += 1;
+          return Promise.resolve(JSON.stringify([entry]));
+        },
+        intervalMs: INTERVAL,
+        onSnapshot: (snapshot) => {
+          labels[index - 1] = snapshot.sessions[0]?.statusLabel ?? "";
+        },
+      });
+      poller.start();
+      for (let poll = 0; poll < 5; poll += 1) {
+        await vi.advanceTimersByTimeAsync(poll === 0 ? 0 : INTERVAL);
+      }
+      poller.stop();
+      expect(labels[0]).toBe("starting");
+      expect(labels.at(-1)).toBe("unknown");
+    });
+
+    it("warns at once for a session already running when the tool started", async () => {
+      expect(await warningsPerPoll([[listing("a", oldNoStatus)]])).toEqual([
+        [expect.stringContaining("status")],
       ]);
     });
 
-    it("warns when that session still has no status on the next poll", async () => {
-      const results = await warningsPerPoll([[noStatus("a")], [noStatus("a")]]);
-      expect(results[0]).toEqual([]);
-      expect(results[1]).toEqual([expect.stringContaining("status")]);
-    });
-
-    it("excuses a session that starts while the tool is already running", async () => {
-      expect(
-        await warningsPerPoll([
-          [listing("a")],
-          [listing("a"), noStatus("b")],
-          [listing("a"), listing("b")],
-        ]),
-      ).toEqual([[], [], []]);
-    });
-
     it("doesn't raise a false warning for sessions starting one poll apart", async () => {
-      expect(
-        await warningsPerPoll([
-          [noStatus("a")],
-          [listing("a"), noStatus("b")],
-          [listing("a"), listing("b"), noStatus("c")],
-          [listing("a"), listing("b"), listing("c")],
-        ]),
-      ).toEqual([[], [], [], []]);
+      const a = noStatus("a");
+      const results = await warningsPerPoll([
+        [a],
+        [listing("a"), noStatus("b")],
+        [listing("a"), listing("b"), noStatus("c")],
+      ]);
+      expect(results).toEqual([[], [], []]);
     });
 
     it("warns at once when a known session loses its status", async () => {
       const results = await warningsPerPoll([
-        [listing("a")],
-        [noStatus("a")],
-        [listing("a")],
+        [listing("a", old)],
+        [listing("a", oldNoStatus)],
+        [listing("a", old)],
       ]);
       expect(results[1]).toEqual([expect.stringContaining("status")]);
       expect(results[2]).toEqual([]);
     });
 
-    // This is what lets a session that keeps leaving the list avoid the warning (BUG-19).
-    it("treats a session absent from the last poll as new, then warns", async () => {
-      const results = await warningsPerPoll([
-        [listing("a")],
-        [],
-        [noStatus("a")],
-        [noStatus("a")],
-      ]);
-      expect(results[2]).toEqual([]);
-      expect(results[3]).toEqual([expect.stringContaining("status")]);
+    // The start-time bound alone makes these two pass; session-memory tests the memory itself.
+    it("doesn't excuse a session again after it leaves the list and comes back", async () => {
+      const entry = noStatus("a");
+      const results = await warningsPerPoll([[entry], [], [], [], [entry]]);
+      expect(results[4]).toEqual([expect.stringContaining("status")]);
     });
 
-    it("remembers known sessions across a failed poll", async () => {
+    it("doesn't excuse a session again when it gains an ID", async () => {
+      const startedAt = Date.now();
+      const first = { pid: 7, cwd: "C:/a", kind: "interactive", startedAt };
       const results = await warningsPerPoll([
-        [noStatus("a")],
-        FAIL,
-        [noStatus("a")],
+        [first],
+        [first],
+        [first],
+        [first],
+        [{ ...first, sessionId: "a" }],
       ]);
-      expect(results[2]).toEqual([expect.stringContaining("status")]);
+      expect(results[0]).toEqual([]);
+      expect(results[4]).toEqual([expect.stringContaining("status")]);
     });
 
     it("keeps warnings in effect through a failed poll", async () => {
       const results = await warningsPerPoll([
-        [listing("a")],
-        [noStatus("a")],
+        [listing("a", old)],
+        [listing("a", oldNoStatus)],
         FAIL,
       ]);
       expect(results[2]).toEqual([expect.stringContaining("status")]);

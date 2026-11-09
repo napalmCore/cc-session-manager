@@ -28,9 +28,10 @@ const statusSchema = z.enum(["busy", "waiting", "idle"]);
 export interface ParsedSessions {
   sessions: Session[];
   warnings: string[];
-  /** Identities of the sessions in this listing. */
-  listed: Set<string>;
 }
+
+/** Whether a session's missing status is excused, because it has only just started. */
+export type StatusExcuse = (session: Session) => boolean;
 
 const missing = (field: string) =>
   `Claude Code did not report "${field}" for a session.`;
@@ -40,7 +41,7 @@ const unexpected = (field: string) =>
 function parseEntry(
   source: Record<string, unknown>,
   warnings: Set<string>,
-  listedBefore: Set<string>,
+  excused: StatusExcuse,
 ) {
   const session: Session = {};
 
@@ -74,13 +75,11 @@ function parseEntry(
   if (session.kind === "background" && source.state === undefined) {
     warnings.add(missing("state"));
   }
-  // The CLI's first listing of a new interactive session may not have a status yet.
-  const identity = session.sessionId ?? session.id;
-  const firstListing = identity !== undefined && !listedBefore.has(identity);
+  // The CLI's first listings of a new interactive session may not have a status yet.
   if (
     session.kind === "interactive" &&
     source.status === undefined &&
-    !firstListing
+    !excused(session)
   ) {
     warnings.add(missing("status"));
   }
@@ -94,7 +93,7 @@ function parseEntry(
 /** Throws when the output as a whole is unusable. Problems within entries become warnings. */
 export function parseSessions(
   output: string,
-  listedBefore: Set<string> = new Set(),
+  excused: StatusExcuse = () => true,
 ): ParsedSessions {
   const parsed = z.array(z.unknown()).parse(JSON.parse(output));
   const warnings = new Set<string>();
@@ -103,14 +102,11 @@ export function parseSessions(
   for (const entry of parsed) {
     const result = entrySchema.safeParse(entry);
     if (result.success) {
-      sessions.push(parseEntry(result.data, warnings, listedBefore));
+      sessions.push(parseEntry(result.data, warnings, excused));
     } else {
       warnings.add("Claude Code reported a session in an unexpected format.");
     }
   }
 
-  const listed = new Set(
-    sessions.flatMap((session) => session.sessionId ?? session.id ?? []),
-  );
-  return { sessions, warnings: [...warnings], listed };
+  return { sessions, warnings: [...warnings] };
 }

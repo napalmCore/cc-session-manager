@@ -7,6 +7,8 @@ Notes gathered for 0.2.0 while it's built.
 - Finished sessions keep their token use and estimated cost after a restart. Going back to 0.1.0 drops the saved usage the next time it saves the list (FR-26).
 - A corrupt saved list is set aside once, with names removed, or deleted if it isn't JSON. Copies that 0.1.0 set aside are reduced to the newest one, scrubbed the same way (FR-30, BUG-12).
 - A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
+- Active sessions stay in order of start time, newest first, instead of moving as their activity changes (BUG-6). A new session with no status yet shows "starting" (BUG-18).
+- `claude -p` runs are still listed as interactive sessions, as Claude Code reports them (BUG-23).
 
 ## 0.1.0
 

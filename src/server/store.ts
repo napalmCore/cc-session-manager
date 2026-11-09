@@ -71,6 +71,7 @@ const recordSchema = z.object({
   gitBranch: z.string().optional(),
   model: z.string().optional(),
   lastActivityAt: z.number().optional(),
+  firstStartedAt: z.number().optional(),
   usage: usageSchema.optional(),
 });
 const fileSchema = z.object({

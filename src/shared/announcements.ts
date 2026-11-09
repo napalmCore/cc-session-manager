@@ -1,7 +1,12 @@
 import type { SessionView } from "./protocol.js";
 
 function attentionKey(session: SessionView): string {
-  const identity = session.sessionId ?? session.id ?? session.name ?? "";
+  // With no ID or name, the folder, kind, and start time tell sessions apart (BUG-14).
+  const identity =
+    session.sessionId ??
+    session.id ??
+    session.name ??
+    `${session.cwd ?? ""}|${session.kind ?? ""}|${String(session.firstStartedAt ?? session.startedAt ?? "")}`;
   return `${identity}|${session.attentionReason ?? ""}`;
 }
 

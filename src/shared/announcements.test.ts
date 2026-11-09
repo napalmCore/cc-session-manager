@@ -32,6 +32,24 @@ describe("newAttentionMessage", () => {
     ).toBe("api-refactor needs you: permission prompt.");
   });
 
+  it("announces a second session with no ID and no name separately (BUG-14)", () => {
+    const anonymous = (cwd: string): SessionView => ({
+      cwd,
+      kind: "interactive",
+      startedAt: 1,
+      needsAttention: true,
+      attentionReason: "needs input",
+      finished: false,
+      statusLabel: "waiting",
+    });
+    const first = [anonymous("C:/one")];
+    const both = [...first, anonymous("C:/two")];
+
+    expect(newAttentionMessage(attentionKeys(first), both)).toBe(
+      "A session needs you: needs input.",
+    );
+  });
+
   it("uses a generic name when a session has none", () => {
     expect(newAttentionMessage(new Set(), [session("a", undefined)])).toBe(
       "A session needs you: needs input.",

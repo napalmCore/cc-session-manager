@@ -22,7 +22,7 @@ function without(source: Record<string, unknown>, field: string) {
 }
 
 function parse(entries: unknown) {
-  return parseSessions(JSON.stringify(entries));
+  return parseSessions(JSON.stringify(entries), () => false);
 }
 
 describe("parseSessions", () => {
@@ -81,7 +81,7 @@ describe("parseSessions", () => {
 
   it("does not require status on a background session", () => {
     const listing = JSON.stringify([background]);
-    expect(parseSessions(listing, new Set(["abc"])).warnings).toEqual([]);
+    expect(parseSessions(listing, () => false).warnings).toEqual([]);
   });
 
   it("warns when a background session has no state", () => {
@@ -92,22 +92,16 @@ describe("parseSessions", () => {
   });
 
   describe("an interactive session with no status", () => {
-    const identified = { ...without(interactive, "status"), sessionId: "a" };
-    const parseKnown = (known: string[]) =>
-      parseSessions(JSON.stringify([identified]), new Set(known));
+    const entry = without(interactive, "status");
 
-    it("is excused on its first listing", () => {
-      expect(parseKnown([]).warnings).toEqual([]);
+    it("is excused when the memory says it has only just started", () => {
+      expect(
+        parseSessions(JSON.stringify([entry]), () => true).warnings,
+      ).toEqual([]);
     });
 
-    it("gets a warning once the session is known", () => {
-      expect(parseKnown(["a"]).warnings).toEqual([
-        expect.stringContaining("status"),
-      ]);
-    });
-
-    it("gets a warning straight away if it can't be identified", () => {
-      expect(parse([without(interactive, "status")]).warnings).toEqual([
+    it("gets a warning otherwise", () => {
+      expect(parse([entry]).warnings).toEqual([
         expect.stringContaining("status"),
       ]);
     });
@@ -127,39 +121,6 @@ describe("parseSessions", () => {
         expect.stringContaining("status"),
       ]);
     });
-  });
-
-  describe("session identity", () => {
-    const noStatus = without(interactive, "status");
-    const known = (entry: unknown, identities: string[]) =>
-      parseSessions(JSON.stringify([entry]), new Set(identities)).warnings;
-
-    it("recognizes a known session by its session ID when it has both IDs", () => {
-      const entry = { ...noStatus, sessionId: "a", id: "b" };
-      expect(known(entry, ["a"])).toEqual([expect.stringContaining("status")]);
-      expect(known(entry, ["b"])).toEqual([]);
-    });
-
-    it("recognizes a known session by its short ID when that's all it has", () => {
-      expect(known({ ...noStatus, id: "b" }, ["b"])).toEqual([
-        expect.stringContaining("status"),
-      ]);
-      expect(known({ ...noStatus, id: "b" }, [])).toEqual([]);
-    });
-
-    it("lists a session with both IDs under its session ID", () => {
-      const { listed } = parse([{ ...noStatus, sessionId: "a", id: "b" }]);
-      expect([...listed]).toEqual(["a"]);
-    });
-  });
-
-  it("reports which sessions it listed", () => {
-    const { listed } = parse([
-      { ...interactive, sessionId: "a" },
-      { ...background, sessionId: undefined, id: "b" },
-      interactive,
-    ]);
-    expect([...listed].sort()).toEqual(["a", "b"]);
   });
 
   it("warns when a waiting session has no reason", () => {
