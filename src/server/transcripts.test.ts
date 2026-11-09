@@ -638,6 +638,23 @@ ${reply()}
     expect(sessions[0]?.lastActivityAt).toBe(Date.parse(TIME));
   });
 
+  it("hides a HEAD branch at the end of a file it's still counting", async () => {
+    const early = JSON.stringify({ gitBranch: "feature", timestamp: TIME });
+    const late = JSON.stringify({ gitBranch: "HEAD", timestamp: TIME });
+    writeTranscript(`${early}
+${"x".repeat(5000)}
+${late}
+`);
+    const reader = createTranscriptReader(root, {
+      budgetBytes: early.length + 1,
+    });
+
+    const { sessions } = await reader.enrich([view(ID)]);
+
+    expect(sessions[0]?.usage?.counting).toBe(true);
+    expect(sessions[0]?.gitBranch).toBeUndefined();
+  });
+
   it("still reports metadata with no read budget", async () => {
     writeTranscript(`${reply()}
 `);

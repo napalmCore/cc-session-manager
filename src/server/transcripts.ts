@@ -558,6 +558,8 @@ export function createTranscriptReader(
     consumeLines(state, text);
     // A field missing from the end falls back to what's been read so far.
     const metadata = { ...metadataOf(main.text), ...metadataOf(state) };
+    // HEAD at the end means no branch now, so an older branch mustn't show instead.
+    if (state.branch === "HEAD") delete metadata.gitBranch;
     session.tail = { size: main.size, mtimeMs: main.mtimeMs, metadata };
     return { ...metadata };
   };
