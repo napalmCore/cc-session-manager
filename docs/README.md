@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 2, Phase 3: Design.** Requirements are complete. Iteration 1 passed Testing, and its first release waits until iteration 2 is done. See [0014](decisions/0014-iteration-2-scope.md) and [0015](decisions/0015-iteration-2-design.md).
+**Iteration 2, Phase 6: Release.** Iterations 1 and 2 are released together as 0.1.0. See [0016](decisions/0016-defer-l10.md) and [0017](decisions/0017-first-release.md).
 
 ## How these docs work
 
@@ -15,10 +15,10 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 | Document                               | Status                            |
 | -------------------------------------- | --------------------------------- |
-| [`requirements.md`](requirements.md)   | Signed off for iteration 1        |
-| [`design.md`](design.md)               | Signed off for iteration 1        |
-| [`test-plan.md`](test-plan.md)         | Exit criteria met for iteration 1 |
-| [`release-notes.md`](release-notes.md) | Draft for iteration 1             |
+| [`requirements.md`](requirements.md)   | Signed off for iteration 2        |
+| [`design.md`](design.md)               | Signed off for iteration 2        |
+| [`test-plan.md`](test-plan.md)         | Exit criteria met for iteration 2 |
+| [`release-notes.md`](release-notes.md) | 0.1.0                             |
 
 ## Decision log
 
@@ -39,3 +39,5 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0013](decisions/0013-release-without-wcag-claim.md)    | Release without a WCAG claim                        | Accepted                  |
 | [0014](decisions/0014-iteration-2-scope.md)             | Iteration 2 scope                                   | Accepted                  |
 | [0015](decisions/0015-iteration-2-design.md)            | Iteration 2 design choices                          | Accepted                  |
+| [0016](decisions/0016-defer-l10.md)                     | Defer L10 and close iteration 2 testing             | Accepted                  |
+| [0017](decisions/0017-first-release.md)                 | First release, 0.1.0                                | Accepted                  |
