@@ -39,6 +39,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Node writes and reads UTF-8; Windows PowerShell would otherwise use the OEM code page, and a
+# path with a non-ASCII character would no longer match.
+try {
+  [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch { }
+
 $SessionActions = @('inspect', 'break', 'force', 'record')
 if ($SessionActions -contains $Action -and ($TargetPid -le 0 -or $StartedAtMs -le 0)) {
   [Console]::Error.WriteLine('helper error: -TargetPid and -StartedAtMs are required')
@@ -143,8 +150,18 @@ function Test-Recordable($table, $family, [int]$id) {
   return -not ($NeverRecorded -contains $table[$id].Name.ToLowerInvariant())
 }
 
+# CIM can report a path with ".." in it, as Git's inner bash.exe has; a handle reports the
+# resolved one. Both sides are resolved before they're compared.
+function Resolve-ImagePath([string]$path) {
+  if ([string]::IsNullOrEmpty($path)) { return '' }
+  try { return [System.IO.Path]::GetFullPath($path) } catch { return '' }
+}
+
 function New-Entry($process) {
-  return @{ pid = $process.Id; startMs = $process.StartMs; name = $process.Name; path = $process.Path }
+  return @{
+    pid = $process.Id; startMs = $process.StartMs; name = $process.Name
+    path = (Resolve-ImagePath $process.Path)
+  }
 }
 
 function Read-Input {
@@ -178,35 +195,43 @@ function Get-Pairs($items, [bool]$withPath) {
 if ($Action -eq 'check') {
   try {
     $request = Read-Input
-    $running = @()
-    $unverified = @()
-    $alive = @{}
-    foreach ($pair in (Get-Pairs $request.processes $false)) {
+    # 'running', 'gone', or 'unverified', by process ID and start time.
+    function Get-Liveness($pair) {
       try {
         $process = Get-Process -Id $pair.pid -ErrorAction Stop
       } catch {
-        continue
+        return 'gone'
       }
       try {
         $actual = ConvertTo-UnixMs $process.StartTime
       } catch {
-        $unverified += $pair
-        continue
+        return 'unverified'
       }
-      if ([Math]::Abs($actual - $pair.startMs) -le $StartToleranceMs) {
-        $running += $pair
-        $alive[$pair.pid] = $pair.startMs
+      if ([Math]::Abs($actual - $pair.startMs) -le $StartToleranceMs) { return 'running' }
+      return 'gone'
+    }
+    $running = @()
+    $unverified = @()
+    $asked = @{}
+    foreach ($pair in (Get-Pairs $request.processes $false)) {
+      $asked[$pair.pid] = $true
+      switch (Get-Liveness $pair) {
+        'running' { $running += $pair }
+        'unverified' { $unverified += $pair }
       }
     }
     $children = @()
-    $parents = @((Get-Pairs $request.parents $false) | Where-Object { $alive.ContainsKey($_.pid) })
+    $parents = @()
+    foreach ($pair in (Get-Pairs $request.parents $false)) {
+      if ((Get-Liveness $pair) -eq 'running') { $parents += $pair }
+    }
     if ($parents.Count -gt 0) {
       $table = Get-ProcessTable $true
       $family = Get-ToolFamily $table
       foreach ($parent in $parents) {
         foreach ($child in $table.Values) {
           if ($child.Parent -eq $parent.pid -and $child.StartMs -ge $parent.startMs -and
-              (Test-Recordable $table $family $child.Id)) {
+              -not $asked.ContainsKey($child.Id) -and (Test-Recordable $table $family $child.Id)) {
             $entry = New-Entry $child
             $entry.parentPid = $parent.pid
             $children += $entry
@@ -264,9 +289,68 @@ public static class CcsmConsole {
     return TerminateProcess(handle, 1);
   }
 
+  [DllImport("kernel32", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("kernel32", SetLastError = true)] static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32", SetLastError = true)]
+  static extern bool GetProcessTimes(IntPtr h, out long created, out long exited, out long kernel, out long user);
+  [DllImport("kernel32", SetLastError = true)] static extern uint WaitForSingleObject(IntPtr h, uint ms);
+  const uint QueryLimited = 0x1000, TerminateAccess = 0x0001, Synchronize = 0x00100000;
+
+  static long CreatedMs(IntPtr h) {
+    long created, exited, kernel, user;
+    if (!GetProcessTimes(h, out created, out exited, out kernel, out user)) return -1;
+    return new DateTimeOffset(DateTime.FromFileTimeUtc(created)).ToUnixTimeMilliseconds();
+  }
+
+  static bool SamePath(string a, string b) {
+    try {
+      return string.Equals(System.IO.Path.GetFullPath(a), System.IO.Path.GetFullPath(b),
+        StringComparison.OrdinalIgnoreCase);
+    } catch {
+      return false;
+    }
+  }
+
+  // Opens one handle, and through it requires the process still to run with the recorded
+  // creation time and image path, then ends it through that handle. Never a tree.
+  public static string EndIfSame(uint pid, long startMs, string path, long toleranceMs,
+      string[] neverNames) {
+    IntPtr h = OpenProcess(QueryLimited | TerminateAccess | Synchronize, false, pid);
+    if (h == IntPtr.Zero) {
+      return Marshal.GetLastWin32Error() == 5 ? "access-denied" : "not-running";
+    }
+    try {
+      if (WaitForSingleObject(h, 0) == 0) return "not-running";
+      long created = CreatedMs(h);
+      if (created < 0 || Math.Abs(created - startMs) > toleranceMs) return "different-process";
+      string actual = ImagePath(h);
+      if (actual.Length == 0 || !SamePath(actual, path)) return "different-program";
+      string name = System.IO.Path.GetFileName(actual).ToLowerInvariant();
+      foreach (string never in neverNames) if (never == name) return "protected";
+      return TerminateProcess(h, 1) ? "ended" : "failed";
+    } finally {
+      CloseHandle(h);
+    }
+  }
+
+  // Console members of a process verified by creation time, holding its handle throughout so
+  // its process ID can't be reused while attached. Null if it isn't that process anymore.
+  public static uint[] ConsoleMembersIfSame(uint pid, long startMs, long toleranceMs) {
+    IntPtr h = OpenProcess(QueryLimited | Synchronize, false, pid);
+    if (h == IntPtr.Zero) return null;
+    try {
+      if (WaitForSingleObject(h, 0) == 0) return null;
+      long created = CreatedMs(h);
+      if (created < 0 || Math.Abs(created - startMs) > toleranceMs) return null;
+      return ConsoleMembers(pid);
+    } finally {
+      CloseHandle(h);
+    }
+  }
+
   // The processes attached to a process's console, or null if it has none this helper can
   // reach. Nothing is sent to the console.
-  public static uint[] ConsoleMembers(uint pid) {
+  static uint[] ConsoleMembers(uint pid) {
     FreeConsole();
     if (!AttachConsole(pid)) return null;
     try {
@@ -361,42 +445,19 @@ if ($Action -eq 'end-leftovers') {
     $family = Get-ToolFamily $table
     $ended = @()
     $skipped = @()
+    $done = [System.Collections.Generic.HashSet[int]]::new()
     foreach ($entry in $entries) {
       $id = $entry.pid
+      # Each process is acted on once, however many times it's listed.
+      if (-not $done.Add($id)) { continue }
       if ($family.Contains($id)) { $skipped += @{ pid = $id; reason = 'protected' }; continue }
       try {
-        $process = [System.Diagnostics.Process]::GetProcessById($id)
+        $status = [CcsmConsole]::EndIfSame([uint32]$id, $entry.startMs, $entry.path,
+          $StartToleranceMs, [string[]]$NeverRecorded)
       } catch {
-        $skipped += @{ pid = $id; reason = 'not-running' }
-        continue
+        $status = 'failed'
       }
-      try {
-        $handle = $process.Handle
-        $actual = [CcsmConsole]::StartMs($process)
-      } catch {
-        $skipped += @{ pid = $id; reason = 'access-denied' }
-        continue
-      }
-      if ([Math]::Abs($actual - $entry.startMs) -gt $StartToleranceMs) {
-        $skipped += @{ pid = $id; reason = 'different-process' }
-        continue
-      }
-      $path = [CcsmConsole]::ImagePath($handle)
-      if ($path.Length -eq 0 -or -not [string]::Equals($path, $entry.path, [StringComparison]::OrdinalIgnoreCase)) {
-        $skipped += @{ pid = $id; reason = 'different-program' }
-        continue
-      }
-      if ($NeverRecorded -contains [System.IO.Path]::GetFileName($path).ToLowerInvariant()) {
-        $skipped += @{ pid = $id; reason = 'protected' }
-        continue
-      }
-      if ($process.HasExited) {
-        $skipped += @{ pid = $id; reason = 'not-running' }
-      } elseif ([CcsmConsole]::Terminate($handle)) {
-        $ended += $id
-      } else {
-        $skipped += @{ pid = $id; reason = 'failed' }
-      }
+      if ($status -eq 'ended') { $ended += $id } else { $skipped += @{ pid = $id; reason = $status } }
     }
     Write-Result @{
       ok = $true; action = $Action; reason = 'done'; requested = $entries.Count
@@ -413,20 +474,21 @@ if ($Action -eq 'end-leftovers') {
 # console a descendant owns, if they started after the session did. The session's own console
 # is never used, because it can hold the user's shell and terminal. Returns null when it runs
 # out of time, so the action goes ahead without a record.
-function Get-SessionRecord($table, [int]$sessionPid, [long]$sessionStartMs, $descendants) {
-  $clock = [System.Diagnostics.Stopwatch]::StartNew()
+function Get-SessionRecord($table, [int]$sessionPid, [long]$sessionStartMs, $descendants, $clock) {
   $family = Get-ToolFamily $table
+  # Keyed by process ID. An ordered dictionary indexed by an int reads a position, so .Add is
+  # used, never $entries[$id].
   $entries = [ordered]@{}
   foreach ($id in $descendants) {
     if ((Test-Recordable $table $family $id) -and -not $entries.Contains($id)) {
-      $entries[$id] = New-Entry $table[$id]
+      $entries.Add($id, (New-Entry $table[$id]))
     }
   }
   $inConsole = [System.Collections.Generic.HashSet[int]]::new()
   foreach ($id in $descendants) {
     if ($clock.ElapsedMilliseconds -gt $RecordBudgetMs) { return $null }
     if ($inConsole.Contains($id) -or $family.Contains($id)) { continue }
-    $members = [CcsmConsole]::ConsoleMembers([uint32]$id)
+    $members = [CcsmConsole]::ConsoleMembersIfSame([uint32]$id, $table[$id].StartMs, $StartToleranceMs)
     if ($null -eq $members) { continue }
     foreach ($member in $members) { $null = $inConsole.Add([int]$member) }
     if ($members -contains [uint32]$sessionPid) { continue }
@@ -435,7 +497,7 @@ function Get-SessionRecord($table, [int]$sessionPid, [long]$sessionStartMs, $des
       if ($memberId -eq $sessionPid -or $entries.Contains($memberId)) { continue }
       if (-not (Test-Recordable $table $family $memberId)) { continue }
       if ($table[$memberId].StartMs -lt $sessionStartMs) { continue }
-      $entries[$memberId] = New-Entry $table[$memberId]
+      $entries.Add($memberId, (New-Entry $table[$memberId]))
     }
   }
   if ($clock.ElapsedMilliseconds -gt $RecordBudgetMs) { return $null }
@@ -477,6 +539,8 @@ try {
   }
 
   $recording = $Record -or $Action -eq 'record'
+  # The record's budget includes reading the process table, its main cost.
+  $recordClock = [System.Diagnostics.Stopwatch]::StartNew()
   $procs = Get-ProcessTable $recording
 
   # An exited process leaves the snapshot even while a handle is held. Without its entry, the
@@ -488,15 +552,16 @@ try {
     exit 0
   }
 
-  $ancestors = @(Get-Ancestors $procs $TargetPid)
-  $descendants = @(Get-Descendants $procs $TargetPid)
+  # .ToArray(): @() around a returned list would wrap it as one element, not its items.
+  $ancestors = (Get-Ancestors $procs $TargetPid).ToArray()
+  $descendants = (Get-Descendants $procs $TargetPid).ToArray()
 
   # Taken before any signal, so programs that outlive the session can be found afterwards.
   $sessionRecord = $null
   $recordStatus = $null
   if ($recording) {
     try {
-      $sessionRecord = Get-SessionRecord $procs $TargetPid $startMs $descendants
+      $sessionRecord = Get-SessionRecord $procs $TargetPid $startMs $descendants $recordClock
       $recordStatus = if ($null -eq $sessionRecord) { 'timeout' } else { 'recorded' }
     } catch {
       $recordStatus = 'failed'

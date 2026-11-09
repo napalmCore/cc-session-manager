@@ -1,4 +1,7 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHelperRunner, helperScriptPath } from "./end.js";
 import {
@@ -230,11 +233,13 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
       async () => {
         const pid = sleeper();
         const { startMs, path } = identify(pid);
+        const other = sleeper();
+        const otherStart = identify(other).startMs;
 
         const mismatched = await unrelatedTool()("end-leftovers", {
           entries: [
             { pid, startMs, path: "C:\\Windows\\notepad.exe" },
-            { pid, startMs: startMs - 60_000, path },
+            { pid: other, startMs: otherStart - 60_000, path },
           ],
         });
         expect(mismatched.kind).toBe("ok");
@@ -244,7 +249,7 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
           ended: [],
           skipped: [
             { pid, reason: "different-program" },
-            { pid, reason: "different-process" },
+            { pid: other, reason: "different-process" },
           ],
         });
         expect(running(pid)).toBe(true);
@@ -327,5 +332,139 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
       },
       SLOW,
     );
+
+    it(
+      "ends each listed process once, and reports an exited one as not running",
+      async () => {
+        const pid = sleeper();
+        const { startMs, path } = identify(pid);
+        const gone = sleeper("process.exit(0)");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const outcome = await unrelatedTool()("end-leftovers", {
+          entries: [
+            { pid, startMs, path },
+            { pid, startMs, path },
+            { pid: gone, startMs, path },
+          ],
+        });
+
+        expect(outcome.kind).toBe("ok");
+        if (outcome.kind !== "ok") return;
+        expect(parseEndLeftovers(outcome.result)).toEqual({
+          requested: 3,
+          ended: [pid],
+          skipped: [{ pid: gone, reason: "not-running" }],
+        });
+      },
+      SLOW,
+    );
+
+    describe("with a real target named claude.exe", () => {
+      let folder = "";
+      afterEach(async () => {
+        // The copy can't be deleted while it runs.
+        for (const child of children.splice(0)) child.kill();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        if (folder !== "") {
+          rmSync(folder, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 200,
+          });
+        }
+        folder = "";
+      });
+
+      /** A copy of node named claude.exe, which starts ping and prints its process ID. */
+      const fakeSession = async () => {
+        folder = mkdtempSync(join(tmpdir(), "ccsm-claude-"));
+        const exe = join(folder, "claude.exe");
+        copyFileSync(process.execPath, exe);
+        const session = spawn(
+          exe,
+          [
+            "-e",
+            "const c = require('child_process').spawn('ping', ['-n', '60', '127.0.0.1'], { stdio: 'ignore' }); console.log(c.pid); setTimeout(() => {}, 60000);",
+          ],
+          { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+        );
+        children.push(session);
+        const ping = await new Promise<number>((resolve) => {
+          session.stdout.once("data", (data: Buffer) => {
+            resolve(Number(data.toString().trim()));
+          });
+        });
+        extraPids.push(ping);
+        return { session: session.pid ?? 0, ping };
+      };
+
+      it(
+        "records the session's programs, and they can be checked and ended",
+        async () => {
+          const { session, ping } = await fakeSession();
+          const { startMs } = identify(session);
+
+          const recorded = await createHelperRunner(
+            powershell ?? "",
+            script,
+          )({
+            action: "record",
+            pid: session,
+            startedAtMs: startMs,
+            toolPid: 0,
+          });
+
+          expect(recorded).toMatchObject({
+            kind: "ok",
+            result: { ok: true, reason: "recorded" },
+          });
+          if (recorded.kind !== "ok") return;
+          const record = parseRecord(recorded.result.record);
+          expect(record?.session).toEqual({ pid: session, startMs });
+          expect(record?.entries).toEqual([
+            expect.objectContaining({ pid: ping, name: "PING.EXE" }),
+          ]);
+          const entry = record?.entries[0];
+          if (!entry) return;
+          expect(entry.path.toLowerCase()).toMatch(/system32.ping\.exe$/);
+
+          const ended = await unrelatedTool()("end-leftovers", {
+            entries: [entry],
+          });
+          expect(
+            ended.kind === "ok" && parseEndLeftovers(ended.result)?.ended,
+          ).toEqual([ping]);
+          expect(running(session)).toBe(true);
+        },
+        SLOW,
+      );
+
+      it(
+        "still runs inspect on a real target (no regression)",
+        async () => {
+          const { session } = await fakeSession();
+          const { startMs } = identify(session);
+
+          const outcome = await createHelperRunner(
+            powershell ?? "",
+            script,
+          )({
+            action: "inspect",
+            pid: session,
+            startedAtMs: startMs,
+          });
+
+          expect(outcome.kind).toBe("ok");
+          if (outcome.kind !== "ok") return;
+          expect(outcome.result.startMs).toBe(startMs);
+          expect(outcome.result.descendants).toEqual(
+            expect.arrayContaining([expect.any(Number)]),
+          );
+        },
+        SLOW,
+      );
+    });
   },
 );
