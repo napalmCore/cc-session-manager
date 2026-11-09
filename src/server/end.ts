@@ -11,10 +11,14 @@ export const HELPER_TIMEOUT_MS = 10_000;
 export const CLOSE_WAIT_MS = 5_000;
 
 export interface HelperArgs {
-  action: "inspect" | "break" | "force";
+  action: "inspect" | "break" | "force" | "record";
   pid: number;
   startedAtMs: number;
   expectedStartMs?: number;
+  /** With break or force, also records the session's programs before the signal (FR-27). */
+  record?: boolean;
+  /** The tool's own process, whose family is never recorded. */
+  toolPid?: number;
 }
 
 export type HelperOutcome =
@@ -64,6 +68,10 @@ export function createHelperRunner(
       if (args.expectedStartMs !== undefined) {
         argv.push("-ExpectedStartMs", String(args.expectedStartMs));
       }
+      if (args.toolPid !== undefined) {
+        argv.push("-ToolPid", String(args.toolPid));
+      }
+      if (args.record === true) argv.push("-Record");
       execFile(
         powershell,
         argv,
