@@ -29,6 +29,46 @@ describe("createSessionMemory", () => {
     expect(view?.startedAt).toBe(3_100);
   });
 
+  it("keeps the first start time when the session gains a session ID with its process", () => {
+    const { memory } = setup();
+    memory.observe([{ id: "bg", kind: "background", startedAt: 100 }]);
+    const after: Session = {
+      id: "bg",
+      sessionId: "uuid",
+      kind: "background",
+      startedAt: 3_100,
+      pid: 9,
+    };
+    memory.observe([after]);
+
+    expect(memory.recall([toSessionView(after)])[0]?.firstStartedAt).toBe(100);
+  });
+
+  it("starts over for a resumed session, which keeps its session ID", () => {
+    const { memory, advance } = setup();
+    const first: Session = { sessionId: "a", pid: 1, startedAt: 100 };
+    memory.observe([first]);
+    advance(60_000);
+    memory.observe([]);
+    const resumed: Session = { sessionId: "a", pid: 2, startedAt: 120_100 };
+    memory.observe([resumed]);
+
+    expect(memory.recall([toSessionView(resumed)])[0]?.firstStartedAt).toBe(
+      120_100,
+    );
+  });
+
+  it("starts over when the start time moves far, even with the same process ID", () => {
+    const { memory } = setup();
+    memory.observe([{ id: "bg", startedAt: 100 }]);
+    const later: Session = { id: "bg", startedAt: 100 + 60_000 };
+    memory.observe([later]);
+
+    expect(memory.recall([toSessionView(later)])[0]?.firstStartedAt).toBe(
+      60_100,
+    );
+  });
+
   it("keeps the last known activity when a transcript can't be read (BUG-13)", () => {
     const { memory } = setup();
     const session: Session = { sessionId: "a", kind: "interactive" };

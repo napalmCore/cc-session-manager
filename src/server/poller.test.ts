@@ -318,6 +318,7 @@ describe("createPoller", () => {
       expect(results[2]).toEqual([]);
     });
 
+    // The start-time bound alone makes these two pass; session-memory tests the memory itself.
     it("doesn't excuse a session again after it leaves the list and comes back", async () => {
       const entry = noStatus("a");
       const results = await warningsPerPoll([[entry], [], [], [], [entry]]);

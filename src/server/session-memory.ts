@@ -4,6 +4,24 @@ import type { Session, SessionView } from "../shared/protocol.js";
 export const STARTING_MS = 10_000;
 /** Sessions not listed for this long are forgotten. */
 const FORGET_AFTER_MS = 10 * 60 * 1000;
+/**
+ * A listed start time this far from the kept one is a new run, such as after Resume, which
+ * keeps the session ID. Claude Code's own shift is about 3 seconds (BUG-23).
+ */
+const NEW_RUN_MS = 30_000;
+
+interface FirstStart {
+  startedAt: number;
+  pid?: number;
+}
+
+/** Every key a session has, short ID first, so gaining a session ID keeps what was known. */
+function keysOf(session: Session): string[] {
+  const keys: string[] = [];
+  if (session.id !== undefined) keys.push(`key:${session.id}`);
+  if (session.sessionId !== undefined) keys.push(`key:${session.sessionId}`);
+  return keys;
+}
 
 function keyOf(session: Session): string | undefined {
   return session.sessionId ?? session.id;
@@ -37,7 +55,7 @@ export function createSessionMemory(
   now: () => number = Date.now,
 ): SessionMemory {
   const firstSeen = new Map<string, number>();
-  const firstStart = new Map<string, number>();
+  const firstStart = new Map<string, FirstStart>();
   const lastActivity = new Map<string, number>();
   const lastListed = new Map<string, number>();
 
@@ -60,16 +78,24 @@ export function createSessionMemory(
           if (!firstSeen.has(identity)) firstSeen.set(identity, time);
           lastListed.set(identity, time);
         }
-        const key = keyOf(session);
-        if (key !== undefined) {
-          lastListed.set(`key:${key}`, time);
-          if (
-            session.startedAt !== undefined &&
-            !firstStart.has(`key:${key}`)
-          ) {
-            firstStart.set(`key:${key}`, session.startedAt);
-          }
-        }
+        const keys = keysOf(session);
+        for (const key of keys) lastListed.set(key, time);
+        const { startedAt, pid } = session;
+        if (startedAt === undefined || keys.length === 0) continue;
+        const known = keys
+          .map((key) => firstStart.get(key))
+          .find((entry) => entry !== undefined);
+        // A different process, or a start time far from the kept one, is a new run.
+        const newRun =
+          known === undefined ||
+          (known.pid !== undefined && pid !== undefined && known.pid !== pid) ||
+          Math.abs(startedAt - known.startedAt) > NEW_RUN_MS;
+        const entry: FirstStart = newRun
+          ? { startedAt }
+          : { startedAt: known.startedAt };
+        const process = pid ?? (newRun ? undefined : known.pid);
+        if (process !== undefined) entry.pid = process;
+        for (const key of keys) firstStart.set(key, entry);
       }
       forgetOld(time);
     },
@@ -92,10 +118,12 @@ export function createSessionMemory(
         const key = keyOf(session);
         if (key === undefined) return session;
         const recalled = { ...session };
-        const started = firstStart.get(`key:${key}`);
+        const started = keysOf(session)
+          .map((each) => firstStart.get(each))
+          .find((entry) => entry !== undefined);
         // Claude Code moves a background session's start time once it has a process (BUG-23).
         // The first one is shown and sorted on; startedAt stays as listed for the ownership check.
-        if (started !== undefined) recalled.firstStartedAt = started;
+        if (started !== undefined) recalled.firstStartedAt = started.startedAt;
         // A transcript that can no longer be read keeps the last time it showed (BUG-13).
         if (session.lastActivityAt !== undefined) {
           lastActivity.set(`key:${key}`, session.lastActivityAt);
