@@ -14,6 +14,8 @@ export interface UsageTotals extends TokenTotals {
   leftOutOfCost: number;
   /** Sessions with no usage at all, such as one with no readable transcript. */
   noUsage: number;
+  /** Sessions whose transcript stopped being readable before it was fully counted. */
+  partial: number;
   counting: boolean;
   sessions: number;
 }
@@ -106,7 +108,11 @@ function describeTokens(totals: TokenTotals): string {
 export function sessionUsageLines(usage: SessionUsage | undefined): string[] {
   if (!usage) return ["Token use unavailable"];
   const totals = tokenTotals(usage.groups);
-  const counting = usage.counting ? " (still counting)" : "";
+  const counting = usage.counting
+    ? " (still counting)"
+    : usage.partial === true
+      ? " (partly counted: the transcript couldn't be read)"
+      : "";
   const lines = [`Tokens: ${describeTokens(totals)}${counting}`];
 
   const all = allTokens(totals);
@@ -145,6 +151,7 @@ export function usageTotals(sessions: SessionView[]): UsageTotals {
     cost: 0,
     leftOutOfCost: 0,
     noUsage: 0,
+    partial: 0,
     counting: false,
     sessions: sessions.length,
   };
@@ -162,6 +169,7 @@ export function usageTotals(sessions: SessionView[]): UsageTotals {
     totals.cost += usage.cost;
     if (usage.unpriced.length > 0) totals.leftOutOfCost += 1;
     if (usage.counting) totals.counting = true;
+    if (usage.partial === true) totals.partial += 1;
   }
   return totals;
 }
@@ -183,6 +191,9 @@ export function totalsLines(totals: UsageTotals): string[] {
     notes.push(
       `${plural(totals.noUsage, "session")} ${totals.noUsage === 1 ? "has" : "have"} no usage`,
     );
+  }
+  if (totals.partial > 0) {
+    notes.push(`${plural(totals.partial, "session")} partly counted`);
   }
   if (totals.counting) notes.push("still counting");
   if (notes.length > 0) lines.push(`${notes.join("; ")}.`);

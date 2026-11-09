@@ -629,6 +629,10 @@ export function createTranscriptReader(
 
   return {
     internals,
+    /** Drops what's held for a session, once it's no longer read (FR-26). */
+    forget(sessionId: string): void {
+      sessions.delete(sessionId);
+    },
     async enrich(current: SessionView[]): Promise<EnrichResult> {
       const budget = { left: budgetBytes };
       let formatChanged = false;

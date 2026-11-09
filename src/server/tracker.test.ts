@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Session } from "../shared/protocol.js";
+import type {
+  FinishedSession,
+  Session,
+  SessionUsage,
+  SessionView,
+} from "../shared/protocol.js";
 import { toSessionView } from "./rules.js";
 import type { SessionStore } from "./store.js";
-import { createSessionTracker, RETENTION_MS } from "./tracker.js";
+import {
+  createSessionTracker,
+  enrichWithFinished,
+  READ_AFTER_FINISH_MS,
+  READS_BEFORE_GIVING_UP,
+  RETENTION_MS,
+} from "./tracker.js";
 
 const interactive: Session = {
   sessionId: "11111111-1111-4111-8111-111111111111",
@@ -254,5 +265,291 @@ describe("sessions without an identity", () => {
     const { update } = setup();
     expect(update({ kind: "interactive" }).sessions).toHaveLength(1);
     expect(update().sessions).toEqual([]);
+  });
+});
+
+describe("reading finished sessions (FR-26, BUG-27)", () => {
+  const usage = (input: number, counting = false): SessionUsage => ({
+    groups: [
+      {
+        model: "claude-opus-5-5",
+        speed: "standard",
+        geo: "global",
+        source: "main",
+        longContext: false,
+        input,
+        output: 0,
+        cacheWrite5m: 0,
+        cacheWrite1h: 0,
+        cacheRead: 0,
+        webSearches: 0,
+      },
+    ],
+    counting,
+    cost: 0,
+    unpriced: [],
+  });
+
+  function reading(saved: FinishedSession[] = []) {
+    let now = 50_000;
+    const store: SessionStore = {
+      load: () => ({ records: saved, notice: null, needsRewrite: false }),
+      save: vi.fn(() => null),
+    };
+    const tracker = createSessionTracker({ store, now: () => now });
+    // What each session's transcript holds; a missing entry can't be read.
+    const transcripts = new Map<string, Partial<SessionView>>();
+    const asked: string[][] = [];
+    const reader = {
+      enrich: vi.fn((current: SessionView[]) => {
+        asked.push(current.map((session) => session.sessionId ?? ""));
+        return Promise.resolve({
+          sessions: current.map((session) => {
+            const found = transcripts.get(session.sessionId ?? "");
+            return found ? { ...session, ...found } : session;
+          }),
+          warnings: [],
+        });
+      }),
+      forget: vi.fn(),
+    };
+    const enrich = enrichWithFinished(tracker, reader);
+    return {
+      store,
+      reader,
+      transcripts,
+      asked,
+      poll: async (...sessions: Session[]) => {
+        const enriched = await enrich(sessions.map(toSessionView));
+        return tracker.update(enriched.sessions);
+      },
+      advance: (ms: number) => {
+        now += ms;
+      },
+    };
+  }
+
+  const id = interactive.sessionId ?? "";
+
+  it("keeps reading an ended session for 30 seconds, so late lines show", async () => {
+    const { poll, transcripts, advance, reader, store } = reading();
+    transcripts.set(id, { model: "first", usage: usage(1) });
+    await poll(interactive);
+    await poll();
+
+    transcripts.set(id, { model: "late", usage: usage(2) });
+    advance(3_000);
+    let { sessions } = await poll();
+    expect(sessions[0]?.model).toBe("late");
+    expect(sessions[0]?.usage?.groups[0]?.input).toBe(2);
+    expect(vi.mocked(store.save).mock.lastCall?.[0][0]?.usage).toEqual(
+      usage(2),
+    );
+
+    advance(READ_AFTER_FINISH_MS);
+    transcripts.set(id, { model: "too late", usage: usage(3) });
+    ({ sessions } = await poll());
+    expect(sessions[0]?.model).toBe("late");
+    expect(reader.forget).toHaveBeenCalledWith(id);
+  });
+
+  it("keeps reading a finished session until it's fully counted", async () => {
+    const { poll, transcripts, advance, asked } = reading();
+    transcripts.set(id, { usage: usage(1, true) });
+    await poll(interactive);
+    await poll();
+    advance(READ_AFTER_FINISH_MS * 2);
+
+    transcripts.set(id, { usage: usage(5, true) });
+    await poll();
+    transcripts.set(id, { usage: usage(9) });
+    const { sessions } = await poll();
+    expect(sessions[0]?.usage).toEqual(usage(9));
+
+    await poll();
+    expect(asked.at(-1)).toEqual([]);
+  });
+
+  it("rides out failed reads, and marks a count partial only after many", async () => {
+    const { poll, transcripts, advance, asked } = reading();
+    transcripts.set(id, { usage: usage(1, true) });
+    await poll(interactive);
+    await poll();
+    transcripts.delete(id);
+    advance(READ_AFTER_FINISH_MS);
+
+    for (let index = 0; index < READS_BEFORE_GIVING_UP - 1; index += 1) {
+      await poll();
+    }
+    // Readable again, as after another program lets go of the file.
+    transcripts.set(id, { usage: usage(4, true) });
+    let { sessions } = await poll();
+    expect(sessions[0]?.usage).toEqual(usage(4, true));
+
+    transcripts.delete(id);
+    for (let index = 0; index < READS_BEFORE_GIVING_UP; index += 1) {
+      ({ sessions } = await poll());
+    }
+    expect(sessions[0]?.usage).toEqual({
+      ...usage(4),
+      partial: true,
+    });
+    await poll();
+    expect(asked.at(-1)).toEqual([]);
+  });
+
+  it("reads a session again in full after it's resumed and ends again", async () => {
+    const { poll, transcripts, advance } = reading();
+    transcripts.set(id, { usage: usage(1, true) });
+    await poll(interactive);
+    await poll();
+    transcripts.delete(id);
+    advance(READ_AFTER_FINISH_MS);
+    for (let index = 0; index < READS_BEFORE_GIVING_UP; index += 1) {
+      await poll();
+    }
+
+    transcripts.set(id, { model: "resumed", usage: usage(6) });
+    await poll(interactive);
+    await poll();
+    transcripts.set(id, { model: "late", usage: usage(7) });
+    const { sessions } = await poll();
+    expect(sessions[0]?.model).toBe("late");
+    expect(sessions[0]?.usage).toEqual(usage(7));
+  });
+
+  it("keeps complete saved usage while a re-read after a restart catches up", async () => {
+    const saved: FinishedSession = {
+      ...toSessionView(interactive),
+      finished: true,
+      statusLabel: "finished",
+      finishedAt: 45_000,
+      usage: usage(50),
+    };
+    const { poll, transcripts } = reading([saved]);
+    transcripts.set(id, { usage: usage(10, true) });
+
+    let { sessions } = await poll();
+    expect(sessions[0]?.usage).toEqual(usage(50));
+
+    transcripts.set(id, { usage: usage(60) });
+    ({ sessions } = await poll());
+    expect(sessions[0]?.usage).toEqual(usage(60));
+  });
+
+  it("keeps the listing's order", async () => {
+    const { reader, transcripts } = reading();
+    const tracker = createSessionTracker({
+      store: {
+        load: () => ({ records: [], notice: null, needsRewrite: false }),
+        save: () => null,
+      },
+    });
+    transcripts.set(id, { model: "m" });
+    const views = [working, interactive, { kind: "interactive" }].map(
+      toSessionView,
+    );
+
+    const result = await enrichWithFinished(tracker, reader)(views);
+
+    expect(result.sessions.map((session) => session.sessionId)).toEqual([
+      working.sessionId,
+      interactive.sessionId,
+      undefined,
+    ]);
+    expect(result.sessions[1]?.model).toBe("m");
+  });
+
+  it("loads a store that couldn't be opened once it opens, keeping both", async () => {
+    const saved: FinishedSession = {
+      ...toSessionView({
+        ...interactive,
+        sessionId: "33333333-3333-4333-8333-333333333333",
+      }),
+      finished: true,
+      statusLabel: "finished",
+      finishedAt: 49_000,
+    };
+    let locked = true;
+    const save = vi.fn<SessionStore["save"]>(() => null);
+    const tracker = createSessionTracker({
+      store: {
+        load: () =>
+          locked
+            ? {
+                records: [],
+                notice: "locked",
+                needsRewrite: false,
+                locked: true,
+              }
+            : { records: [saved], notice: null, needsRewrite: false },
+        save,
+      },
+      now: () => 50_000,
+    });
+    tracker.update([toSessionView(interactive)]);
+    expect(tracker.update([]).warnings).toEqual(["locked"]);
+
+    locked = false;
+    const { sessions, warnings } = tracker.update([]);
+    expect(warnings).toEqual([]);
+    expect(sessions.map((session) => session.sessionId).sort()).toEqual(
+      [interactive.sessionId, saved.sessionId].sort(),
+    );
+    expect(save.mock.lastCall?.[0]).toHaveLength(2);
+  });
+
+  it("stops reading a listed background session, and keeps what it read", async () => {
+    const { poll, transcripts, advance, asked } = reading();
+    const backgroundId = done.sessionId ?? "";
+    transcripts.set(backgroundId, { model: "m", usage: usage(4) });
+    await poll(done);
+    advance(READ_AFTER_FINISH_MS);
+    transcripts.set(backgroundId, { model: "later", usage: usage(8) });
+
+    const { sessions } = await poll(done);
+    expect(asked.at(-1)).toEqual([]);
+    expect(sessions[0]?.model).toBe("m");
+    expect(sessions[0]?.usage).toEqual(usage(4));
+  });
+
+  it("uses saved usage after a restart, without reading again", async () => {
+    const saved: FinishedSession = {
+      ...toSessionView(done),
+      finishedAt: 1_000,
+      model: "saved",
+      usage: usage(7),
+    };
+    const { poll, transcripts, asked } = reading([saved]);
+    transcripts.set(done.sessionId ?? "", { usage: usage(99) });
+
+    const { sessions } = await poll(done);
+    expect(asked.at(-1)).toEqual([]);
+    expect(sessions[0]?.usage).toEqual(usage(7));
+    expect(sessions[0]?.model).toBe("saved");
+  });
+
+  it("reads a saved session again after a restart if it was still counting", async () => {
+    const saved: FinishedSession = {
+      ...toSessionView(interactive),
+      finished: true,
+      statusLabel: "finished",
+      finishedAt: 1_000,
+      usage: usage(7, true),
+    };
+    const { poll, transcripts } = reading([saved]);
+    transcripts.set(id, { usage: usage(20) });
+
+    const { sessions } = await poll();
+    expect(sessions[0]?.usage).toEqual(usage(20));
+  });
+
+  it("never tells the reader to forget a live session", async () => {
+    const { poll, reader, advance } = reading();
+    await poll(interactive);
+    await poll();
+    advance(READ_AFTER_FINISH_MS);
+    await poll(interactive);
+    expect(reader.forget).not.toHaveBeenCalled();
   });
 });

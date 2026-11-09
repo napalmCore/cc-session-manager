@@ -189,6 +189,15 @@ describe("sessionUsageLines", () => {
     ).toBe("Estimated cost $2.00, leaving out claude-new");
   });
 
+  it("says when a count stopped because the transcript couldn't be read", () => {
+    expect(sessionUsageLines(usage({ partial: true }))[0]).toMatch(
+      /\(partly counted: the transcript couldn't be read\)$/,
+    );
+    expect(
+      totalsLines(usageTotals([session(usage({ partial: true }))]))[2],
+    ).toBe("1 session partly counted.");
+  });
+
   it("says when there's no usage", () => {
     expect(sessionUsageLines(undefined)).toEqual(["Token use unavailable"]);
   });
