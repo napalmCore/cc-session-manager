@@ -19,7 +19,7 @@
   - macOS and Linux support
   - screen-reader testing
 
-Together they're about three times the size of iteration 2. Answering prompts and macOS and Linux support both need research before they can be estimated.
+Together they're much larger than iteration 2. Answering prompts and macOS and Linux support both need research before they can be estimated.
 
 ## The owner's decisions
 
