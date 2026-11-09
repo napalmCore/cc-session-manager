@@ -75,7 +75,7 @@ Stop, Delete, End, and Force end ask you to confirm first, and the dialog names 
 - A session started from Git Bash can't be closed normally from here, so End offers Force end straight away.
 - With npm's `claude.cmd`, the terminal shows "Terminate batch job (Y/N)?" after End.
 - Resume runs in the session's original folder, so Claude Code loads that folder's own settings, as it would if you resumed it by hand.
-- Resume disappears up to about 13 seconds after a session's folder is deleted. A `\server\share` folder isn't checked in advance, but Resume is still refused if the folder has gone. A mapped drive letter is checked like a local folder.
+- Resume disappears up to about 13 seconds after a session's folder is deleted. A `\\server\share` folder isn't checked in advance, but Resume is still refused if the folder has gone. A mapped drive letter is checked like a local folder.
 - Notifications only work while the page is open, and don't show session names, so similar sessions in one folder look alike. A crashed interactive session sends no notification.
 - Ending a session, or a Force end, can lose work in progress.
 
