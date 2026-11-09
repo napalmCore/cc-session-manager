@@ -1,6 +1,6 @@
 # Requirements
 
-- **Status:** Iterations 1 and 2 released as 0.1.0. Iteration 3 requirements drafted on 2026-11-09, awaiting sign-off.
+- **Status:** Iterations 1 and 2 released as 0.1.0. Iteration 3 requirements signed off on 2026-11-09, by agent review and merge (0019).
 - **Scope:** Iteration 1 is live monitoring. Iteration 2 adds desktop notifications and session control. Iteration 3 adds token use and estimated cost, ends leftover programs, and fixes open bugs. Windows first.
 
 ## Functional requirements
