@@ -35,29 +35,35 @@ function million(model: string, overrides: Partial<UsageGroup> = {}) {
 }
 
 describe("groupCost", () => {
-  // input + 5m write + 1h write + read + output, per the pricing page on 2026-11-09.
+  // Columns: input, 5m write, 1h write, read, output, from the pricing page on 2026-11-09.
   it.each([
-    ["claude-fable-5-1", 10 + 12.5 + 20 + 0.25 + 50],
-    ["claude-mythos-5-1", 10 + 12.5 + 20 + 0.25 + 50],
-    ["claude-fable-5", 10 + 12.5 + 20 + 1 + 50],
-    ["claude-mythos-5", 10 + 12.5 + 20 + 1 + 50],
-    ["claude-opus-5-5", 4 + 5 + 8 + 0.2 + 20],
-    ["claude-opus-5", 5 + 6.25 + 10 + 0.5 + 25],
-    ["claude-opus-4-8", 5 + 6.25 + 10 + 0.5 + 25],
-    ["claude-opus-4-7", 5 + 6.25 + 10 + 0.5 + 25],
-    ["claude-opus-4-6", 5 + 6.25 + 10 + 0.5 + 25],
-    ["claude-opus-4-5", 5 + 6.25 + 10 + 0.5 + 25],
-    ["claude-opus-4-1", 15 + 18.75 + 30 + 1.5 + 75],
-    ["claude-opus-4", 15 + 18.75 + 30 + 1.5 + 75],
-    ["claude-sonnet-5-5", 2 + 2.5 + 4 + 0.1 + 10],
-    ["claude-sonnet-5", 2 + 2.5 + 4 + 0.2 + 10],
-    ["claude-sonnet-4-6", 3 + 3.75 + 6 + 0.3 + 15],
-    ["claude-sonnet-4-5", 3 + 3.75 + 6 + 0.3 + 15],
-    ["claude-sonnet-4", 3 + 3.75 + 6 + 0.3 + 15],
-    ["claude-haiku-5-5", 0.1 + 0.125 + 0.2 + 0.01 + 0.5],
-    ["claude-haiku-4-5", 1 + 1.25 + 2 + 0.1 + 5],
-  ])("prices %s", (model, expected) => {
-    expect(groupCost(million(model))).toBeCloseTo(expected, 10);
+    ["claude-fable-5-1", 10, 12.5, 20, 0.25, 50],
+    ["claude-mythos-5-1", 10, 12.5, 20, 0.25, 50],
+    ["claude-fable-5", 10, 12.5, 20, 1, 50],
+    ["claude-mythos-5", 10, 12.5, 20, 1, 50],
+    ["claude-opus-5-5", 4, 5, 8, 0.2, 20],
+    ["claude-opus-5", 5, 6.25, 10, 0.5, 25],
+    ["claude-opus-4-8", 5, 6.25, 10, 0.5, 25],
+    ["claude-opus-4-7", 5, 6.25, 10, 0.5, 25],
+    ["claude-opus-4-6", 5, 6.25, 10, 0.5, 25],
+    ["claude-opus-4-5", 5, 6.25, 10, 0.5, 25],
+    ["claude-opus-4-1", 15, 18.75, 30, 1.5, 75],
+    ["claude-opus-4", 15, 18.75, 30, 1.5, 75],
+    ["claude-sonnet-5-5", 2, 2.5, 4, 0.1, 10],
+    ["claude-sonnet-5", 2, 2.5, 4, 0.2, 10],
+    ["claude-sonnet-4-6", 3, 3.75, 6, 0.3, 15],
+    ["claude-sonnet-4-5", 3, 3.75, 6, 0.3, 15],
+    ["claude-sonnet-4", 3, 3.75, 6, 0.3, 15],
+    ["claude-haiku-5-5", 0.1, 0.125, 0.2, 0.01, 0.5],
+    ["claude-haiku-4-5", 1, 1.25, 2, 0.1, 5],
+  ])("prices %s by column", (model, input, write5m, write1h, read, output) => {
+    const cost = (overrides: Partial<UsageGroup>) =>
+      groupCost(group({ model, ...overrides }));
+    expect(cost({ input: MILLION })).toBeCloseTo(input, 10);
+    expect(cost({ cacheWrite5m: MILLION })).toBeCloseTo(write5m, 10);
+    expect(cost({ cacheWrite1h: MILLION })).toBeCloseTo(write1h, 10);
+    expect(cost({ cacheRead: MILLION })).toBeCloseTo(read, 10);
+    expect(cost({ output: MILLION })).toBeCloseTo(output, 10);
   });
 
   it("prices each token type separately", () => {
