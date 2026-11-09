@@ -505,7 +505,9 @@ export function createTranscriptReader(
       ? await statFolder(path)
       : null;
     if (!stats) {
+      // Files already tracked are dropped too, so nothing is read through a new link.
       session.subagentDir = undefined;
+      session.subagents.clear();
       return;
     }
     if (
@@ -554,7 +556,8 @@ export function createTranscriptReader(
     if (length < main.size) text = text.slice(text.indexOf("\n") + 1);
     const state = createTextState();
     consumeLines(state, text);
-    const metadata = metadataOf(state);
+    // A field missing from the end falls back to what's been read so far.
+    const metadata = { ...metadataOf(main.text), ...metadataOf(state) };
     session.tail = { size: main.size, mtimeMs: main.mtimeMs, metadata };
     return { ...metadata };
   };

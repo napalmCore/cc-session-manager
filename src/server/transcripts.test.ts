@@ -588,8 +588,8 @@ describe("createTranscriptReader", () => {
   });
 
   it("starts again when a file of the same or larger size is replaced", async () => {
-    const file = writeTranscript(`${reply({ id: "a", output: 5 })}
-`);
+    const original = `${reply({ id: "a", output: 5 })}\n`;
+    const file = writeTranscript(original);
     const reader = createTranscriptReader(root);
     await reader.enrich([view(ID)]);
 
@@ -603,15 +603,18 @@ describe("createTranscriptReader", () => {
         usage: { input_tokens: 1, output_tokens: 9 },
       },
     });
-    writeFileSync(
-      file,
-      `${different}
-${different.replace('"z"', '"y"')}
-`,
+    const replacement = ["z", "y", "x"]
+      .map((id) => `${different.replace('"z"', `"${id}"`)}\n`)
+      .join("");
+    // Not smaller, so only the check of the file's first bytes can notice.
+    expect(Buffer.byteLength(replacement)).toBeGreaterThanOrEqual(
+      Buffer.byteLength(original),
     );
+    writeFileSync(file, replacement);
     const { sessions } = await reader.enrich([view(ID)]);
 
-    expect(only(sessions[0]?.usage?.groups).output).toBe(18);
+    // Response "a" is gone, so the file was read again from its start.
+    expect(only(sessions[0]?.usage?.groups).output).toBe(27);
     expect(sessions[0]?.gitBranch).toBe("other");
   });
 
