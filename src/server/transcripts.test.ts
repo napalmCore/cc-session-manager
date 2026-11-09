@@ -419,6 +419,25 @@ describe("createTranscriptReader", () => {
     expect(JSON.stringify(sessions)).not.toContain("private text");
   });
 
+  it("prices usage on the server, and names models it can't price", async () => {
+    writeTranscript(
+      [
+        reply({ id: "a", input: 1_000_000, output: 0 }),
+        reply({ id: "b", model: "claude-new", input: 5, output: 5 }),
+      ]
+        .map(
+          (line) => `${line}
+`,
+        )
+        .join(""),
+    );
+
+    const { sessions } = await createTranscriptReader(root).enrich([view(ID)]);
+
+    expect(sessions[0]?.usage?.cost).toBeCloseTo(4);
+    expect(sessions[0]?.usage?.unpriced).toEqual(["claude-new"]);
+  });
+
   it("leaves a session unchanged when it has no transcript", async () => {
     const session = view(ID);
     const result = await createTranscriptReader(root).enrich([session]);
@@ -662,7 +681,12 @@ ${late}
 
     const { sessions } = await reader.enrich([view(ID)]);
 
-    expect(sessions[0]?.usage).toEqual({ groups: [], counting: true });
+    expect(sessions[0]?.usage).toEqual({
+      groups: [],
+      counting: true,
+      cost: 0,
+      unpriced: [],
+    });
     expect(sessions[0]?.model).toBe("claude-opus-5-5");
   });
 

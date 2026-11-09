@@ -36,12 +36,47 @@ function sample(now: number): SessionView[] {
       kind: "background",
       state: "blocked",
     }),
-    view({
-      name: "running",
-      sessionId: "c",
-      kind: "interactive",
-      status: "busy",
-    }),
+    {
+      ...view({
+        name: "running",
+        sessionId: "c",
+        kind: "interactive",
+        status: "busy",
+      }),
+      usage: {
+        groups: [
+          {
+            model: "claude-opus-5-5",
+            speed: "standard",
+            geo: "global",
+            source: "main",
+            longContext: false,
+            input: 1200,
+            output: 34_000,
+            cacheWrite5m: 50_000,
+            cacheWrite1h: 0,
+            cacheRead: 2_500_000,
+            webSearches: 0,
+          },
+          {
+            model: "claude-haiku-5-5",
+            speed: "standard",
+            geo: "global",
+            source: "subagent",
+            longContext: false,
+            input: 100,
+            output: 2000,
+            cacheWrite5m: 0,
+            cacheWrite1h: 0,
+            cacheRead: 0,
+            webSearches: 0,
+          },
+        ],
+        counting: false,
+        cost: 1.42,
+        unpriced: [],
+      },
+    },
     {
       ...view({
         name: "abandoned",
@@ -224,6 +259,34 @@ test.describe("session groups", () => {
     }
   });
 
+  test("shows a session's token use and estimated cost", async ({ page }) => {
+    await open(page);
+    const row = section(page, /active/i)
+      .getByRole("listitem")
+      .filter({ hasText: "running" })
+      .first();
+
+    await expect(row).toContainText(
+      "Tokens: 1.30K input, 36.0K output, 50.0K cache write, 2.50M cache read",
+    );
+    await expect(row).toContainText("Subagents: less than 1% of tokens");
+    await expect(row).toContainText("Estimated cost $1.42");
+  });
+
+  test("shows totals for the listed sessions, and what they leave out", async ({
+    page,
+  }) => {
+    await open(page);
+    const usage = page.getByRole("region", { name: "Usage" });
+
+    await expect(usage).toContainText(
+      "Tokens for listed sessions: 1.30K input, 36.0K output, 50.0K cache write, 2.50M cache read",
+    );
+    await expect(usage).toContainText("Estimated cost $1.42");
+    await expect(usage).toContainText("5 sessions have no usage.");
+    await expect(usage).toContainText("Not what a Pro or Max plan costs.");
+  });
+
   test("marks missing details as unavailable", async ({ page }) => {
     await open(page);
     const row = section(page, /active/i)
@@ -234,6 +297,7 @@ test.describe("session groups", () => {
     await expect(row).toContainText("Branch unavailable");
     await expect(row).toContainText("Model unavailable");
     await expect(row).toContainText("Last activity unavailable");
+    await expect(row).toContainText("Token use unavailable");
   });
 
   test("shows an empty state", async ({ page }) => {

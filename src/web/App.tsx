@@ -21,6 +21,13 @@ import {
   type SessionAction,
 } from "../shared/session-actions.js";
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
+import {
+  ESTIMATE_NOTE,
+  isCostLine,
+  sessionUsageLines,
+  totalsLines,
+  usageTotals,
+} from "../shared/usage-summary.js";
 import cssClasses from "./App.module.css";
 import {
   ConfirmDialog,
@@ -53,6 +60,9 @@ const styles = cssClasses as Record<
   | "notifyButton"
   | "notifyStatus"
   | "toolbar"
+  | "usage"
+  | "usageNote"
+  | "usageTitle"
   | "list"
   | "marker"
   | "name"
@@ -103,7 +113,28 @@ function details(session: SessionView, now: number): string[] {
       ? "Last activity unavailable"
       : `Last active ${formatDuration(now - session.lastActivityAt)} ago`,
   );
+  items.push(...sessionUsageLines(session.usage));
   return items;
+}
+
+const ESTIMATE_NOTE_ID = "usage-estimate-note";
+
+/** Totals for the listed sessions, under the page heading (FR-25). */
+function UsageSummary({ sessions }: { sessions: SessionView[] }) {
+  const lines = totalsLines(usageTotals(sessions));
+  return (
+    <section aria-labelledby="usage-title" className={styles.usage}>
+      <h2 id="usage-title" className={styles.usageTitle}>
+        Usage
+      </h2>
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+      <p id={ESTIMATE_NOTE_ID} className={styles.usageNote}>
+        {ESTIMATE_NOTE}
+      </p>
+    </section>
+  );
 }
 
 function statusText(session: SessionView): string {
@@ -201,7 +232,15 @@ function SessionList({
             </div>
             <ul className={styles.details}>
               {details(session, now).map((item) => (
-                <li key={item}>{item}</li>
+                <li
+                  key={item}
+                  // Ties each cost to the note giving the price table's date (FR-24).
+                  aria-describedby={
+                    isCostLine(item) ? ESTIMATE_NOTE_ID : undefined
+                  }
+                >
+                  {item}
+                </li>
               ))}
             </ul>
             {isProtectedSession(session, actionProps.context) && (
@@ -602,6 +641,9 @@ export function App() {
           {ACTION_LABELS[lastResultGone.action]}, {lastResultGone.label}:{" "}
           {lastResultGone.reply.message}
         </p>
+      )}
+      {snapshot !== null && snapshot.sessions.length > 0 && (
+        <UsageSummary sessions={snapshot.sessions} />
       )}
       {signedIn && snapshot === null && <p>Loading sessions…</p>}
       {snapshot?.sessions.length === 0 && <p>No sessions to show.</p>}
