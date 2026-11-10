@@ -25,6 +25,8 @@ import {
   requestHandover,
 } from "./instance.js";
 import { createFolderWatch } from "./folders.js";
+import { createLeftoverTracker } from "./leftovers.js";
+import { createInputRunner, parseRecord } from "./leftovers-helper.js";
 import { createOpenExecutors } from "./open.js";
 import {
   createStopDeleteExecutors,
@@ -166,12 +168,14 @@ const publish = (snapshot: Snapshot) => {
       )
       .flatMap(sessionKeys),
     missingFolders: missing,
+    leftovers: leftoversRef.current?.offers() ?? [],
   });
 };
 
 // The tracker needs the poller, which needs the server, so the server reads the tracker through
 // this holder once it exists.
 const actionsRef: { current?: ReturnType<typeof createActionTracker> } = {};
+const leftoversRef: { current?: ReturnType<typeof createLeftoverTracker> } = {};
 const serverRef: { current?: Awaited<ReturnType<typeof startServer>> } = {};
 const handoverSecret = newHandoverSecret();
 const server = await startServer({
@@ -257,12 +261,24 @@ const stopDelete = createStopDeleteExecutors({
 });
 const helperScript = helperScriptPath();
 const powershell = programs.powershell;
-const endExecutors = createEndExecutors({
-  helperAvailable: helperAvailable(powershell, helperScript),
+const canRunHelper = helperAvailable(powershell, helperScript);
+const runHelper =
+  powershell === null
+    ? () => Promise.resolve({ kind: "error" as const })
+    : createHelperRunner(powershell, helperScript);
+const leftovers = createLeftoverTracker({
   run:
-    powershell === null
-      ? () => Promise.resolve({ kind: "error" as const })
-      : createHelperRunner(powershell, helperScript),
+    powershell === null || !canRunHelper
+      ? null
+      : createInputRunner(powershell, helperScript),
+  onChange: () => {
+    if (lastSnapshot !== null) publish(lastSnapshot);
+  },
+});
+leftoversRef.current = leftovers;
+const endExecutors = createEndExecutors({
+  helperAvailable: canRunHelper,
+  run: runHelper,
   watch: watchPoller(() => poller.state(), CLOSE_WAIT_MS),
   confirmListing: async () => {
     try {
@@ -289,6 +305,28 @@ actionsRef.current = createActionTracker({
     forceEnd: (session, record) => endExecutors.forceEnd(session, record),
   },
   isProtected: (session) => protection.isProtected(session),
+  leftovers: {
+    // Stop and Delete record the session's programs first, with the same ownership check End
+    // uses. A session with no process, such as a stopped one, has nothing new to record.
+    record: async (session) => {
+      const { pid, startedAt } = session;
+      if (pid === undefined || startedAt === undefined) return undefined;
+      if (!canRunHelper) return null;
+      const outcome = await runHelper({
+        action: "record",
+        pid,
+        startedAtMs: startedAt,
+        toolPid: process.pid,
+      });
+      if (outcome.kind !== "ok" || outcome.result.ok !== true) return null;
+      return parseRecord(outcome.result.record);
+    },
+    hold: (session, action, record, result) => {
+      leftovers.hold(session, action, record, result);
+    },
+    find: (key) => leftovers.find(key),
+    end: (key) => leftovers.end(key),
+  },
 });
 poller.start();
 
@@ -304,6 +342,7 @@ const shutdown = () => {
   if (stopping) return;
   stopping = true;
   poller.stop();
+  leftovers.stop();
   if (locked) removeLock(dataFolder, lock);
   void server.close().finally(() => process.exit(0));
 };

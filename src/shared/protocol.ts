@@ -61,6 +61,28 @@ export interface FinishedSession extends SessionView {
   finishedAt: number;
 }
 
+/** A program a session started that still runs after the session has gone (FR-27). */
+export interface LeftoverProgram {
+  pid: number;
+  name: string;
+}
+
+/** Programs still running after the dashboard stopped, deleted, or ended a session. */
+export interface LeftoverOffer {
+  /** The key the page sends with endLeftovers. */
+  key: string;
+  /** Every key the session had, to match its row. */
+  keys: string[];
+  /** True when the session was deleted, so its row is shown from this offer alone. */
+  deleted: boolean;
+  /** The session as it was when acted on, for a row that's no longer listed. */
+  session: SessionView;
+  /** The first programs still running, at most 50. */
+  programs: LeftoverProgram[];
+  /** How many programs still run in all. */
+  count: number;
+}
+
 export interface Snapshot {
   sessions: SessionView[];
   error: string | null;
@@ -79,6 +101,8 @@ export interface Snapshot {
   protectedSessions?: string[];
   /** Finished sessions whose folder no longer exists, so Resume isn't offered. */
   missingFolders?: string[];
+  /** Programs still running after the dashboard's own Stop, Delete, End, or Force end. */
+  leftovers?: LeftoverOffer[];
 }
 
 export interface SnapshotMessage {

@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { toSessionView } from "../server/rules.js";
-import type { Session } from "./protocol.js";
+import type { LeftoverOffer, Session } from "./protocol.js";
 import {
   actionContext,
   actionKey,
   availableActions,
+  canEndLeftovers,
+  leftoverOffer,
+  programLines,
   readReply,
   sessionLabel,
+  unlistedOffers,
   type ActionContext,
 } from "./session-actions.js";
 
@@ -166,5 +170,65 @@ describe("readReply", () => {
     ["a message that isn't text", { outcome: "succeeded", message: 1 }],
   ])("treats %s as unknown (FR-18)", (_label, body) => {
     expect(readReply(body).outcome).toBe("unknown");
+  });
+});
+
+describe("leftover programs (FR-27)", () => {
+  const offer = (keys: string[], count = 1): LeftoverOffer => ({
+    key: keys[0] ?? "",
+    keys,
+    deleted: false,
+    session: background(),
+    programs: Array.from({ length: Math.min(count, 50) }, (_, index) => ({
+      pid: 100 + index,
+      name: index === 1 ? "" : `p${String(index)}.exe`,
+    })),
+    count,
+  });
+
+  it("matches an offer to its row by any of the session's keys", () => {
+    const byId = offer(["abcd1234"]);
+    const bySessionId = offer([SESSION_ID]);
+    expect(leftoverOffer(background(), [byId])).toBe(byId);
+    expect(leftoverOffer(background(), [bySessionId])).toBe(bySessionId);
+    expect(leftoverOffer(live(1), [byId])).toBeUndefined();
+  });
+
+  it("finds offers whose session is no longer listed", () => {
+    const listed = offer(["abcd1234"]);
+    const gone = offer(["dead0001"]);
+    expect(unlistedOffers([background()], [listed, gone])).toEqual([gone]);
+  });
+
+  it("lists programs by name and process ID, up to the limit, then how many more", () => {
+    expect(programLines(offer(["a"], 12), 10)).toEqual([
+      "p0.exe, process 100",
+      "Unknown program, process 101",
+      "p2.exe, process 102",
+      "p3.exe, process 103",
+      "p4.exe, process 104",
+      "p5.exe, process 105",
+      "p6.exe, process 106",
+      "p7.exe, process 107",
+      "p8.exe, process 108",
+      "p9.exe, process 109",
+      "and 2 more",
+    ]);
+    // More run than the server sent.
+    expect(programLines(offer(["a"], 60), 50).at(-1)).toBe("and 10 more");
+    expect(programLines(offer(["a"], 1), 10)).toEqual(["p0.exe, process 100"]);
+  });
+
+  it("offers ending them only when actions are allowed and the session isn't protected", () => {
+    expect(canEndLeftovers(background(), open)).toBe(true);
+    expect(
+      canEndLeftovers(background(), { ...open, blocked: "Turned off." }),
+    ).toBe(false);
+    expect(
+      canEndLeftovers(background(), {
+        blocked: null,
+        protectedKeys: new Set([SESSION_ID]),
+      }),
+    ).toBe(false);
   });
 });

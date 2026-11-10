@@ -47,6 +47,7 @@ function setup(
     run,
     watch,
     confirmListing,
+    toolPid: 77,
   });
   return { executors, run, watch, confirmListing };
 }
@@ -62,7 +63,63 @@ describe("End", () => {
       action: "break",
       pid: 100,
       startedAtMs: 5000,
+      record: true,
+      toolPid: 77,
     });
+  });
+
+  const recordFields = {
+    recordStatus: "recorded",
+    record: {
+      session: { pid: 100, startMs: 4000 },
+      entries: [
+        { pid: 300, startMs: 4500, name: "ping.exe", path: "C:/x/ping.exe" },
+      ],
+    },
+  };
+
+  it("returns the programs recorded before the signal, for the leftover tracker", async () => {
+    const { executors } = setup(
+      { ok: true, reason: "sent", startMs: 4000, ...recordFields },
+      true,
+    );
+    const result = await executors.end(live());
+    expect(result.outcome).toBe("succeeded");
+    expect(result.leftovers).toEqual(recordFields.record);
+  });
+
+  it("returns a null record when recording ran out of time, and no record when it wasn't tried", async () => {
+    const timedOut = setup(
+      {
+        ok: true,
+        reason: "sent",
+        startMs: 4000,
+        recordStatus: "timeout",
+        record: null,
+      },
+      true,
+    );
+    expect((await timedOut.executors.end(live())).leftovers).toBeNull();
+    const refused = setup({ ok: false, reason: "wrong-image" }, true);
+    const result = await refused.executors.end(live());
+    expect(result.outcome).toBe("refused");
+    expect("leftovers" in result).toBe(false);
+  });
+
+  it("keeps the record with a Git Bash refusal, since the session still runs", async () => {
+    const { executors } = setup(
+      {
+        ok: false,
+        reason: "unexpected-member:9",
+        unexpectedImage: "bash",
+        startMs: 4000,
+        ...recordFields,
+      },
+      true,
+    );
+    const result = await executors.end(live());
+    expect(result.outcome).toBe("not-closed");
+    expect(result.leftovers).toEqual(recordFields.record);
   });
 
   it("succeeds when the session leaves the listing", async () => {
@@ -263,6 +320,8 @@ describe("Force end", () => {
       pid: 100,
       startedAtMs: 5000,
       expectedStartMs: 4000,
+      record: true,
+      toolPid: 77,
     });
   });
 

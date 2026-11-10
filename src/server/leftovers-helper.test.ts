@@ -352,7 +352,7 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
         expect(outcome.kind).toBe("ok");
         if (outcome.kind !== "ok") return;
         expect(parseEndLeftovers(outcome.result)).toEqual({
-          requested: 3,
+          requested: 2,
           ended: [pid],
           skipped: [{ pid: gone, reason: "not-running" }],
         });

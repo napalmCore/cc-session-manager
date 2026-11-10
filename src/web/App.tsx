@@ -8,15 +8,19 @@ import {
 import { attentionKeys, newAttentionMessage } from "../shared/announcements.js";
 import { formatDuration } from "../shared/format.js";
 import { sessionKeys } from "../shared/notifications.js";
-import type { SessionView } from "../shared/protocol.js";
+import type { LeftoverOffer, SessionView } from "../shared/protocol.js";
 import {
   actionContext,
   actionKey,
   availableActions,
+  canEndLeftovers,
   isProtectedSession,
   ACTION_LABELS,
   isRisky,
+  leftoverOffer,
+  programLines,
   sessionLabel,
+  unlistedOffers,
   type ActionContext,
   type SessionAction,
 } from "../shared/session-actions.js";
@@ -31,6 +35,7 @@ import {
 import cssClasses from "./App.module.css";
 import {
   ConfirmDialog,
+  LeftoverPanel,
   RowActions,
   type Confirming,
 } from "./SessionActions.js";
@@ -164,6 +169,8 @@ interface RowActionProps {
   pending: ReadonlyMap<string, SessionAction>;
   results: ReadonlyMap<string, ActionResultView>;
   forceOffers: ReadonlySet<string>;
+  /** Programs left running after the dashboard's own actions (FR-27). */
+  offers: readonly LeftoverOffer[];
   onAction: (
     session: SessionView,
     action: SessionAction,
@@ -189,8 +196,61 @@ function rowActions(
   return actions;
 }
 
+/** The pending action and the last result of a session, by its action key. */
+function rowState(key: string | undefined, props: RowActionProps) {
+  return {
+    pending: key === undefined ? undefined : props.pending.get(key),
+    result: key === undefined ? undefined : props.results.get(key),
+  };
+}
+
+/**
+ * A session that's no longer listed, such as a deleted one, whose programs still run. It shows
+ * only those programs and the button that ends them (0020).
+ */
+function UnlistedRow({
+  offer,
+  groupId,
+  actionProps,
+}: {
+  offer: LeftoverOffer;
+  groupId: string;
+  actionProps: RowActionProps;
+}) {
+  const session = { ...offer.session, finished: true };
+  const label = sessionLabel(session, formatTime);
+  const { pending, result } = rowState(offer.key, actionProps);
+  return (
+    <li className={styles.row} data-session-key={offer.key} tabIndex={-1}>
+      <div className={styles.summary}>
+        <span className={styles.name}>{session.name ?? "Unnamed session"}</span>
+        <span className={styles.status}>
+          {offer.deleted ? "Deleted" : "No longer listed"}
+        </span>
+      </div>
+      <LeftoverPanel
+        offer={offer}
+        label={label}
+        canEnd={canEndLeftovers(session, actionProps.context)}
+        pending={pending}
+        onEnd={() => {
+          actionProps.onAction(session, "endLeftovers", label, groupId);
+        }}
+      />
+      <RowActions
+        actions={[]}
+        label={label}
+        pending={pending}
+        result={result}
+        onAction={() => undefined}
+      />
+    </li>
+  );
+}
+
 function SessionList({
   sessions,
+  unlisted = [],
   now,
   flagged = false,
   highlighted,
@@ -198,6 +258,7 @@ function SessionList({
   actionProps,
 }: {
   sessions: SessionView[];
+  unlisted?: LeftoverOffer[];
   now: number;
   flagged?: boolean;
   highlighted: Set<string>;
@@ -206,12 +267,22 @@ function SessionList({
 }) {
   return (
     <ul className={styles.list}>
+      {unlisted.map((offer) => (
+        <UnlistedRow
+          key={`unlisted-${offer.key}`}
+          offer={offer}
+          groupId={groupId}
+          actionProps={actionProps}
+        />
+      ))}
       {sessions.map((session, index) => {
         const isHighlighted = sessionKeys(session).some((key) =>
           highlighted.has(key),
         );
         const key = actionKey(session);
         const label = sessionLabel(session, formatTime);
+        const offer = leftoverOffer(session, actionProps.offers);
+        const { pending, result } = rowState(key, actionProps);
         return (
           <li
             key={session.sessionId ?? session.id ?? index}
@@ -250,15 +321,22 @@ function SessionList({
                 stopped, deleted, or ended from here.
               </p>
             )}
+            {offer !== undefined && key !== undefined && (
+              <LeftoverPanel
+                offer={offer}
+                label={label}
+                canEnd={canEndLeftovers(session, actionProps.context)}
+                pending={pending}
+                onEnd={() => {
+                  actionProps.onAction(session, "endLeftovers", label, groupId);
+                }}
+              />
+            )}
             <RowActions
               actions={rowActions(session, actionProps, key)}
               label={label}
-              pending={
-                key === undefined ? undefined : actionProps.pending.get(key)
-              }
-              result={
-                key === undefined ? undefined : actionProps.results.get(key)
-              }
+              pending={pending}
+              result={result}
               onAction={(action) => {
                 actionProps.onAction(session, action, label, groupId);
               }}
@@ -273,6 +351,7 @@ function SessionList({
 function Group({
   title,
   sessions,
+  unlisted = [],
   now,
   flagged = false,
   highlighted,
@@ -280,20 +359,23 @@ function Group({
 }: {
   title: string;
   sessions: SessionView[];
+  unlisted?: LeftoverOffer[];
   now: number;
   flagged?: boolean;
   highlighted: Set<string>;
   actionProps: RowActionProps;
 }) {
-  if (sessions.length === 0) return null;
+  const count = sessions.length + unlisted.length;
+  if (count === 0) return null;
   const id = `group-${title.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <section aria-labelledby={id} className={styles.group}>
       <h2 id={id} className={styles.groupTitle} tabIndex={-1}>
-        {title} ({sessions.length})
+        {title} ({count})
       </h2>
       <SessionList
         sessions={sessions}
+        unlisted={unlisted}
         now={now}
         flagged={flagged}
         highlighted={highlighted}
@@ -552,11 +634,15 @@ export function App() {
   }, []);
 
   const groups = groupSessions(snapshot?.sessions ?? [], now);
+  const offers = snapshot?.leftovers ?? [];
+  // Sessions no longer listed, such as deleted ones, whose programs still run.
+  const unlisted = unlistedOffers(snapshot?.sessions ?? [], offers);
   const actionProps: RowActionProps = {
     context: actionContext(snapshot),
     pending: actions.pending,
     results: actions.results,
     forceOffers: actions.forceOffers,
+    offers,
     onAction,
   };
   // The result stays visible above the list once its row has gone, such as after Delete.
@@ -565,9 +651,23 @@ export function App() {
     lastResult !== null &&
     !(snapshot?.sessions ?? []).some(
       (session) => actionKey(session) === lastResult.key,
-    )
+    ) &&
+    !unlisted.some((offer) => offer.key === lastResult.key)
       ? lastResult
       : null;
+  // The dialog lists the programs as the latest snapshot has them, so it shows the list growing.
+  const confirmingOffer =
+    confirming?.action === "endLeftovers"
+      ? offers.find(
+          (offer) =>
+            offer.key === confirming.target.key ||
+            offer.keys.includes(confirming.target.key),
+        )
+      : undefined;
+  const dialogPrograms =
+    confirmingOffer === undefined
+      ? []
+      : programLines(confirmingOffer, confirmingOffer.programs.length);
 
   // A dialog whose action is no longer offered, such as after the session finished or became
   // protected, closes rather than offering something the server would refuse.
@@ -578,19 +678,25 @@ export function App() {
     const current = (snapshot?.sessions ?? []).find(
       (session) => actionKey(session) === key,
     );
+    const context = actionContext(snapshot);
     const offered =
-      current !== undefined &&
-      rowActions(
-        current,
-        {
-          context: actionContext(snapshot),
-          pending: new Map(),
-          results: new Map(),
-          forceOffers,
-          onAction,
-        },
-        key,
-      ).includes(action);
+      action === "endLeftovers"
+        ? (snapshot?.leftovers ?? []).some(
+            (offer) => offer.key === key || offer.keys.includes(key),
+          ) && canEndLeftovers(current ?? confirming.session, context)
+        : current !== undefined &&
+          rowActions(
+            current,
+            {
+              context,
+              pending: new Map(),
+              results: new Map(),
+              forceOffers,
+              offers: [],
+              onAction,
+            },
+            key,
+          ).includes(action);
     if (offered) return;
     announce(
       `${ACTION_LABELS[action]} is no longer available for ${confirming.label}.`,
@@ -647,7 +753,9 @@ export function App() {
         <UsageSummary sessions={snapshot.sessions} />
       )}
       {signedIn && snapshot === null && <p>Loading sessions…</p>}
-      {snapshot?.sessions.length === 0 && <p>No sessions to show.</p>}
+      {snapshot?.sessions.length === 0 && unlisted.length === 0 && (
+        <p>No sessions to show.</p>
+      )}
       <Group
         title="Needs you"
         sessions={groups.needsYou}
@@ -672,12 +780,14 @@ export function App() {
       <Group
         title="Finished"
         sessions={groups.finished}
+        unlisted={unlisted}
         now={now}
         highlighted={highlighted}
         actionProps={actionProps}
       />
       <ConfirmDialog
         confirming={confirming}
+        programs={dialogPrograms}
         onCancel={closeDialog}
         onConfirm={confirm}
       />

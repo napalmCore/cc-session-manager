@@ -5,7 +5,11 @@ import { resolve } from "node:path";
 import { toSessionView } from "../../src/server/rules.js";
 import type { ActionRequest, ActionResult } from "../../src/server/actions.js";
 import { startServer, type RunningServer } from "../../src/server/server.js";
-import type { SessionView, Snapshot } from "../../src/shared/protocol.js";
+import type {
+  LeftoverOffer,
+  SessionView,
+  Snapshot,
+} from "../../src/shared/protocol.js";
 
 const HOUR = 3_600_000;
 const LIVE_ID = "11111111-1111-4111-8111-111111111111";
@@ -481,6 +485,153 @@ test.describe("self-protection on the page (FR-22)", () => {
   });
 });
 
+const DELETED_ID = "33333333-3333-4333-8333-333333333333";
+
+/** A deleted session's leftover programs, with more than a row lists. */
+function deletedOffer(count = 12): LeftoverOffer {
+  const programs = Array.from({ length: count }, (_, index) => ({
+    pid: 5000 + index,
+    name: index === 0 ? "node.exe" : `tool${String(index)}.exe`,
+  }));
+  return {
+    key: "dead0001",
+    keys: ["dead0001", DELETED_ID],
+    deleted: true,
+    session: {
+      ...toSessionView({
+        id: "dead0001",
+        sessionId: DELETED_ID,
+        kind: "background",
+        state: "stopped",
+        cwd: "C:\\repos\\sample",
+        name: "dev server",
+      }),
+    },
+    programs,
+    count,
+  };
+}
+
+/** Leftover programs of the listed, finished "earlier" session. */
+const endedOffer = (): LeftoverOffer => ({
+  key: ENDED_ID,
+  keys: [ENDED_ID],
+  deleted: false,
+  session: sessions(Date.now())[3] as SessionView,
+  programs: [{ pid: 6001, name: "ping.exe" }],
+  count: 1,
+});
+
+test.describe("leftover programs (FR-27)", () => {
+  test("shows a deleted session at the top of Finished, with only its programs and the offer", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ leftovers: [deletedOffer()] }));
+    const finished = page.getByRole("region", { name: /Finished/ });
+    await expect(
+      finished.getByRole("heading", { name: "Finished (2)" }),
+    ).toBeVisible();
+    const first = finished.getByRole("listitem").first();
+    await expect(first).toContainText("dev server");
+    await expect(first).toContainText("Deleted");
+    await expect(first).toContainText("Programs still running");
+    await expect(first).toContainText("node.exe, process 5000");
+    await expect(first).toContainText("tool9.exe, process 5009");
+    await expect(first).not.toContainText("tool10.exe");
+    await expect(first).toContainText("and 2 more");
+    await expect(
+      first.getByRole("button", { name: "End leftover programs…" }),
+    ).toBeVisible();
+    // A deleted row isn't counted in the totals.
+    await expect(page.getByRole("region", { name: "Usage" })).toBeVisible();
+  });
+
+  test("lists every program in the dialog, says unsaved work is lost, and sends only the session", async ({
+    page,
+  }) => {
+    reply = () => ({
+      outcome: "succeeded",
+      message: "Ended 12 of 12 programs.",
+    });
+    await open(page, snapshot({ leftovers: [deletedOffer()] }));
+    await actionsFor(page, /Leftover programs of "dev server"/)
+      .getByRole("button", { name: "End leftover programs…" })
+      .click();
+    const dialog = page.getByRole("alertdialog", {
+      name: "End the programs this session left running?",
+    });
+    await expect(dialog).toContainText('"dev server" in sample');
+    await expect(dialog).toContainText("tool11.exe, process 5011");
+    await expect(dialog).toContainText("Unsaved work in them is lost");
+    await expect(dialog).toContainText("the list may grow");
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await dialog.getByRole("button", { name: "End programs" }).click();
+
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "Deleted" }),
+    ).toContainText("End leftover programs: Ended 12 of 12 programs.");
+    expect(requests).toEqual([{ action: "endLeftovers", key: "dead0001" }]);
+
+    // Once nothing runs, the row goes, and the result stays above the list.
+    server.publish(snapshot({ leftovers: [] }));
+    await expect(page.getByText("Deleted", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText(/End leftover programs, .*Ended 12 of 12/),
+    ).toBeVisible();
+  });
+
+  test("shows a listed session's leftover programs on its own row", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ leftovers: [endedOffer()] }));
+    const earlier = row(page, "earlier");
+    await expect(earlier).toContainText("Programs still running");
+    await expect(earlier).toContainText("ping.exe, process 6001");
+    await expect(
+      actionsFor(page, /Leftover programs of "earlier"/).getByRole("button", {
+        name: "End leftover programs…",
+      }),
+    ).toBeVisible();
+  });
+
+  test("closes the dialog when the programs have all exited", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ leftovers: [endedOffer()] }));
+    await actionsFor(page, /Leftover programs of "earlier"/)
+      .getByRole("button", { name: "End leftover programs…" })
+      .click();
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    server.publish(snapshot({ leftovers: [] }));
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    expect(requests).toEqual([]);
+  });
+
+  test("doesn't offer the button for a protected session, or while actions are turned off", async ({
+    page,
+  }) => {
+    await open(
+      page,
+      snapshot({ leftovers: [endedOffer()], protectedSessions: [ENDED_ID] }),
+    );
+    await expect(row(page, "earlier")).toContainText("Programs still running");
+    await expect(
+      page.getByRole("button", { name: "End leftover programs…" }),
+    ).toHaveCount(0);
+
+    server.publish(
+      snapshot({
+        leftovers: [deletedOffer()],
+        actionsBlocked: "Actions are turned off.",
+      }),
+    );
+    await expect(page.getByText("Deleted", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "End leftover programs…" }),
+    ).toHaveCount(0);
+  });
+});
+
 test.describe("actions accessibility", () => {
   const scan = async (page: Page) => {
     const { violations } = await new AxeBuilder({ page })
@@ -507,6 +658,20 @@ test.describe("actions accessibility", () => {
 
       await actionsFor(page, /"worker"/)
         .getByRole("button", { name: "Stop…" })
+        .click();
+      await expect(page.getByRole("alertdialog")).toBeVisible();
+      await scan(page);
+    });
+
+    test(`${colorScheme} theme has no automated WCAG violations with leftover programs and their dialog`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ colorScheme });
+      await open(page, snapshot({ leftovers: [deletedOffer(), endedOffer()] }));
+      await expect(page.getByText("Deleted", { exact: true })).toBeVisible();
+      await scan(page);
+      await actionsFor(page, /Leftover programs of "dev server"/)
+        .getByRole("button", { name: "End leftover programs…" })
         .click();
       await expect(page.getByRole("alertdialog")).toBeVisible();
       await scan(page);

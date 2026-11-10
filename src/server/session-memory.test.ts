@@ -48,13 +48,14 @@ describe("createSessionMemory", () => {
     const { memory, advance } = setup();
     const first: Session = { sessionId: "a", pid: 1, startedAt: 100 };
     memory.observe([first]);
-    advance(60_000);
+    advance(20_000);
     memory.observe([]);
-    const resumed: Session = { sessionId: "a", pid: 2, startedAt: 120_100 };
+    // Within 30 seconds of the first start, so only the new process ID makes it a new run.
+    const resumed: Session = { sessionId: "a", pid: 2, startedAt: 20_100 };
     memory.observe([resumed]);
 
     expect(memory.recall([toSessionView(resumed)])[0]?.firstStartedAt).toBe(
-      120_100,
+      20_100,
     );
   });
 

@@ -165,7 +165,8 @@ function New-Entry($process) {
 }
 
 function Read-Input {
-  $text = [Console]::In.ReadToEnd()
+  # A caller that writes a byte-order mark shouldn't make the input unreadable.
+  $text = [Console]::In.ReadToEnd().TrimStart([char]0xFEFF)
   if ($text.Length -gt $MaxInputChars) { throw 'input too large' }
   return ($text | ConvertFrom-Json)
 }
@@ -460,7 +461,7 @@ if ($Action -eq 'end-leftovers') {
       if ($status -eq 'ended') { $ended += $id } else { $skipped += @{ pid = $id; reason = $status } }
     }
     Write-Result @{
-      ok = $true; action = $Action; reason = 'done'; requested = $entries.Count
+      ok = $true; action = $Action; reason = 'done'; requested = $done.Count
       ended = @($ended); skipped = @($skipped)
     }
     exit 0

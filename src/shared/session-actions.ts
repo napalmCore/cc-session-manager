@@ -1,9 +1,10 @@
 import { folderName, sessionKeys } from "./notifications.js";
-import type { SessionView, Snapshot } from "./protocol.js";
+import type { LeftoverOffer, SessionView, Snapshot } from "./protocol.js";
 
 export type SessionAction =
-  "open" | "resume" | "stop" | "delete" | "end" | "forceEnd";
-export type RiskyAction = "stop" | "delete" | "end" | "forceEnd";
+  "open" | "resume" | "stop" | "delete" | "end" | "forceEnd" | "endLeftovers";
+export type RiskyAction =
+  "stop" | "delete" | "end" | "forceEnd" | "endLeftovers";
 
 /** The outcomes the server's action route returns. */
 export type ActionOutcome =
@@ -122,6 +123,7 @@ export const ACTION_LABELS: Record<SessionAction, string> = {
   delete: "Delete",
   end: "End",
   forceEnd: "Force end",
+  endLeftovers: "End leftover programs",
 };
 
 /** What a button says while its action runs. */
@@ -132,6 +134,7 @@ export const PENDING_LABELS: Record<SessionAction, string> = {
   delete: "Deleting…",
   end: "Ending…",
   forceEnd: "Force ending…",
+  endLeftovers: "Ending programs…",
 };
 
 export interface DialogText {
@@ -145,14 +148,14 @@ export const DIALOGS: Record<RiskyAction, DialogText> = {
     title: "Stop this session?",
     body: [
       "Work in progress is interrupted. The conversation is kept, so you can open it again.",
-      "Programs the session started, such as a long-running command, may keep running.",
+      "Programs the session started, such as a long-running command, may keep running. If any do, this page offers to end them.",
     ],
     confirm: "Stop session",
   },
   delete: {
     title: "Delete this session?",
     body: [
-      "The session is removed and any work it's doing stops. Programs it started, such as a long-running command, may keep running.",
+      "The session is removed and any work it's doing stops. Programs it started, such as a long-running command, may keep running. If any do, this page offers to end them.",
       "A worktree Claude created for it is removed when that's safe. If removing it could lose work, Claude Code keeps the session and the page says so.",
     ],
     confirm: "Delete session",
@@ -173,6 +176,14 @@ export const DIALOGS: Record<RiskyAction, DialogText> = {
       "Programs the session started, such as dev servers, are also ended. Its terminal stays open.",
     ],
     confirm: "Force end session",
+  },
+  endLeftovers: {
+    title: "End the programs this session left running?",
+    body: [
+      "Each program listed is ended at once, with no chance to save. Unsaved work in them is lost.",
+      "Programs started meanwhile by the session's shells that still run are ended too, so the list may grow.",
+    ],
+    confirm: "End programs",
   },
 };
 
@@ -215,3 +226,46 @@ export const UNREACHABLE: ActionReply = {
   outcome: "unknown",
   message: "Couldn't reach the local server, so the result is unknown.",
 };
+
+/** Programs a row lists before "and N more" (FR-27). */
+export const ROW_PROGRAMS = 10;
+
+/** The leftover programs offered for a listed session, if any. */
+export function leftoverOffer(
+  session: SessionView,
+  offers: readonly LeftoverOffer[],
+): LeftoverOffer | undefined {
+  const keys = sessionKeys(session);
+  return offers.find((offer) => offer.keys.some((key) => keys.includes(key)));
+}
+
+/**
+ * Offers whose session is no longer listed, such as a deleted one. Their rows are shown at the
+ * top of Finished from the offer alone (0020).
+ */
+export function unlistedOffers(
+  sessions: readonly SessionView[],
+  offers: readonly LeftoverOffer[],
+): LeftoverOffer[] {
+  const listed = new Set(sessions.flatMap(sessionKeys));
+  return offers.filter((offer) => !offer.keys.some((key) => listed.has(key)));
+}
+
+/** Each program by name and process ID, up to the limit, then "and N more". */
+export function programLines(offer: LeftoverOffer, limit: number): string[] {
+  const shown = offer.programs.slice(0, limit).map((program) => {
+    const name = program.name === "" ? "Unknown program" : program.name;
+    return `${name}, process ${String(program.pid)}`;
+  });
+  const more = Math.max(offer.count, offer.programs.length) - shown.length;
+  if (more > 0) shown.push(`and ${String(more)} more`);
+  return shown;
+}
+
+/** Whether End leftover programs is offered, matching what the server allows (FR-22). */
+export function canEndLeftovers(
+  session: SessionView,
+  context: ActionContext,
+): boolean {
+  return context.blocked === null && !isProtectedSession(session, context);
+}
