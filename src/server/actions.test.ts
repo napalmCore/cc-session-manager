@@ -4,10 +4,14 @@ import {
   createActionTracker,
   FORCE_END_WINDOW_MS,
   FRESHNESS_MS,
+  NOT_RECORDED,
   OWN_ACTION_MS,
   type ActionExecutors,
+  type ActionResult,
+  type LeftoverHooks,
   type ListingState,
 } from "./actions.js";
+import type { LeftoverRecord } from "./leftovers-helper.js";
 import { toSessionView } from "./rules.js";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
@@ -50,6 +54,8 @@ function setup(options: {
   fresh?: SessionView[];
   state?: Partial<ListingState>;
   executors?: ActionExecutors;
+  leftovers?: LeftoverHooks;
+  isProtected?: (session: SessionView) => boolean | string;
 }) {
   let now = NOW;
   const executors: ActionExecutors = options.executors ?? {
@@ -92,7 +98,10 @@ function setup(options: {
     }),
     freshListing: fresh,
     executors,
-    isProtected: () => false,
+    isProtected: options.isProtected ?? (() => false),
+    ...(options.leftovers === undefined
+      ? {}
+      : { leftovers: options.leftovers }),
     now: () => now,
   });
   return {
@@ -575,5 +584,365 @@ describe("protection and own-action markers", () => {
     });
     await tracker.handle({ action: "open", key: "abcd1234" });
     expect(tracker.ownActionSessions()).toEqual([]);
+  });
+});
+
+const RECORD: LeftoverRecord = {
+  session: { pid: 100, startMs: 5 },
+  entries: [{ pid: 300, startMs: 6, name: "ping.exe", path: "C:/x/ping.exe" }],
+};
+
+function hooks(fields: Partial<LeftoverHooks> = {}) {
+  return {
+    record: vi.fn<LeftoverHooks["record"]>(() => Promise.resolve(RECORD)),
+    hold: vi.fn<LeftoverHooks["hold"]>(),
+    find: vi.fn<LeftoverHooks["find"]>(() => undefined),
+    end: vi.fn<LeftoverHooks["end"]>(() =>
+      Promise.resolve({
+        outcome: "succeeded" as const,
+        message: "Ended 1 of 1 program.",
+      }),
+    ),
+    ...fields,
+  };
+}
+
+describe("leftover programs (FR-27)", () => {
+  it("records before Stop, after the fresh recheck, and holds the record with the result", async () => {
+    const order: string[] = [];
+    const leftovers = hooks({
+      record: vi.fn(() => {
+        order.push("record");
+        return Promise.resolve(RECORD);
+      }),
+    });
+    const running = background({ pid: 100, startedAt: 5 });
+    const { tracker, fresh } = setup({
+      listing: [running],
+      leftovers,
+      executors: {
+        stop: vi.fn(() => {
+          order.push("stop");
+          return Promise.resolve({
+            outcome: "succeeded" as const,
+            message: "Stopped.",
+          });
+        }),
+      },
+    });
+    const result = await tracker.handle({ action: "stop", key: "abcd1234" });
+    expect(fresh).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["record", "stop"]);
+    expect(result).toEqual({ outcome: "succeeded", message: "Stopped." });
+    expect(leftovers.hold).toHaveBeenCalledWith(running, "stop", RECORD, {
+      outcome: "succeeded",
+      message: "Stopped.",
+    });
+  });
+
+  it("goes ahead when recording fails, and says the programs can't be checked", async () => {
+    const leftovers = hooks({ record: vi.fn(() => Promise.resolve(null)) });
+    const { tracker } = setup({
+      listing: [background({ pid: 100, startedAt: 5 })],
+      leftovers,
+    });
+    const result = await tracker.handle({ action: "delete", key: "abcd1234" });
+    expect(result).toEqual({
+      outcome: "succeeded",
+      message: `Deleted. ${NOT_RECORDED}`,
+    });
+  });
+
+  it("treats a recording that throws as failed, and still acts", async () => {
+    const leftovers = hooks({
+      record: vi.fn(() => Promise.reject(new Error())),
+    });
+    const { tracker, executors } = setup({
+      listing: [background({ pid: 100, startedAt: 5 })],
+      leftovers,
+    });
+    const result = await tracker.handle({ action: "stop", key: "abcd1234" });
+    expect(executors.stop).toHaveBeenCalledTimes(1);
+    expect(result.message).toContain(NOT_RECORDED);
+  });
+
+  it("says nothing more for a Delete with no process to record", async () => {
+    const leftovers = hooks({
+      record: vi.fn(() => Promise.resolve(undefined)),
+    });
+    const { tracker } = setup({
+      listing: [background({ state: "stopped" })],
+      leftovers,
+    });
+    const result = await tracker.handle({ action: "delete", key: "abcd1234" });
+    expect(result).toEqual({ outcome: "succeeded", message: "Deleted." });
+    expect(leftovers.hold).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "abcd1234" }),
+      "delete",
+      undefined,
+      { outcome: "succeeded", message: "Deleted." },
+    );
+  });
+
+  it("holds End's own record, and never sends it to the page (NFR-13)", async () => {
+    const leftovers = hooks();
+    const { tracker } = setup({
+      listing: [interactive({ startedAt: 5 })],
+      leftovers,
+      executors: {
+        end: vi.fn(() =>
+          Promise.resolve({
+            outcome: "succeeded" as const,
+            message: "Ended.",
+            leftovers: RECORD,
+          }),
+        ),
+      },
+    });
+    const result = await tracker.handle({ action: "end", key: SESSION_ID });
+    expect(result).toEqual({ outcome: "succeeded", message: "Ended." });
+    expect(leftovers.record).not.toHaveBeenCalled();
+    expect(leftovers.hold).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION_ID }),
+      "end",
+      RECORD,
+      expect.objectContaining({ outcome: "succeeded" }),
+    );
+  });
+
+  it("says nothing more when an earlier record, such as End's, still covers the session", async () => {
+    const leftovers = hooks({
+      find: vi.fn(() => ({ view: interactive(), sessionGone: false })),
+    });
+    const { tracker } = setup({
+      listing: [interactive({ startedAt: 5 })],
+      leftovers,
+      executors: {
+        end: vi.fn(() =>
+          Promise.resolve({
+            outcome: "unknown" as const,
+            message: "Couldn't confirm.",
+            leftovers: null,
+          }),
+        ),
+      },
+    });
+    const result = await tracker.handle({ action: "end", key: SESSION_ID });
+    expect(result.message).toBe("Couldn't confirm.");
+  });
+
+  it("says the programs can't be checked when End's helper run times out", async () => {
+    const { tracker } = setup({
+      listing: [interactive({ startedAt: 5 })],
+      leftovers: hooks(),
+      executors: {
+        end: vi.fn(() =>
+          Promise.resolve({
+            outcome: "unknown" as const,
+            message: "Couldn't confirm.",
+            leftovers: null,
+          }),
+        ),
+      },
+    });
+    const result = await tracker.handle({ action: "end", key: SESSION_ID });
+    expect(result.message).toBe(`Couldn't confirm. ${NOT_RECORDED}`);
+  });
+
+  it("refuses when the fresh listing shows a different session under the same short ID", async () => {
+    const leftovers = hooks({
+      find: vi.fn(() => ({
+        view: background({ state: "stopped" }),
+        sessionGone: true,
+      })),
+    });
+    const { tracker } = setup({
+      listing: [],
+      fresh: [background({ state: "stopped", sessionId: OTHER_ID })],
+      leftovers,
+    });
+    const result = await tracker.handle({
+      action: "endLeftovers",
+      key: "abcd1234",
+    });
+    expect(result.outcome).toBe("refused");
+    expect(leftovers.end).not.toHaveBeenCalled();
+  });
+
+  it("holds the session's lock, so Stop waits for End leftover programs", async () => {
+    let release: () => void = () => undefined;
+    const leftovers = hooks({
+      find: vi.fn(() => ({
+        view: background({ state: "stopped" }),
+        sessionGone: true,
+      })),
+      end: vi.fn(
+        () =>
+          new Promise<ActionResult>((resolve) => {
+            release = () => {
+              resolve({ outcome: "succeeded", message: "Ended." });
+            };
+          }),
+      ),
+    });
+    const { tracker } = setup({
+      listing: [background({ state: "stopped" })],
+      leftovers,
+    });
+    const first = tracker.handle({ action: "endLeftovers", key: "abcd1234" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stop = await tracker.handle({ action: "stop", key: "abcd1234" });
+    expect(stop).toEqual({
+      outcome: "refused",
+      message: "Another action on this session is still running.",
+    });
+    release();
+    await first;
+  });
+
+  it("doesn't mention recording when the action was refused before it", async () => {
+    const leftovers = hooks();
+    const { tracker } = setup({
+      listing: [interactive({ startedAt: 5 })],
+      leftovers,
+      executors: {
+        end: vi.fn(() =>
+          Promise.resolve({
+            outcome: "refused" as const,
+            message: "Not the same session.",
+            leftovers: null,
+          }),
+        ),
+      },
+    });
+    const result = await tracker.handle({ action: "end", key: SESSION_ID });
+    expect(result).toEqual({
+      outcome: "refused",
+      message: "Not the same session.",
+    });
+  });
+
+  describe("endLeftovers", () => {
+    const gone = { view: finishedInteractive(), sessionGone: true };
+
+    it("refuses when no record is held", async () => {
+      const { tracker } = setup({ listing: [], leftovers: hooks() });
+      const result = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(result.outcome).toBe("refused");
+    });
+
+    it("ends the recorded programs of a session that's no longer listed, after a fresh listing", async () => {
+      const leftovers = hooks({ find: vi.fn(() => gone) });
+      const { tracker, fresh } = setup({ listing: [], leftovers });
+      const result = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(fresh).toHaveBeenCalledTimes(1);
+      expect(leftovers.end).toHaveBeenCalledWith(SESSION_ID);
+      expect(result).toEqual({
+        outcome: "succeeded",
+        message: "Ended 1 of 1 program.",
+      });
+    });
+
+    it("refuses while the session's own process still runs", async () => {
+      const leftovers = hooks({
+        find: vi.fn(() => ({ ...gone, sessionGone: false })),
+      });
+      const { tracker } = setup({ listing: [], leftovers });
+      const result = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(result.outcome).toBe("refused");
+      expect(leftovers.end).not.toHaveBeenCalled();
+    });
+
+    it("refuses while the listing shows the session with a process ID", async () => {
+      const leftovers = hooks({ find: vi.fn(() => gone) });
+      const { tracker } = setup({
+        listing: [interactive()],
+        leftovers,
+      });
+      const result = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(result.outcome).toBe("refused");
+      expect(leftovers.end).not.toHaveBeenCalled();
+    });
+
+    it("refuses when the fresh listing shows the session running again", async () => {
+      const leftovers = hooks({ find: vi.fn(() => gone) });
+      const { tracker } = setup({
+        listing: [],
+        fresh: [interactive()],
+        leftovers,
+      });
+      const result = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(result.outcome).toBe("refused");
+      expect(leftovers.end).not.toHaveBeenCalled();
+    });
+
+    it("refuses on a stale listing (C-9)", async () => {
+      const leftovers = hooks({ find: vi.fn(() => gone) });
+      const { tracker } = setup({
+        listing: [],
+        state: { lastPollFailed: true },
+        leftovers,
+      });
+      const result = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(result.outcome).toBe("refused");
+    });
+
+    it("refuses for a protected session (FR-22)", async () => {
+      const leftovers = hooks({ find: vi.fn(() => gone) });
+      const { tracker } = setup({
+        listing: [],
+        leftovers,
+        isProtected: () => true,
+      });
+      const result = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(result.outcome).toBe("refused");
+      expect(leftovers.end).not.toHaveBeenCalled();
+    });
+
+    it("refuses while another action runs on the session (NFR-10)", async () => {
+      let release: () => void = () => undefined;
+      const leftovers = hooks({
+        find: vi.fn(() => gone),
+        end: vi.fn(
+          () =>
+            new Promise<ActionResult>((resolve) => {
+              release = () => {
+                resolve({ outcome: "succeeded", message: "Ended." });
+              };
+            }),
+        ),
+      });
+      const { tracker } = setup({ listing: [], leftovers });
+      const first = tracker.handle({ action: "endLeftovers", key: SESSION_ID });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const second = await tracker.handle({
+        action: "endLeftovers",
+        key: SESSION_ID,
+      });
+      expect(second.outcome).toBe("refused");
+      release();
+      expect((await first).outcome).toBe("succeeded");
+    });
   });
 });

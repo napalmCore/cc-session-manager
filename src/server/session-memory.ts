@@ -1,6 +1,6 @@
 import type { Session, SessionView } from "../shared/protocol.js";
 
-/** How long a new session may go without a status, shown as "Starting" (BUG-18). */
+/** How long a new session may go without a status, shown as "starting" (BUG-18). */
 export const STARTING_MS = 10_000;
 /** Sessions not listed for this long are forgotten. */
 const FORGET_AFTER_MS = 10 * 60 * 1000;

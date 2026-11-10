@@ -1,4 +1,5 @@
 import type { SessionView } from "../shared/protocol.js";
+import type { LeftoverRecord } from "./leftovers-helper.js";
 import { PROTECTED_MESSAGE as PROTECTED } from "./protect.js";
 import { isValidSessionId } from "./transcripts.js";
 
@@ -16,6 +17,7 @@ export const ACTION_NAMES = [
   "delete",
   "end",
   "forceEnd",
+  "endLeftovers",
 ] as const;
 export type ActionName = (typeof ACTION_NAMES)[number];
 
@@ -45,6 +47,30 @@ export interface ActionResult {
   message: string;
   /** Set by End when a normal close was sent, so Force end can follow it. */
   closeRecord?: CloseRecord;
+  /**
+   * The session's programs, recorded by End or Force end before the signal: null when
+   * recording was tried and failed, absent when it wasn't tried. Never sent to the page.
+   */
+  leftovers?: LeftoverRecord | null;
+}
+
+/** Recording and ending the programs a session leaves running (FR-27). */
+export interface LeftoverHooks {
+  /**
+   * Records a session's programs before Stop or Delete: null when it failed, undefined when the
+   * session has no process to record.
+   */
+  record: (session: SessionView) => Promise<LeftoverRecord | null | undefined>;
+  hold: (
+    session: SessionView,
+    action: "stop" | "delete" | "end" | "forceEnd",
+    record: LeftoverRecord | null | undefined,
+    result: ActionResult,
+  ) => void;
+  find: (
+    key: string,
+  ) => { view: SessionView; sessionGone: boolean } | undefined;
+  end: (key: string) => Promise<ActionResult>;
 }
 
 export interface ListingState {
@@ -76,6 +102,7 @@ export interface ActionTrackerOptions {
    * True, or a refusal message, for a session that started or handed over to the tool (FR-22).
    */
   isProtected: (session: SessionView) => boolean | string;
+  leftovers?: LeftoverHooks;
   now?: () => number;
 }
 
@@ -88,6 +115,10 @@ const NEEDS_FRESH = new Set<ActionName>([
   "forceEnd",
   "resume",
 ]);
+
+/** Added to an action's result when its programs couldn't be recorded (0020). */
+export const NOT_RECORDED =
+  "Leftover programs can't be checked for this session.";
 
 const refused = (message: string): ActionResult => ({
   outcome: "refused",
@@ -124,6 +155,9 @@ function permits(action: ActionName, session: SessionView): boolean {
         session.pid !== undefined &&
         !session.finished
       );
+    case "endLeftovers":
+      // Checked against the leftover record instead, since the session may not be listed.
+      return false;
   }
 }
 
@@ -148,12 +182,76 @@ export function createActionTracker(options: ActionTrackerOptions) {
   const closeRecords = new Map<string, CloseRecord & { at: number }>();
   const ownActions = new Map<string, number>();
 
+  const isStale = (state: ListingState) =>
+    state.lastPollFailed ||
+    state.lastSuccessAt === null ||
+    now() - state.lastSuccessAt > FRESHNESS_MS;
+  const STALE = "The session list is out of date. Try again when it refreshes.";
+  const STILL_RUNNING =
+    "The session is still running, so its programs aren't leftovers yet.";
+
+  /**
+   * Ends the programs the server recorded for a session. The page names only the session, and
+   * the program list comes from the server's own record (NFR-13).
+   */
+  const endLeftovers = async (key: string): Promise<ActionResult> => {
+    const hooks = options.leftovers;
+    if (hooks === undefined)
+      return { outcome: "unavailable", message: "Not available yet." };
+    const held = hooks.find(key);
+    if (held === undefined)
+      return refused("No leftover programs are recorded for this session.");
+    const state = options.listing();
+    const listed = findSession(state.sessions, key);
+    const protection = protectedMessage(
+      options.isProtected(listed ?? held.view),
+    );
+    if (protection !== null) return refused(protection);
+    if (isStale(state)) return refused(STALE);
+    if (!held.sessionGone || listed?.pid !== undefined) {
+      return refused(STILL_RUNNING);
+    }
+
+    const lockKey = held.view.id ?? held.view.sessionId ?? key;
+    if (locks.has(lockKey))
+      return refused("Another action on this session is still running.");
+    locks.add(lockKey);
+    try {
+      let fresh: SessionView[];
+      try {
+        fresh = await options.freshListing();
+      } catch {
+        return {
+          outcome: "unknown",
+          message: "Couldn't check the session's current state.",
+        };
+      }
+      // A session still listed must be the same one, with no process (C-9).
+      const match = findSession(fresh, key);
+      if (match !== undefined) {
+        if (match.pid !== undefined) return refused(STILL_RUNNING);
+        if (
+          held.view.sessionId !== undefined &&
+          match.sessionId !== held.view.sessionId
+        ) {
+          return refused("The session has changed. Check it and try again.");
+        }
+        const again = protectedMessage(options.isProtected(match));
+        if (again !== null) return refused(again);
+      }
+      return await hooks.end(key);
+    } finally {
+      locks.delete(lockKey);
+    }
+  };
+
   const run = async (request: ActionRequest): Promise<ActionResult> => {
     const { action, key } = request;
     if (!(ACTION_NAMES as readonly string[]).includes(action))
       return refused("Unknown action.");
     if (!SHORT_ID.test(key) && !isValidSessionId(key))
       return refused("Unknown session.");
+    if (action === "endLeftovers") return endLeftovers(key);
 
     const state = options.listing();
     const session = findSession(state.sessions, key);
@@ -164,16 +262,7 @@ export function createActionTracker(options: ActionTrackerOptions) {
       const protection = protectedMessage(options.isProtected(session));
       if (protection !== null) return refused(protection);
     }
-    if (
-      NEEDS_FRESH.has(action) &&
-      (state.lastPollFailed ||
-        state.lastSuccessAt === null ||
-        now() - state.lastSuccessAt > FRESHNESS_MS)
-    ) {
-      return refused(
-        "The session list is out of date. Try again when it refreshes.",
-      );
-    }
+    if (NEEDS_FRESH.has(action) && isStale(state)) return refused(STALE);
 
     // A background row's short id is stable, while its sessionId can appear between polls.
     const lockKey = session.id ?? session.sessionId ?? key;
@@ -230,20 +319,35 @@ export function createActionTracker(options: ActionTrackerOptions) {
           return { outcome: "unavailable", message: "Not available yet." };
         closeRecords.delete(sessionKey);
         ownActions.set(sessionKey, now());
+        let forced: ActionResult;
         try {
-          return await executor(current, {
+          forced = await executor(current, {
             pid: record.pid,
             processStartMs: record.processStartMs,
           });
         } finally {
           ownActions.set(sessionKey, now());
         }
+        return keepLeftovers(current, action, forced.leftovers, forced);
       }
 
       const executor = options.executors[action];
       if (executor === undefined)
         return { outcome: "unavailable", message: "Not available yet." };
       if (DESTRUCTIVE.has(action)) ownActions.set(sessionKey, now());
+      // Stop and Delete record the session's programs here, after the checks above and before
+      // the command. End records them in its own helper run, before the signal (FR-27).
+      let recorded: LeftoverRecord | null | undefined;
+      if (
+        (action === "stop" || action === "delete") &&
+        options.leftovers !== undefined
+      ) {
+        try {
+          recorded = await options.leftovers.record(current);
+        } catch {
+          recorded = null;
+        }
+      }
       let result: ActionResult;
       try {
         result = await executor(current);
@@ -253,16 +357,52 @@ export function createActionTracker(options: ActionTrackerOptions) {
       if (action === "end" && result.closeRecord !== undefined) {
         closeRecords.set(sessionKey, { ...result.closeRecord, at: now() });
       }
+      if (action === "stop" || action === "delete") {
+        return keepLeftovers(current, action, recorded, result);
+      }
+      if (action === "end") {
+        return keepLeftovers(current, action, result.leftovers, result);
+      }
       return result;
     } finally {
       locks.delete(lockKey);
     }
   };
 
+  /** Hands the record to the leftover tracker, and says so when it couldn't be taken. */
+  function keepLeftovers(
+    session: SessionView,
+    action: "stop" | "delete" | "end" | "forceEnd",
+    record: LeftoverRecord | null | undefined,
+    result: ActionResult,
+  ): ActionResult {
+    const hooks = options.leftovers;
+    if (hooks === undefined) return result;
+    // An earlier record of the same session, such as End's before Force end, still covers it.
+    const covered =
+      record === null &&
+      [session.sessionId, session.id].some(
+        (key) => key !== undefined && hooks.find(key) !== undefined,
+      );
+    try {
+      hooks.hold(session, action, record, result);
+    } catch {
+      // Tracking leftovers never changes the action's own result.
+    }
+    const actedOn =
+      result.outcome !== "refused" && result.outcome !== "unavailable";
+    return record === null && actedOn && !covered
+      ? { ...result, message: `${result.message} ${NOT_RECORDED}` }
+      : result;
+  }
+
   return {
     async handle(request: ActionRequest): Promise<ActionResult> {
       try {
-        return await run(request);
+        // The record stays on the server (NFR-13).
+        const result = await run(request);
+        delete result.leftovers;
+        return result;
       } catch {
         return {
           outcome: "unknown",

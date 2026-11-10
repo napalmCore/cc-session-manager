@@ -11,9 +11,12 @@ import {
   DIALOGS,
   isRisky,
   PENDING_LABELS,
+  programLines,
+  ROW_PROGRAMS,
   type RiskyAction,
   type SessionAction,
 } from "../shared/session-actions.js";
+import type { LeftoverOffer } from "../shared/protocol.js";
 import cssClasses from "./App.module.css";
 import type { ActionResultView } from "./useSessionActions.js";
 
@@ -25,6 +28,8 @@ const styles = cssClasses as Record<
   | "dialogButtons"
   | "dialogTarget"
   | "dialogTitle"
+  | "leftovers"
+  | "leftoversTitle"
   | "modal"
   | "overlay"
   | "result",
@@ -86,6 +91,57 @@ export function RowActions({
   );
 }
 
+/**
+ * The programs a session left running, and the button that ends them (FR-27). The programs come
+ * from the server's own record; the button names only the session.
+ */
+export function LeftoverPanel({
+  offer,
+  label,
+  canEnd,
+  pending,
+  onEnd,
+}: {
+  offer: LeftoverOffer;
+  label: string;
+  canEnd: boolean;
+  pending: SessionAction | undefined;
+  onEnd: () => void;
+}) {
+  const titleId = useId();
+  return (
+    <div className={styles.leftovers}>
+      <p id={titleId} className={styles.leftoversTitle}>
+        Programs still running
+      </p>
+      <ul aria-labelledby={titleId}>
+        {programLines(offer, ROW_PROGRAMS).map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      {canEnd && (
+        <div
+          role="group"
+          aria-label={`Leftover programs of ${label}`}
+          className={styles.actions}
+        >
+          <Button
+            data-action="endLeftovers"
+            className={`${styles.button} ${styles.dangerButton}`}
+            isPending={pending === "endLeftovers"}
+            isDisabled={pending !== undefined && pending !== "endLeftovers"}
+            onPress={onEnd}
+          >
+            {pending === "endLeftovers"
+              ? PENDING_LABELS.endLeftovers
+              : `${ACTION_LABELS.endLeftovers}…`}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface Confirming {
   action: RiskyAction;
   label: string;
@@ -97,10 +153,13 @@ export interface Confirming {
  */
 export function ConfirmDialog({
   confirming,
+  programs = [],
   onCancel,
   onConfirm,
 }: {
   confirming: Confirming | null;
+  /** For End leftover programs: the programs, as the latest snapshot lists them. */
+  programs?: string[];
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -127,6 +186,13 @@ export function ConfirmDialog({
               </Heading>
               <div id={describedBy}>
                 <p className={styles.dialogTarget}>{confirming.label}</p>
+                {programs.length > 0 && (
+                  <ul aria-label="Programs to end">
+                    {programs.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                )}
                 {text.body.map((paragraph) => (
                   <p key={paragraph}>{paragraph}</p>
                 ))}
