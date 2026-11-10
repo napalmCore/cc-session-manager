@@ -644,6 +644,41 @@ test.describe("screen reader announcements", () => {
     expect(await announcements(page)).toEqual([]);
   });
 
+  test("announces two updates 50 ms apart (BUG-16)", async ({ page }) => {
+    await open(page, snapshot({ sessions: [] }));
+    await recordAnnouncements(page);
+
+    server.publish(snapshot({ sessions: [waiting("a", "first-one")] }));
+    await page.waitForTimeout(50);
+    server.publish(
+      snapshot({
+        sessions: [waiting("a", "first-one"), waiting("b", "second-one")],
+      }),
+    );
+
+    await expect
+      .poll(async () => (await announcements(page)).join(" "), {
+        timeout: 5000,
+      })
+      .toMatch(/first-one needs you.*second-one needs you/);
+  });
+
+  test("keeps an announcement for a second before the next replaces it (BUG-16)", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ sessions: [] }));
+    server.publish(snapshot({ sessions: [waiting("a", "first-one")] }));
+    await expect(announcement(page, "first-one needs you")).toBeAttached();
+    server.publish(
+      snapshot({
+        sessions: [waiting("a", "first-one"), waiting("b", "second-one")],
+      }),
+    );
+    await page.waitForTimeout(600);
+    await expect(announcement(page, "first-one needs you")).toBeAttached();
+    await expect(announcement(page, "second-one needs you")).toBeAttached();
+  });
+
   test("announces a second session with identical text", async ({ page }) => {
     await open(page, snapshot({ sessions: [] }));
     await recordAnnouncements(page);
@@ -744,6 +779,193 @@ test.describe("banners", () => {
       "Could not read sessions.",
     );
     await expect(page.getByText("running", { exact: true })).toBeVisible();
+  });
+});
+
+test.describe("data freshness (BUG-9)", () => {
+  const notice = (page: Page) =>
+    page.getByText(/^Last updated \d+ seconds ago/);
+
+  test("says when the last successful poll is over 10 seconds old, and goes when one succeeds", async ({
+    page,
+  }) => {
+    await open(page);
+    server.heartbeat(Date.now() - 1000);
+    await page.waitForTimeout(1500);
+    await expect(notice(page)).toHaveCount(0);
+
+    server.heartbeat(Date.now() - 12_000);
+    await expect(notice(page)).toContainText(
+      "Claude Code is slow to respond, so actions on sessions are paused.",
+    );
+
+    server.heartbeat(Date.now());
+    await expect(notice(page)).toHaveCount(0);
+  });
+
+  test("never shows on a quiet dashboard that keeps polling", async ({
+    page,
+  }) => {
+    await open(page);
+    for (let i = 0; i < 5; i += 1) {
+      server.heartbeat(Date.now());
+      await page.waitForTimeout(3000);
+    }
+    await expect(notice(page)).toHaveCount(0);
+  });
+
+  test("appears without a heartbeat as time passes", async ({ page }) => {
+    await open(page);
+    server.heartbeat(Date.now() - 9000);
+    await expect(notice(page)).toHaveCount(0);
+    await expect(notice(page)).toBeVisible({ timeout: 4000 });
+  });
+});
+
+test.describe("before the first successful poll (BUG-17)", () => {
+  test("says sessions can't be read yet, not that there are none", async ({
+    page,
+  }) => {
+    await open(
+      page,
+      snapshot({
+        sessions: [],
+        error:
+          "Can't read sessions yet: Claude Code didn't return its session list. Trying again every few seconds.",
+        notLoadedYet: true,
+      }),
+    );
+    await expect(page.getByRole("alert")).toContainText(
+      "Can't read sessions yet",
+    );
+    await expect(page.getByText("No sessions to show.")).toHaveCount(0);
+    await expect(page.getByText(/last known data/)).toHaveCount(0);
+  });
+});
+
+test.describe("screen reader text (BUG-10)", () => {
+  test("separates a row's name, status, and reason with punctuation", async ({
+    page,
+  }) => {
+    await open(page);
+    const summary = page
+      .getByRole("listitem")
+      .filter({ hasText: "prompting" })
+      .first()
+      .locator("div")
+      .first();
+    // The "!" marker is hidden from screen readers.
+    await expect(summary.locator('[aria-hidden="true"]')).toHaveText("! ");
+    const text = (await summary.textContent())?.replace(/^! /, "");
+    expect(text).toMatch(/^prompting\. Needs you: .+\.$/);
+    const running = page
+      .getByRole("listitem")
+      .filter({ has: page.getByText("running", { exact: true }) })
+      .first()
+      .locator("div")
+      .first();
+    expect(await running.textContent()).toMatch(/^running\. .+\.$/);
+  });
+
+  test("hides the decorative triangles and dots", async ({ page }) => {
+    await open(page);
+    const content = (selector: string) =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((node) => getComputedStyle(node, "::before").content);
+    expect(await content('[data-expandable="true"]')).toMatch(/\/\s*""$/);
+    const dot = await page.evaluate(() => {
+      const item = document.querySelector("ul ul li + li");
+      return item === null ? "" : getComputedStyle(item, "::before").content;
+    });
+    expect(dot).toMatch(/\/\s*""$/);
+  });
+});
+
+test.describe("focus when an expandable section goes (BUG-11)", () => {
+  test("moves to the page heading when the stale group disappears", async ({
+    page,
+  }) => {
+    await open(page);
+    const stale = page.getByRole("button", { name: /stale \(1\)/i });
+    await stale.focus();
+    await expect(stale).toBeFocused();
+
+    server.publish(
+      snapshot({
+        sessions: sample(Date.now()).filter(
+          (session) => session.name !== "abandoned",
+        ),
+      }),
+    );
+    await expect(stale).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+  });
+
+  test("moves to the page heading after the stale button is clicked twice", async ({
+    page,
+  }) => {
+    await open(page);
+    const stale = page.getByRole("button", { name: /stale \(1\)/i });
+    await stale.click();
+    await stale.click();
+    await expect(stale).toBeFocused();
+    server.publish(
+      snapshot({
+        sessions: sample(Date.now()).filter(
+          (session) => session.name !== "abandoned",
+        ),
+      }),
+    );
+    await expect(stale).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+  });
+
+  test("moves to the page heading when the warnings go", async ({ page }) => {
+    await open(page, snapshot({ warnings: [WARNING] }));
+    const button = page.getByRole("button", { name: /may be missing/i });
+    await button.focus();
+    server.publish(snapshot({ warnings: [] }));
+    await expect(button).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+  });
+
+  test("leaves focus alone when it has moved to another element", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ warnings: [WARNING] }));
+    await page.getByRole("button", { name: /may be missing/i }).focus();
+    const stale = page.getByRole("button", { name: /stale \(1\)/i });
+    await stale.focus();
+    await expect(stale).toBeFocused();
+    server.publish(snapshot({ warnings: [] }));
+    await expect(
+      page.getByRole("button", { name: /may be missing/i }),
+    ).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await expect(stale).toBeFocused();
+  });
+
+  test("leaves focus alone after the user clicks elsewhere on the page", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ warnings: [WARNING] }));
+    await page.getByRole("button", { name: /may be missing/i }).focus();
+    // Blank space below the content: focus falls to the page body.
+    await page.mouse.click(5, 5);
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement === document.body))
+      .toBe(true);
+    server.publish(snapshot({ warnings: [] }));
+    await expect(
+      page.getByRole("button", { name: /may be missing/i }),
+    ).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await expect(page.getByRole("heading", { level: 1 })).not.toBeFocused();
+    expect(
+      await page.evaluate(() => document.activeElement === document.body),
+    ).toBe(true);
   });
 });
 

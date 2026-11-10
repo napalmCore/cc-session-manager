@@ -56,6 +56,43 @@ describe("createPoller", () => {
     poller.stop();
   });
 
+  it("says sessions can't be read yet before any poll succeeds, not that it shows old data (BUG-17)", async () => {
+    const snapshots: Snapshot[] = [];
+    let fail = true;
+    const poller = createPoller({
+      run: () =>
+        fail ? Promise.reject(new Error("x")) : Promise.resolve("[]"),
+      intervalMs: 10,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(snapshots.at(-1)?.error).toMatch(/^Can't read sessions yet/);
+    expect(snapshots.at(-1)?.notLoadedYet).toBe(true);
+    fail = false;
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshots.at(-1)?.notLoadedYet).toBeUndefined();
+    fail = true;
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshots.at(-1)?.error).toMatch(/last known data/);
+    poller.stop();
+  });
+
+  it("reports every poll, changed or not, with its last success (BUG-9)", async () => {
+    const polls: (number | null)[] = [];
+    const poller = createPoller({
+      run: () => Promise.resolve("[]"),
+      intervalMs: 10,
+      onSnapshot: vi.fn(),
+      onPoll: (state) => polls.push(state.lastSuccessAt),
+    });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(25);
+    poller.stop();
+    expect(polls.length).toBeGreaterThanOrEqual(3);
+    expect(polls.every((at) => at !== null)).toBe(true);
+  });
+
   it("counts failed polls in a row, and resets the count on success", async () => {
     const snapshots: Snapshot[] = [];
     const run = vi

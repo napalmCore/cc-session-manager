@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
-import type { Snapshot, SnapshotMessage } from "../shared/protocol.js";
+import type { ServerMessage, Snapshot } from "../shared/protocol.js";
 import { readPageKey } from "./pageKey.js";
 
 const RECONNECT_MS = 2000;
 
+/** When the latest successful poll started, on this page's clock (BUG-9). */
+export interface Freshness {
+  lastSuccessAt: number | null;
+}
+
 export function useSnapshot() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(true);
+  const [freshness, setFreshness] = useState<Freshness | null>(null);
   const [pageKey] = useState(readPageKey);
 
   useEffect(() => {
@@ -25,12 +31,20 @@ export function useSnapshot() {
         setConnected(true);
       };
       socket.onmessage = (event: MessageEvent<string>) => {
-        const message = JSON.parse(event.data) as SnapshotMessage;
+        const message = JSON.parse(event.data) as ServerMessage;
+        if (message.type === "heartbeat") {
+          const age = message.lastSuccessAgeMs;
+          setFreshness({
+            lastSuccessAt: age === null ? null : Date.now() - age,
+          });
+          return;
+        }
         setSnapshot(message.snapshot);
       };
       socket.onclose = () => {
         if (disposed) return;
         setConnected(false);
+        setFreshness(null);
         retry = window.setTimeout(connect, RECONNECT_MS);
       };
     };
@@ -43,5 +57,5 @@ export function useSnapshot() {
     };
   }, [pageKey]);
 
-  return { snapshot, connected, signedIn: pageKey !== null };
+  return { snapshot, connected, freshness, signedIn: pageKey !== null };
 }

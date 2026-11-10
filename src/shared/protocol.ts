@@ -103,9 +103,23 @@ export interface Snapshot {
   missingFolders?: string[];
   /** Programs still running after the dashboard's own Stop, Delete, End, or Force end. */
   leftovers?: LeftoverOffer[];
+  /** True until a poll has succeeded, so the page doesn't call an empty list "no sessions". */
+  notLoadedYet?: boolean;
 }
 
 export interface SnapshotMessage {
   type: "snapshot";
   snapshot: Snapshot;
 }
+
+/**
+ * Sent after every poll, and on connecting, so the page can tell when the data is getting old
+ * even though nothing changed (BUG-9). It never changes the snapshot or its sequence number.
+ */
+export interface HeartbeatMessage {
+  type: "heartbeat";
+  /** How long ago the latest successful poll started, or null if none has succeeded. */
+  lastSuccessAgeMs: number | null;
+}
+
+export type ServerMessage = SnapshotMessage | HeartbeatMessage;

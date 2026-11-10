@@ -108,7 +108,9 @@
 }
 
 .details li + li::before {
+  /* Decorative, so screen readers skip it (BUG-10). */
   content: "· ";
+  content: "· " / "";
 }
 
 .banner {
@@ -145,10 +147,12 @@
 
 .disclosureButton::before {
   content: "▸ ";
+  content: "▸ " / "";
 }
 
 .disclosureButton[aria-expanded="true"]::before {
   content: "▾ ";
+  content: "▾ " / "";
 }
 
 .disclosureButton[data-focus-visible] {

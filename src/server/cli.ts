@@ -243,6 +243,9 @@ const poller = createPoller({
     return tracked;
   },
   enrich: enrichWithFinished(tracker, createTranscriptReader()),
+  onPoll: (state) => {
+    serverRef.current?.heartbeat(state.lastSuccessAt);
+  },
 });
 const openExecutors = createOpenExecutors({
   programs,

@@ -46,10 +46,12 @@ import {
   type FocusTarget,
   useSessionActions,
 } from "./useSessionActions.js";
-import { useSnapshot } from "./useSnapshot.js";
+import { createAnnouncer } from "./announcer.js";
+import { type Freshness, useSnapshot } from "./useSnapshot.js";
 
 const CLOCK_MS = 30_000;
-const ANNOUNCE_DELAY_MS = 100;
+/** Data older than this gets a line saying so (BUG-9, 0020). */
+export const STALE_DATA_MS = 10_000;
 const HIGHLIGHT_MS = 15_000;
 const styles = cssClasses as Record<
   | "banner"
@@ -224,9 +226,11 @@ function UnlistedRow({
     <li className={styles.row} data-session-key={offer.key} tabIndex={-1}>
       <div className={styles.summary}>
         <span className={styles.name}>{session.name ?? "Unnamed session"}</span>
+        <span className={styles.visuallyHidden}>. </span>
         <span className={styles.status}>
           {offer.deleted ? "Deleted" : "No longer listed"}
         </span>
+        <span className={styles.visuallyHidden}>.</span>
       </div>
       <LeftoverPanel
         offer={offer}
@@ -300,7 +304,12 @@ function SessionList({
                 )}
                 {session.name ?? "Unnamed session"}
               </span>
+              {/* Punctuation for screen readers, outside the visible text (BUG-10). */}
+              <span className={styles.visuallyHidden}>
+                {flagged ? ". Needs you: " : ". "}
+              </span>
               <span className={styles.status}>{statusText(session)}</span>
+              <span className={styles.visuallyHidden}>.</span>
             </div>
             <ul className={styles.details}>
               {details(session, now).map((item) => (
@@ -404,6 +413,7 @@ function StaleGroup({
         <Button
           id="group-stale"
           slot="trigger"
+          data-expandable="true"
           className={styles.disclosureButton}
         >
           Stale ({sessions.length}): blocked, inactive for over 7 days
@@ -508,7 +518,11 @@ function Banners({
         {warnings.length > 0 && (
           <Disclosure className={styles.banner}>
             <Heading level={2} className={styles.bannerTitle}>
-              <Button slot="trigger" className={styles.disclosureButton}>
+              <Button
+                slot="trigger"
+                data-expandable="true"
+                className={styles.disclosureButton}
+              >
                 Some details may be missing or inaccurate ({warnings.length})
               </Button>
             </Heading>
@@ -526,8 +540,87 @@ function Banners({
   );
 }
 
+/**
+ * When a focused expandable section's button disappears, focus moves to its group's heading,
+ * or to the page heading if the group has gone, instead of falling to the page body (BUG-11).
+ */
+function useFocusGuard(snapshot: unknown) {
+  const last = useRef<{ element: Element; headingId: string | null } | null>(
+    null,
+  );
+  useEffect(() => {
+    const onFocus = (event: FocusEvent) => {
+      if (!(event.target instanceof Element)) return;
+      if (event.target.closest("[data-expandable]") === null) {
+        last.current = null;
+        return;
+      }
+      const section = event.target.closest("section[aria-labelledby]");
+      last.current = {
+        element: event.target,
+        headingId: section?.getAttribute("aria-labelledby") ?? null,
+      };
+    };
+    // A click anywhere means the user has moved on, even if focus lands on the page body.
+    const forget = (event: PointerEvent) => {
+      // A click on the remembered button itself keeps it remembered.
+      const remembered = last.current?.element;
+      if (event.target instanceof Node && remembered?.contains(event.target)) {
+        return;
+      }
+      last.current = null;
+    };
+    document.addEventListener("focusin", onFocus, true);
+    document.addEventListener("pointerdown", forget, true);
+    return () => {
+      document.removeEventListener("focusin", onFocus, true);
+      document.removeEventListener("pointerdown", forget, true);
+    };
+  }, []);
+  useEffect(() => {
+    const focused = last.current;
+    if (focused === null || focused.element.isConnected) return;
+    last.current = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const heading =
+      (focused.headingId === null
+        ? null
+        : document.getElementById(focused.headingId)) ??
+      document.querySelector<HTMLElement>("h1");
+    heading?.focus();
+  }, [snapshot]);
+}
+
+/**
+ * Says when the data is getting old, as when Claude Code is slow to answer, since snapshots are
+ * only sent when something changes (BUG-9).
+ */
+function StaleNotice({ freshness }: { freshness: Freshness | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+  const at = freshness?.lastSuccessAt ?? null;
+  if (at === null) return null;
+  const age = now - at;
+  if (age <= STALE_DATA_MS) return null;
+  const seconds = Math.ceil(age / 1000);
+  return (
+    <p className={styles.banner} data-stale-notice>
+      Last updated {seconds} seconds ago. Claude Code is slow to respond, so
+      actions on sessions are paused.
+    </p>
+  );
+}
+
 export function App() {
-  const { snapshot, connected, signedIn } = useSnapshot();
+  const { snapshot, connected, freshness, signedIn } = useSnapshot();
   const [now, setNow] = useState(() => Date.now());
   const [highlighted, setHighlighted] = useState<Set<string>>(() => new Set());
   const onNotificationClick = useCallback((keys: string[]) => {
@@ -539,29 +632,16 @@ export function App() {
   );
 
   const [announcement, setAnnouncement] = useState("");
-  const announceTimer = useRef<number | undefined>(undefined);
-  const queued = useRef<string[]>([]);
-  const announce = useCallback((message: string) => {
-    // An empty message only clears the region, and never cancels one that's about to be read.
-    if (message === "") {
-      if (queued.current.length === 0) setAnnouncement("");
-      return;
-    }
-    // Clearing first means identical text still counts as a change to a screen reader.
-    setAnnouncement("");
-    queued.current.push(message);
-    window.clearTimeout(announceTimer.current);
-    announceTimer.current = window.setTimeout(() => {
-      setAnnouncement(queued.current.join(" "));
-      queued.current = [];
-    }, ANNOUNCE_DELAY_MS);
-  }, []);
+  // Announcements wait their turn, each read for at least a second (BUG-16).
+  const [announcer] = useState(() => createAnnouncer(setAnnouncement));
+  const announce = announcer.announce;
   useEffect(
     () => () => {
-      window.clearTimeout(announceTimer.current);
+      announcer.dispose();
     },
-    [],
+    [announcer],
   );
+  useFocusGuard(snapshot);
 
   const actions = useSessionActions(announce);
   const { run, lastTarget } = actions;
@@ -728,7 +808,9 @@ export function App() {
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>Claude Code sessions</h1>
+      <h1 className={styles.title} tabIndex={-1}>
+        Claude Code sessions
+      </h1>
       <div role="status" data-announcer className={styles.visuallyHidden}>
         {announcement}
       </div>
@@ -752,10 +834,11 @@ export function App() {
       {snapshot !== null && snapshot.sessions.length > 0 && (
         <UsageSummary sessions={snapshot.sessions} />
       )}
+      {connected && <StaleNotice freshness={freshness} />}
       {signedIn && snapshot === null && <p>Loading sessions…</p>}
-      {snapshot?.sessions.length === 0 && unlisted.length === 0 && (
-        <p>No sessions to show.</p>
-      )}
+      {snapshot?.sessions.length === 0 &&
+        unlisted.length === 0 &&
+        snapshot.notLoadedYet !== true && <p>No sessions to show.</p>}
       <Group
         title="Needs you"
         sessions={groups.needsYou}

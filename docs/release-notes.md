@@ -9,6 +9,9 @@ Notes gathered for 0.2.0 while it's built.
 - A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
 - Active sessions stay in order of start time, newest first, instead of moving as their activity changes (BUG-6). A new session with no status yet shows "starting" (BUG-18).
 - `claude -p` runs are still listed as interactive sessions, as Claude Code reports them (BUG-23).
+- When Claude Code is slow to answer and the data is over 10 seconds old, the page says so, and that actions on sessions are paused (BUG-9).
+- Before the first successful read of the session list, the page says it can't read sessions yet, instead of "No sessions to show" (BUG-17).
+- Screen readers no longer read the decorative triangles and dots, and each row reads as its name, then its status or reason, with pauses between (BUG-10). Announcements are queued, so one arriving straight after another isn't lost (BUG-16). When a focused expandable section disappears, focus moves to a heading instead of the page body (BUG-11).
 - After the dashboard stops, deletes, or ends a session, programs it started that keep running are listed on its row, by name and process ID, with an "End leftover programs" button. A deleted session's row stays at the top of Finished, marked Deleted, until none of its programs run. The dialog lists the programs and says unsaved work in them is lost (FR-27).
 - Leftover programs are only found for sessions stopped, deleted, or ended from the dashboard while it runs. Programs started outside the session's process tree and the consoles of its programs, in the second between recording them and the action, or later by a program whose shell has gone, aren't found. The list is kept in memory, so it's gone after a restart.
 
