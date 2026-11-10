@@ -796,7 +796,7 @@ test.describe("data freshness (BUG-9)", () => {
 
     server.heartbeat(Date.now() - 12_000);
     await expect(notice(page)).toContainText(
-      "Claude Code is slow to respond, so Stop, Delete, End, and Resume are paused.",
+      "Claude Code is slow to respond, so actions on sessions are paused.",
     );
 
     server.heartbeat(Date.now());
@@ -892,6 +892,25 @@ test.describe("focus when an expandable section goes (BUG-11)", () => {
     await stale.focus();
     await expect(stale).toBeFocused();
 
+    server.publish(
+      snapshot({
+        sessions: sample(Date.now()).filter(
+          (session) => session.name !== "abandoned",
+        ),
+      }),
+    );
+    await expect(stale).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+  });
+
+  test("moves to the page heading after the stale button is clicked twice", async ({
+    page,
+  }) => {
+    await open(page);
+    const stale = page.getByRole("button", { name: /stale \(1\)/i });
+    await stale.click();
+    await stale.click();
+    await expect(stale).toBeFocused();
     server.publish(
       snapshot({
         sessions: sample(Date.now()).filter(

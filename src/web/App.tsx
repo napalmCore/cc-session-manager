@@ -562,7 +562,12 @@ function useFocusGuard(snapshot: unknown) {
       };
     };
     // A click anywhere means the user has moved on, even if focus lands on the page body.
-    const forget = () => {
+    const forget = (event: PointerEvent) => {
+      // A click on the remembered button itself keeps it remembered.
+      const remembered = last.current?.element;
+      if (event.target instanceof Node && remembered?.contains(event.target)) {
+        return;
+      }
       last.current = null;
     };
     document.addEventListener("focusin", onFocus, true);
@@ -609,7 +614,7 @@ function StaleNotice({ freshness }: { freshness: Freshness | null }) {
   return (
     <p className={styles.banner} data-stale-notice>
       Last updated {seconds} seconds ago. Claude Code is slow to respond, so
-      Stop, Delete, End, and Resume are paused.
+      actions on sessions are paused.
     </p>
   );
 }
