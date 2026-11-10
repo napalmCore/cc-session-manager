@@ -22,7 +22,7 @@ pnpm build
 pnpm start
 ```
 
-The tool starts a server on `127.0.0.1` and opens the dashboard in your browser with a one-time sign-in link. Press Ctrl+C in its terminal to stop it. Starting it again while it runs opens the running one instead.
+The tool starts a server on `127.0.0.1` and opens the dashboard in your browser with a one-time sign-in link. If no browser opens, it prints the link instead, which works once, for 2 minutes. Press Ctrl+C in its terminal to stop it. Starting it again while it runs opens the running one instead.
 
 To use Stop, Delete, and End on every session, start it from a normal terminal, not from inside a Claude Code session. A session that starts the dashboard is protected from those actions.
 
