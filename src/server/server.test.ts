@@ -3,7 +3,7 @@ import net from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { toSessionView } from "./rules.js";
-import { startServer, type RunningServer } from "./server.js";
+import { PRINTED_LINK_MS, startServer, type RunningServer } from "./server.js";
 
 let server: RunningServer;
 let pageKey = "";
@@ -137,6 +137,44 @@ describe("login", () => {
   it("accepts the token only once", async () => {
     await login();
     expect((await request(loginPath())).status).toBe(403);
+  });
+
+  describe("a printed link (FR-29, BUG-8)", () => {
+    let clock = 0;
+    const restart = async () => {
+      await server.close();
+      clock = 1_000;
+      server = await startServer({
+        preferredPort: 0,
+        monotonic: () => clock,
+        // The wall clock jumping back doesn't extend the link.
+        now: () => 0,
+      });
+    };
+
+    it("works once within 2 minutes of being printed", async () => {
+      await restart();
+      server.limitLoginLink(PRINTED_LINK_MS);
+      clock += PRINTED_LINK_MS - 1;
+      expect((await request(loginPath())).status).toBe(303);
+      expect((await request(loginPath())).status).toBe(403);
+    });
+
+    it("is refused 2 minutes after being printed", async () => {
+      await restart();
+      server.limitLoginLink(PRINTED_LINK_MS);
+      clock += PRINTED_LINK_MS;
+      expect((await request(loginPath())).status).toBe(403);
+      // And stays refused, even if the clock were to move back.
+      clock = 0;
+      expect((await request(loginPath())).status).toBe(403);
+    });
+
+    it("doesn't expire a link opened in the browser", async () => {
+      await restart();
+      clock += 60 * 60_000;
+      expect((await request(loginPath())).status).toBe(303);
+    });
   });
 
   it("uses a different token on each run", async () => {

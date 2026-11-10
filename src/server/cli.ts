@@ -43,7 +43,7 @@ import {
 } from "./protect.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
-import { startServer } from "./server.js";
+import { PRINTED_LINK_MS, startServer } from "./server.js";
 import { createFileStore, dataDirectory } from "./store.js";
 import type { Snapshot } from "../shared/protocol.js";
 import { createSessionTracker, enrichWithFinished } from "./tracker.js";
@@ -59,9 +59,14 @@ function browserCommand(url: string): [string, string[]] {
 /**
  * Starts the browser detached, because Windows ends a process's attached children, and what
  * they start, when it exits. It settles once the command has finished, so a start that exits
- * straight after still reports a failure.
+ * straight after still reports a failure. If no browser opens, the link is printed with how
+ * long it works, after `beforePrint` has set that limit (FR-29).
  */
-function openBrowser(url: string): Promise<void> {
+function openBrowser(
+  url: string,
+  lifetime: string,
+  beforePrint: () => void = () => undefined,
+): Promise<void> {
   const [command, args] = browserCommand(url);
   return new Promise((resolve) => {
     let settled = false;
@@ -69,9 +74,9 @@ function openBrowser(url: string): Promise<void> {
       if (settled) return;
       settled = true;
       if (failed) {
-        console.log(
-          `Could not open a browser. Open this one-time link: ${url}`,
-        );
+        beforePrint();
+        console.log(`Could not open a browser. Open this link: ${url}`);
+        console.log(lifetime);
       }
       resolve();
     };
@@ -124,7 +129,10 @@ const handOver = async (): Promise<boolean> => {
       console.log(
         `cc-session-manager is already running at http://127.0.0.1:${String(existing.port)}`,
       );
-      await openBrowser(link);
+      await openBrowser(
+        link,
+        "This link works once, for 60 seconds. Run cc-session-manager again for a new one.",
+      );
       return true;
     }
     if (!processAlive(existing.pid)) return false;
@@ -340,7 +348,13 @@ console.log(
 );
 console.log("Press Ctrl+C to stop.");
 
-void openBrowser(server.loginUrl);
+void openBrowser(
+  server.loginUrl,
+  "This link works once, for 2 minutes. Restart cc-session-manager for a new one.",
+  () => {
+    server.limitLoginLink(PRINTED_LINK_MS);
+  },
+);
 
 let stopping = false;
 const shutdown = () => {
