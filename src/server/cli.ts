@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -24,6 +23,11 @@ import {
   removeStaleLock,
   requestHandover,
 } from "./instance.js";
+import {
+  HANDOVER_LINK_NOTE,
+  openBrowser,
+  PRINTED_LINK_NOTE,
+} from "./browser.js";
 import { createFolderWatch } from "./folders.js";
 import { createLeftoverTracker } from "./leftovers.js";
 import { createInputRunner, parseRecord } from "./leftovers-helper.js";
@@ -43,56 +47,11 @@ import {
 } from "./protect.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
-import { startServer } from "./server.js";
+import { PRINTED_LINK_MS, startServer } from "./server.js";
 import { createFileStore, dataDirectory } from "./store.js";
 import type { Snapshot } from "../shared/protocol.js";
 import { createSessionTracker, enrichWithFinished } from "./tracker.js";
 import { createTranscriptReader, transcriptExists } from "./transcripts.js";
-
-function browserCommand(url: string): [string, string[]] {
-  if (process.platform === "win32")
-    return ["rundll32", ["url.dll,FileProtocolHandler", url]];
-  if (process.platform === "darwin") return ["open", [url]];
-  return ["xdg-open", [url]];
-}
-
-/**
- * Starts the browser detached, because Windows ends a process's attached children, and what
- * they start, when it exits. It settles once the command has finished, so a start that exits
- * straight after still reports a failure.
- */
-function openBrowser(url: string): Promise<void> {
-  const [command, args] = browserCommand(url);
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (failed: boolean) => {
-      if (settled) return;
-      settled = true;
-      if (failed) {
-        console.log(
-          `Could not open a browser. Open this one-time link: ${url}`,
-        );
-      }
-      resolve();
-    };
-    try {
-      const child = spawn(command, args, {
-        cwd: homedir(),
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      child.once("error", () => {
-        finish(true);
-      });
-      child.once("exit", (code) => {
-        finish(code !== 0);
-      });
-    } catch {
-      finish(true);
-    }
-  });
-}
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -124,7 +83,7 @@ const handOver = async (): Promise<boolean> => {
       console.log(
         `cc-session-manager is already running at http://127.0.0.1:${String(existing.port)}`,
       );
-      await openBrowser(link);
+      await openBrowser(link, { note: HANDOVER_LINK_NOTE });
       return true;
     }
     if (!processAlive(existing.pid)) return false;
@@ -340,7 +299,12 @@ console.log(
 );
 console.log("Press Ctrl+C to stop.");
 
-void openBrowser(server.loginUrl);
+void openBrowser(server.loginUrl, {
+  note: PRINTED_LINK_NOTE,
+  beforePrint: () => {
+    server.limitLoginLink(PRINTED_LINK_MS);
+  },
+});
 
 let stopping = false;
 const shutdown = () => {

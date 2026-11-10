@@ -4,6 +4,9 @@
 
 Notes gathered for 0.2.0 while it's built.
 
+- Each session shows its token use, by input, output, cache writes, and cache reads, and an estimated cost at API list prices. A bar under the page heading adds them up for the listed sessions, and says which sessions it leaves out (FR-23, FR-24, FR-25).
+- Format warnings for transcripts are no longer raised by large lines or new header lines, and are raised when many lines in a row can't be read (BUG-24, BUG-26).
+
 - Finished sessions keep their token use and estimated cost after a restart. Going back to 0.1.0 drops the saved usage the next time it saves the list (FR-26).
 - A corrupt saved list is set aside once, with names removed, or deleted if it isn't JSON. Copies that 0.1.0 set aside are reduced to the newest one, scrubbed the same way (FR-30, BUG-12).
 - A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
@@ -12,6 +15,7 @@ Notes gathered for 0.2.0 while it's built.
 - When Claude Code is slow to answer and the data is over 10 seconds old, the page says so, and that actions on sessions are paused (BUG-9).
 - Before the first successful read of the session list, the page says it can't read sessions yet, instead of "No sessions to show" (BUG-17).
 - Screen readers no longer read the decorative triangles and dots, and each row reads as its name, then its status or reason, with pauses between (BUG-10). Announcements are queued, so one arriving straight after another isn't lost (BUG-16). When a focused expandable section disappears, focus moves to a heading instead of the page body (BUG-11).
+- If no browser opens, the printed sign-in link now works once, for 2 minutes, and the terminal says so and to restart for a new one. If a second start can't open a browser, the link it prints works once, for 60 seconds, and says so (FR-29, BUG-8).
 - After the dashboard stops, deletes, or ends a session, programs it started that keep running are listed on its row, by name and process ID, with an "End leftover programs" button. A deleted session's row stays at the top of Finished, marked Deleted, until none of its programs run. The dialog lists the programs and says unsaved work in them is lost (FR-27).
 - Leftover programs are only found for sessions stopped, deleted, or ended from the dashboard while it runs. Programs started outside the session's process tree and the consoles of its programs, in the second between recording them and the action, or later by a program whose shell has gone, aren't found. The list is kept in memory, so it's gone after a restart.
 

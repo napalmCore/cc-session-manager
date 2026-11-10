@@ -28,6 +28,8 @@ const LOOPBACK = "127.0.0.1";
 const PORT_ATTEMPTS = 20;
 const MAX_ACTION_BODY = 4096;
 export const HANDOVER_LINK_MS = 60_000;
+/** A sign-in link printed because no browser opened works for this long (FR-29, BUG-8). */
+export const PRINTED_LINK_MS = 2 * 60_000;
 /** The header that carries the page key on action requests. */
 export const PAGE_KEY_HEADER = "x-ccsm-key";
 /** The WebSocket subprotocol that carries the page key, since a browser can't add headers. */
@@ -62,6 +64,8 @@ export interface ServerOptions {
   /** Lets a second start of the tool hand over to this one (U-15). */
   handover?: { secret: string; onHandover: (identity: Identity) => void };
   now?: () => number;
+  /** A clock that never goes back, for the printed link's expiry. */
+  monotonic?: () => number;
 }
 
 export interface RunningServer {
@@ -71,6 +75,11 @@ export interface RunningServer {
   publish: (snapshot: Snapshot) => void;
   /** Tells every page when the latest successful poll started, after each poll (BUG-9). */
   heartbeat: (lastSuccessAt: number | null) => void;
+  /**
+   * Makes the first sign-in link expire this long from now, because it's about to be printed
+   * rather than opened in a browser (FR-29).
+   */
+  limitLoginLink: (ms: number) => void;
   close: () => Promise<void>;
 }
 
@@ -140,6 +149,8 @@ export async function startServer(
   // A recorded handover request can't be sent again to get another link.
   const usedNonces = new Set<string>();
   const now = options.now ?? Date.now;
+  const monotonic = options.monotonic ?? (() => performance.now());
+  let loginExpiresAt: number | null = null;
   let port = 0;
   let latest: Snapshot | null = null;
 
@@ -255,6 +266,9 @@ export async function startServer(
 
   app.get("/auth", (c) => {
     const supplied = c.req.query("token");
+    if (loginExpiresAt !== null && monotonic() >= loginExpiresAt) {
+      loginToken = null;
+    }
     const first =
       loginToken !== null &&
       supplied !== undefined &&
@@ -406,6 +420,9 @@ export async function startServer(
       latest = snapshot;
       const message = toMessage(snapshot);
       for (const client of clients) client.send(message);
+    },
+    limitLoginLink(ms) {
+      loginExpiresAt = monotonic() + ms;
     },
     heartbeat(at) {
       lastSuccess = at;
