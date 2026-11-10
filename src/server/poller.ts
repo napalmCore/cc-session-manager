@@ -11,6 +11,9 @@ import type { EnrichResult } from "./transcripts.js";
 
 const POLL_FAILED =
   "Could not read sessions from Claude Code. Showing the last known data.";
+/** Before any poll has succeeded there's no data to show, known or not (BUG-17). */
+export const NOT_LOADED_YET =
+  "Can't read sessions yet: Claude Code didn't return its session list. Trying again every few seconds.";
 
 const AGENTS_ARGS = ["agents", "--json", "--all"];
 const RUN_OPTIONS = {
@@ -66,6 +69,8 @@ export interface PollerOptions {
   onSnapshot: (snapshot: Snapshot) => void;
   track?: (current: SessionView[]) => TrackedSessions;
   enrich?: (current: SessionView[]) => Promise<EnrichResult>;
+  /** Called after every poll, whether or not anything changed (BUG-9). */
+  onPoll?: (state: ListingState) => void;
 }
 
 export interface Poller {
@@ -81,6 +86,7 @@ export function createPoller({
   onSnapshot,
   track,
   enrich,
+  onPoll,
 }: PollerOptions): Poller {
   let timer: NodeJS.Timeout | undefined;
   let running = false;
@@ -95,6 +101,7 @@ export function createPoller({
   const report = (error: string | null) => {
     const snapshot: Snapshot = { sessions, error, warnings };
     if (error !== null && failedPolls > 0) snapshot.failedPolls = failedPolls;
+    if (lastSuccessAt === null) snapshot.notLoadedYet = true;
     const serialized = JSON.stringify(snapshot);
     if (serialized === lastReported) return;
     lastReported = serialized;
@@ -134,8 +141,10 @@ export function createPoller({
     } catch {
       lastPollFailed = true;
       failedPolls += 1;
-      if (running) report(POLL_FAILED);
+      if (running)
+        report(lastSuccessAt === null ? NOT_LOADED_YET : POLL_FAILED);
     }
+    if (running) onPoll?.({ sessions, lastSuccessAt, lastPollFailed });
     if (running) timer = setTimeout(() => void tick(), intervalMs);
   };
 

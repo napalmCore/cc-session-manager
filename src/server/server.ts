@@ -16,7 +16,11 @@ import {
   type ActionRequest,
   type ActionResult,
 } from "./actions.js";
-import type { Snapshot, SnapshotMessage } from "../shared/protocol.js";
+import type {
+  HeartbeatMessage,
+  Snapshot,
+  SnapshotMessage,
+} from "../shared/protocol.js";
 import { handoverProof, proofMatches } from "./instance.js";
 import { type Identity, identitySchema, toIdentity } from "./protect.js";
 
@@ -65,6 +69,8 @@ export interface RunningServer {
   port: number;
   loginUrl: string;
   publish: (snapshot: Snapshot) => void;
+  /** Tells every page when the latest successful poll started, after each poll (BUG-9). */
+  heartbeat: (lastSuccessAt: number | null) => void;
   close: () => Promise<void>;
 }
 
@@ -151,6 +157,13 @@ export async function startServer(
     ].join("; ");
   const toMessage = (snapshot: Snapshot) =>
     JSON.stringify({ type: "snapshot", snapshot } satisfies SnapshotMessage);
+  // The age, not the time, so the page's clock doesn't need to agree with this one.
+  let lastSuccess: number | null | undefined;
+  const toHeartbeat = (at: number | null) =>
+    JSON.stringify({
+      type: "heartbeat",
+      lastSuccessAgeMs: at === null ? null : Math.max(0, Date.now() - at),
+    } satisfies HeartbeatMessage);
 
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({
@@ -290,6 +303,7 @@ export async function startServer(
       onOpen(_event, ws) {
         clients.add(ws);
         if (latest) ws.send(toMessage(latest));
+        if (lastSuccess !== undefined) ws.send(toHeartbeat(lastSuccess));
       },
       onClose(_event, ws) {
         clients.delete(ws);
@@ -391,6 +405,11 @@ export async function startServer(
     publish(snapshot) {
       latest = snapshot;
       const message = toMessage(snapshot);
+      for (const client of clients) client.send(message);
+    },
+    heartbeat(at) {
+      lastSuccess = at;
+      const message = toHeartbeat(at);
       for (const client of clients) client.send(message);
     },
     close() {
