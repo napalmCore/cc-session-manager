@@ -561,9 +561,15 @@ function useFocusGuard(snapshot: unknown) {
         headingId: section?.getAttribute("aria-labelledby") ?? null,
       };
     };
+    // A click anywhere means the user has moved on, even if focus lands on the page body.
+    const forget = () => {
+      last.current = null;
+    };
     document.addEventListener("focusin", onFocus, true);
+    document.addEventListener("pointerdown", forget, true);
     return () => {
       document.removeEventListener("focusin", onFocus, true);
+      document.removeEventListener("pointerdown", forget, true);
     };
   }, []);
   useEffect(() => {
@@ -599,7 +605,7 @@ function StaleNotice({ freshness }: { freshness: Freshness | null }) {
   if (at === null) return null;
   const age = now - at;
   if (age <= STALE_DATA_MS) return null;
-  const seconds = Math.floor(age / 1000);
+  const seconds = Math.ceil(age / 1000);
   return (
     <p className={styles.banner} data-stale-notice>
       Last updated {seconds} seconds ago. Claude Code is slow to respond, so

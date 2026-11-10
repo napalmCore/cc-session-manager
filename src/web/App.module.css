@@ -109,6 +109,7 @@
 
 .details li + li::before {
   /* Decorative, so screen readers skip it (BUG-10). */
+  content: "· ";
   content: "· " / "";
 }
 
@@ -145,10 +146,12 @@
 }
 
 .disclosureButton::before {
+  content: "▸ ";
   content: "▸ " / "";
 }
 
 .disclosureButton[aria-expanded="true"]::before {
+  content: "▾ ";
   content: "▾ " / "";
 }
 

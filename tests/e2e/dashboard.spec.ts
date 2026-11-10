@@ -912,16 +912,41 @@ test.describe("focus when an expandable section goes (BUG-11)", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
   });
 
-  test("leaves focus alone when it has moved elsewhere", async ({ page }) => {
+  test("leaves focus alone when it has moved to another element", async ({
+    page,
+  }) => {
     await open(page, snapshot({ warnings: [WARNING] }));
     await page.getByRole("button", { name: /may be missing/i }).focus();
-    const notify = page.getByRole("button", { name: /notifications/i });
-    if ((await notify.count()) > 0) {
-      await notify.focus();
-      server.publish(snapshot({ warnings: [] }));
-      await page.waitForTimeout(300);
-      await expect(notify).toBeFocused();
-    }
+    const stale = page.getByRole("button", { name: /stale \(1\)/i });
+    await stale.focus();
+    await expect(stale).toBeFocused();
+    server.publish(snapshot({ warnings: [] }));
+    await expect(
+      page.getByRole("button", { name: /may be missing/i }),
+    ).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await expect(stale).toBeFocused();
+  });
+
+  test("leaves focus alone after the user clicks elsewhere on the page", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ warnings: [WARNING] }));
+    await page.getByRole("button", { name: /may be missing/i }).focus();
+    // Blank space below the content: focus falls to the page body.
+    await page.mouse.click(5, 5);
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement === document.body))
+      .toBe(true);
+    server.publish(snapshot({ warnings: [] }));
+    await expect(
+      page.getByRole("button", { name: /may be missing/i }),
+    ).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await expect(page.getByRole("heading", { level: 1 })).not.toBeFocused();
+    expect(
+      await page.evaluate(() => document.activeElement === document.body),
+    ).toBe(true);
   });
 });
 
