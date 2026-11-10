@@ -201,12 +201,13 @@ export function createEndExecutors(options: EndOptions) {
         record: true,
         toolPid,
       });
-      if (helper.kind === "timeout") return unknown;
+      // The run would have recorded the programs, so they can't be checked now.
+      if (helper.kind === "timeout") return withRecord(unknown, null);
       if (helper.kind === "error") {
-        return {
-          outcome: "failed",
-          message: "The tool's helper couldn't run.",
-        };
+        return withRecord(
+          { outcome: "failed", message: "The tool's helper couldn't run." },
+          null,
+        );
       }
       return withRecord(
         await afterBreak(session, pid, helper.result),
@@ -241,12 +242,12 @@ export function createEndExecutors(options: EndOptions) {
         record: true,
         toolPid,
       });
-      if (helper.kind === "timeout") return unknown;
+      if (helper.kind === "timeout") return withRecord(unknown, null);
       if (helper.kind === "error") {
-        return {
-          outcome: "failed",
-          message: "The tool's helper couldn't run.",
-        };
+        return withRecord(
+          { outcome: "failed", message: "The tool's helper couldn't run." },
+          null,
+        );
       }
       return withRecord(
         await afterForce(session, helper.result),

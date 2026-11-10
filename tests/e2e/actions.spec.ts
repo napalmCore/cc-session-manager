@@ -542,8 +542,13 @@ test.describe("leftover programs (FR-27)", () => {
     await expect(
       first.getByRole("button", { name: "End leftover programs…" }),
     ).toBeVisible();
-    // A deleted row isn't counted in the totals.
-    await expect(page.getByRole("region", { name: "Usage" })).toBeVisible();
+    // A deleted row isn't counted in the totals: they read the same without it.
+    const usage = page.getByRole("region", { name: "Usage" });
+    const withDeleted = await usage.innerText();
+    server.publish(snapshot({ leftovers: [] }));
+    await expect(page.getByText("Deleted", { exact: true })).toHaveCount(0);
+    expect(await usage.innerText()).toBe(withDeleted);
+    expect(withDeleted).toMatch(/4 sessions/);
   });
 
   test("lists every program in the dialog, says unsaved work is lost, and sends only the session", async ({

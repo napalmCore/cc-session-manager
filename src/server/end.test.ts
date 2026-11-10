@@ -106,6 +106,17 @@ describe("End", () => {
     expect("leftovers" in result).toBe(false);
   });
 
+  it("returns a null record when the whole helper run times out or fails", async () => {
+    for (const helper of ["timeout", "error"] as const) {
+      const { executors } = setup(helper, true);
+      expect((await executors.end(live())).leftovers).toBeNull();
+      expect(
+        (await executors.forceEnd(live(), { pid: 100, processStartMs: 4000 }))
+          .leftovers,
+      ).toBeNull();
+    }
+  });
+
   it("keeps the record with a Git Bash refusal, since the session still runs", async () => {
     const { executors } = setup(
       {

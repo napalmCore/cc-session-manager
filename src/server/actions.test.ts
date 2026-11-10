@@ -710,6 +710,96 @@ describe("leftover programs (FR-27)", () => {
     );
   });
 
+  it("says nothing more when an earlier record, such as End's, still covers the session", async () => {
+    const leftovers = hooks({
+      find: vi.fn(() => ({ view: interactive(), sessionGone: false })),
+    });
+    const { tracker } = setup({
+      listing: [interactive({ startedAt: 5 })],
+      leftovers,
+      executors: {
+        end: vi.fn(() =>
+          Promise.resolve({
+            outcome: "unknown" as const,
+            message: "Couldn't confirm.",
+            leftovers: null,
+          }),
+        ),
+      },
+    });
+    const result = await tracker.handle({ action: "end", key: SESSION_ID });
+    expect(result.message).toBe("Couldn't confirm.");
+  });
+
+  it("says the programs can't be checked when End's helper run times out", async () => {
+    const { tracker } = setup({
+      listing: [interactive({ startedAt: 5 })],
+      leftovers: hooks(),
+      executors: {
+        end: vi.fn(() =>
+          Promise.resolve({
+            outcome: "unknown" as const,
+            message: "Couldn't confirm.",
+            leftovers: null,
+          }),
+        ),
+      },
+    });
+    const result = await tracker.handle({ action: "end", key: SESSION_ID });
+    expect(result.message).toBe(`Couldn't confirm. ${NOT_RECORDED}`);
+  });
+
+  it("refuses when the fresh listing shows a different session under the same short ID", async () => {
+    const leftovers = hooks({
+      find: vi.fn(() => ({
+        view: background({ state: "stopped" }),
+        sessionGone: true,
+      })),
+    });
+    const { tracker } = setup({
+      listing: [],
+      fresh: [background({ state: "stopped", sessionId: OTHER_ID })],
+      leftovers,
+    });
+    const result = await tracker.handle({
+      action: "endLeftovers",
+      key: "abcd1234",
+    });
+    expect(result.outcome).toBe("refused");
+    expect(leftovers.end).not.toHaveBeenCalled();
+  });
+
+  it("holds the session's lock, so Stop waits for End leftover programs", async () => {
+    let release: () => void = () => undefined;
+    const leftovers = hooks({
+      find: vi.fn(() => ({
+        view: background({ state: "stopped" }),
+        sessionGone: true,
+      })),
+      end: vi.fn(
+        () =>
+          new Promise<ActionResult>((resolve) => {
+            release = () => {
+              resolve({ outcome: "succeeded", message: "Ended." });
+            };
+          }),
+      ),
+    });
+    const { tracker } = setup({
+      listing: [background({ state: "stopped" })],
+      leftovers,
+    });
+    const first = tracker.handle({ action: "endLeftovers", key: "abcd1234" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const stop = await tracker.handle({ action: "stop", key: "abcd1234" });
+    expect(stop).toEqual({
+      outcome: "refused",
+      message: "Another action on this session is still running.",
+    });
+    release();
+    await first;
+  });
+
   it("doesn't mention recording when the action was refused before it", async () => {
     const leftovers = hooks();
     const { tracker } = setup({

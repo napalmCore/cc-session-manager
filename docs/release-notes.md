@@ -10,7 +10,7 @@ Notes gathered for 0.2.0 while it's built.
 - Active sessions stay in order of start time, newest first, instead of moving as their activity changes (BUG-6). A new session with no status yet shows "starting" (BUG-18).
 - `claude -p` runs are still listed as interactive sessions, as Claude Code reports them (BUG-23).
 - After the dashboard stops, deletes, or ends a session, programs it started that keep running are listed on its row, by name and process ID, with an "End leftover programs" button. A deleted session's row stays at the top of Finished, marked Deleted, until none of its programs run. The dialog lists the programs and says unsaved work in them is lost (FR-27).
-- Leftover programs are only found for sessions stopped, deleted, or ended from the dashboard while it runs. Programs started outside the session's process tree and the consoles of its programs, in the second between the check and the action, or later by a program whose shell has gone, aren't found. The list is kept in memory, so it's gone after a restart.
+- Leftover programs are only found for sessions stopped, deleted, or ended from the dashboard while it runs. Programs started outside the session's process tree and the consoles of its programs, in the second between recording them and the action, or later by a program whose shell has gone, aren't found. The list is kept in memory, so it's gone after a restart.
 
 ## 0.1.0
 

@@ -378,6 +378,12 @@ export function createActionTracker(options: ActionTrackerOptions) {
   ): ActionResult {
     const hooks = options.leftovers;
     if (hooks === undefined) return result;
+    // An earlier record of the same session, such as End's before Force end, still covers it.
+    const covered =
+      record === null &&
+      [session.sessionId, session.id].some(
+        (key) => key !== undefined && hooks.find(key) !== undefined,
+      );
     try {
       hooks.hold(session, action, record, result);
     } catch {
@@ -385,7 +391,7 @@ export function createActionTracker(options: ActionTrackerOptions) {
     }
     const actedOn =
       result.outcome !== "refused" && result.outcome !== "unavailable";
-    return record === null && actedOn
+    return record === null && actedOn && !covered
       ? { ...result, message: `${result.message} ${NOT_RECORDED}` }
       : result;
   }

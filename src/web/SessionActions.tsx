@@ -108,10 +108,13 @@ export function LeftoverPanel({
   pending: SessionAction | undefined;
   onEnd: () => void;
 }) {
+  const titleId = useId();
   return (
     <div className={styles.leftovers}>
-      <p className={styles.leftoversTitle}>Programs still running</p>
-      <ul>
+      <p id={titleId} className={styles.leftoversTitle}>
+        Programs still running
+      </p>
+      <ul aria-labelledby={titleId}>
         {programLines(offer, ROW_PROGRAMS).map((line) => (
           <li key={line}>{line}</li>
         ))}

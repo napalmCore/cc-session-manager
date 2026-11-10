@@ -182,6 +182,63 @@ describe("checking (FR-27)", () => {
   });
 });
 
+describe("the helper's limit of 2000 processes", () => {
+  it("asks about every session first, and doesn't take anything left out as exited", async () => {
+    const many = (base: number) =>
+      Array.from({ length: 1500 }, (_, index) => ({
+        pid: base + index,
+        startMs: 2_000,
+        name: "x.exe",
+        path: "C:/x.exe",
+      }));
+    const second = { pid: 900, startMs: 1_000 };
+    const run = vi.fn<InputRun>((_action, input) => {
+      const { processes } = input as { processes: { pid: number }[] };
+      // Everything asked about runs, except the first session's own process.
+      return Promise.resolve(
+        checked(processes.filter((process) => process.pid !== 100) as never),
+      );
+    });
+    const tracker = createLeftoverTracker({ run, onChange: vi.fn() });
+    tracker.hold(view(), "stop", { session, entries: many(10_000) }, ok());
+    const other: SessionView = { ...view(), id: "beef0001" };
+    delete other.sessionId;
+    tracker.hold(
+      other,
+      "stop",
+      { session: second, entries: many(20_000) },
+      ok(),
+    );
+    await tracker.check();
+
+    const body = run.mock.calls[0]?.[1] as { processes: { pid: number }[] };
+    expect(body.processes).toHaveLength(2000);
+    expect(body.processes.slice(0, 2).map((process) => process.pid)).toEqual([
+      100, 900,
+    ]);
+    expect(tracker.find("abcd1234")?.sessionGone).toBe(true);
+    expect(tracker.find("beef0001")?.sessionGone).toBe(false);
+    // Entries that weren't asked about are kept for a later run.
+    expect(tracker.offers()[0]?.count).toBe(1500);
+    tracker.stop();
+  });
+});
+
+describe("a check that throws", () => {
+  it("is tried again at the usual pace, not straight away", async () => {
+    const run = vi.fn<InputRun>(() => Promise.reject(new Error("broken")));
+    const tracker = createLeftoverTracker({ run, onChange: vi.fn() });
+    tracker.hold(view(), "stop", RECORD, ok());
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(run).toHaveBeenCalledTimes(2);
+    tracker.stop();
+  });
+});
+
 describe("the Deleted row (0020)", () => {
   it("carries a Stop's record over to a later Delete, marked deleted", async () => {
     const { tracker } = setup([checked([ping])]);

@@ -64,6 +64,13 @@ function baseName(name: string): string {
   return name.toLowerCase().replace(/\.exe$/, "");
 }
 
+/** Skip reasons meaning the recorded process no longer runs. */
+const GONE_REASONS = new Set([
+  "not-running",
+  "different-process",
+  "different-program",
+]);
+
 const SKIP_REASONS: Record<string, string> = {
   "not-running": "had already exited",
   "different-process": "is now a different process",
@@ -114,21 +121,35 @@ export function createLeftoverTracker(options: LeftoverTrackerOptions) {
         ];
       });
 
-  /** What one check run asks the helper, for the given records. */
+  /**
+   * What one check run asks the helper, for the given records, within the helper's limit.
+   * Sessions' own processes go first, and anything left out is reported as unasked, so it's
+   * neither taken as exited nor dropped.
+   */
   const request = (items: Held[]) => {
     const processes = new Map<string, ProcessId>();
     const parents = new Map<string, ProcessId>();
+    const add = (map: Map<string, ProcessId>, id: ProcessId) => {
+      if (map.size < MAX_ENTRIES) map.set(idOf(id), id);
+    };
     for (const item of items) {
-      if (!item.sessionGone) processes.set(idOf(item.session), item.session);
+      if (!item.sessionGone) add(processes, item.session);
+    }
+    for (const item of items) {
       for (const entry of item.entries) {
         const id = { pid: entry.pid, startMs: entry.startMs };
-        processes.set(idOf(id), id);
-        if (WRAPPERS.has(baseName(entry.name))) parents.set(idOf(id), id);
+        add(processes, id);
+        if (processes.has(idOf(id)) && WRAPPERS.has(baseName(entry.name))) {
+          add(parents, id);
+        }
       }
     }
     return {
-      processes: [...processes.values()].slice(0, MAX_ENTRIES),
-      parents: [...parents.values()].slice(0, MAX_ENTRIES),
+      body: {
+        processes: [...processes.values()],
+        parents: [...parents.values()],
+      },
+      asked: new Set(processes.keys()),
     };
   };
 
@@ -138,7 +159,8 @@ export function createLeftoverTracker(options: LeftoverTrackerOptions) {
    */
   const checkItems = async (items: Held[]): Promise<boolean> => {
     if (options.run === null || items.length === 0) return false;
-    const outcome = await options.run("check", request(items));
+    const { body, asked } = request(items);
+    const outcome = await options.run("check", body);
     if (outcome.kind !== "ok") return false;
     const result = parseCheck(outcome.result);
     if (result === null) return false;
@@ -146,14 +168,19 @@ export function createLeftoverTracker(options: LeftoverTrackerOptions) {
     const alive = new Set([...result.running, ...result.unverified].map(idOf));
     const time = now();
     for (const item of items) {
-      if (!item.sessionGone) {
+      // A session process this run didn't ask about keeps its state until a run does.
+      if (!item.sessionGone && asked.has(idOf(item.session))) {
         item.sessionGone = !alive.has(idOf(item.session));
+      }
+      if (!item.sessionGone) {
         if (!item.sessionGone && time - item.actedAt > WAIT_FOR_EXIT_MS) {
           drop(item);
           continue;
         }
       }
-      const kept = item.entries.filter((entry) => alive.has(idOf(entry)));
+      const kept = item.entries.filter(
+        (entry) => alive.has(idOf(entry)) || !asked.has(idOf(entry)),
+      );
       const known = new Set(kept.map(idOf));
       const parentIds = new Set(kept.map((entry) => entry.pid));
       for (const child of result.children) {
@@ -197,19 +224,20 @@ export function createLeftoverTracker(options: LeftoverTrackerOptions) {
     if (checking !== null) return checking;
     const before = signature();
     checking = (async () => {
+      let ok: boolean;
       try {
-        const ok = await checkItems([...held]);
-        if (!ok) {
-          // Try again later, at the same pace.
-          const time = now();
-          for (const item of held) {
-            item.nextCheckAt = time + checkDelay(time - item.actedAt);
-          }
-        }
+        ok = await checkItems([...held]);
       } catch {
-        // A failed check changes nothing.
+        ok = false;
       } finally {
         checking = null;
+      }
+      if (!ok) {
+        // A failed check changes nothing, and is tried again later at the same pace.
+        const time = now();
+        for (const item of held) {
+          item.nextCheckAt = time + checkDelay(time - item.actedAt);
+        }
       }
     })();
     await checking;
@@ -345,7 +373,15 @@ export function createLeftoverTracker(options: LeftoverTrackerOptions) {
                 : (reasons.get(entry.pid) ?? "failed");
             return `${describe(entry)}: ${SKIP_REASONS[reason] ?? "it couldn't be ended"}`;
           });
-        item.entries = item.entries.filter((entry) => !ended.has(entry.pid));
+        // Entries ended, or no longer the recorded process, leave the list.
+        const finished = new Set(
+          result.skipped
+            .filter((skip) => GONE_REASONS.has(skip.reason))
+            .map((skip) => skip.pid),
+        );
+        item.entries = item.entries.filter(
+          (entry) => !ended.has(entry.pid) && !finished.has(entry.pid),
+        );
         if (item.entries.length === 0) drop(item);
         else item.nextCheckAt = now() + FIRST_CHECK_MS;
         const total = entries.length;

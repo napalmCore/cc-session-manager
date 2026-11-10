@@ -310,7 +310,9 @@ actionsRef.current = createActionTracker({
     // uses. A session with no process, such as a stopped one, has nothing new to record.
     record: async (session) => {
       const { pid, startedAt } = session;
-      if (pid === undefined || startedAt === undefined) return undefined;
+      if (pid === undefined) return undefined;
+      // A process with no start time can't pass the ownership check, so it can't be recorded.
+      if (startedAt === undefined) return null;
       if (!canRunHelper) return null;
       const outcome = await runHelper({
         action: "record",
