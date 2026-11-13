@@ -23,14 +23,13 @@ cc-session-manager is an independent tool. It isn't made, endorsed, or supported
 - A corrupt saved list is set aside once, with names removed, or deleted if it isn't JSON. Copies that 0.1.0 set aside are reduced to the newest one, scrubbed the same way (FR-30, BUG-12).
 - A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
 - Format warnings for transcripts are no longer raised by large lines or new header lines, and are raised when many lines in a row can't be read, or when replies no longer carry their message details (BUG-24, BUG-26).
-
 - Other fixes from 0.1.0's open bugs: a stale session whose transcript can no longer be read keeps its last activity time, instead of moving to Needs you and being announced (BUG-13). A second session with no ID and no name is announced separately, by folder, kind, and start time (BUG-14). A new session's missing status is excused only when it really just started, for at most 10 seconds, and gaining an ID doesn't renew the excuse (BUG-19, BUG-20). A background session's start time no longer jumps by about 3 seconds once it has a process: the first one seen is shown and sorted on (BUG-23).
 
 ### Privacy and security
 
 0.1.0's privacy and security notes still apply, with these changes:
 
-- The tool now reads each session's whole transcript, from where it last stopped, rather than its last 256 KB. From each line it keeps only response IDs, model IDs, token counts, speed, routing, the timestamp, and the branch. It never keeps message text (C-12).
+- The tool now reads each session's whole transcript, from where it last stopped, rather than its last 256 KB. From each line it keeps only response IDs, model IDs, token counts, web-search counts, speed, routing, the timestamp, and the branch. It never keeps message text (C-12).
 - Finished sessions are saved with their token counts by model, in the same file. Still no names, message text, or response IDs.
 - A corrupt saved list is set aside once with its names removed, or deleted if it isn't JSON. 0.1.0's earlier copies are reduced to the newest one, scrubbed the same way, so set-aside files no longer hold names.
 - Ending leftover programs runs a PowerShell helper that ends only programs the dashboard recorded before its own action, each checked by start time and program file. The page names only the session; the list comes from the dashboard's own record.
