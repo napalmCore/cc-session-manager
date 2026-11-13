@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { realpath } from "node:fs";
 import { stat } from "node:fs/promises";
 import { promisify } from "node:util";
-import { hasControl } from "./start.js";
+import { hasControl } from "./text-checks.js";
 
 // The native version resolves `subst` drives, junctions, and links; the JavaScript one doesn't.
 const realpathNative = promisify(realpath.native);

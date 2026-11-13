@@ -14,12 +14,12 @@ import {
   type BackgroundRun,
   checkStartText,
   createStartExecutor,
-  hasControl,
   MAX_NAME,
   MAX_PROMPT,
   refusalMessage,
   type StartRequest,
 } from "./start.js";
+import { hasControl } from "./text-checks.js";
 import type { ListingWatch } from "./stop-delete.js";
 
 const programs: Programs = {
@@ -385,4 +385,80 @@ describe.runIf(process.platform === "win32")("the real drive-type read", () => {
     expect(await read("C;calc")).toBeNull();
     expect(await read("1")).toBeNull();
   }, 15_000);
+});
+
+describe("text checks (NFR-14)", () => {
+  it.each([
+    ["a C1 control", "a\u0085b"],
+    ["a right-to-left override", "safe‮txt.exe"],
+    ["a zero-width space", "a​b"],
+    ["a byte-order mark", "﻿name"],
+    ["an isolate", "a⁦b"],
+  ])("refuses %s in a name", (_label, name) => {
+    expect(hasControl(name)).toBe(true);
+    expect(checkStartText("interactive", name, undefined)).toBe(
+      "A name can't contain control characters.",
+    );
+  });
+
+  it("allows ordinary text, including accents and CJK", () => {
+    expect(hasControl("Café 日本 – work")).toBe(false);
+  });
+
+  it("checks sign-in before a missing folder", () => {
+    expect(
+      refusalMessage("Not logged in · Please run /login (file not found)"),
+    ).toMatch(/isn't signed in/);
+  });
+});
+
+describe("prompts, names, and Claude Code's text are never logged (C-18)", () => {
+  it("writes nothing with them to the console or standard output", async () => {
+    const SECRET = "SECRET-PROMPT-7731";
+    const NAME = "SECRET-NAME-7731";
+    const written: string[] = [];
+    const spies = [
+      vi
+        .spyOn(console, "log")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi
+        .spyOn(console, "error")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi
+        .spyOn(console, "warn")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi
+        .spyOn(console, "info")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      }),
+      vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      }),
+    ];
+    try {
+      for (const run of [
+        () => exited(0, "backgrounded · abcd1234\n"),
+        () => exited(1, "", `refused because of ${SECRET}`),
+        () => Promise.resolve({ kind: "timeout" } as const),
+        () => Promise.resolve({ kind: "error" } as const),
+      ]) {
+        const { start } = executor(run);
+        const result = await start({
+          action: "start",
+          folder: root,
+          kind: "background",
+          name: NAME,
+          prompt: SECRET,
+        });
+        expect(JSON.stringify(result)).not.toContain("SECRET");
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect(written.join("\n")).not.toContain("SECRET");
+  });
 });

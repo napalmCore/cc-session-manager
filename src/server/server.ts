@@ -58,6 +58,12 @@ const actionRequestSchema = z.union([
       prompt: z.string().max(20_000).optional(),
     })
     .strict(),
+  z
+    .object({
+      action: z.literal("listFolders"),
+      folder: z.string().max(4096).optional(),
+    })
+    .strict(),
 ]);
 
 const CONTENT_TYPES: Record<string, string> = {

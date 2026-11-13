@@ -31,6 +31,7 @@ import {
 import { createFolderWatch } from "./folders.js";
 import { createLeftoverTracker } from "./leftovers.js";
 import { createInputRunner, parseRecord } from "./leftovers-helper.js";
+import { createFolderPicker, powershellLocalDrives } from "./folder-picker.js";
 import { cachedDriveType, powershellDriveType } from "./local-folder.js";
 import { createOpenExecutors, launchDetached } from "./open.js";
 import { createStartExecutor, FAILURE_WATCH_MS } from "./start.js";
@@ -254,6 +255,8 @@ const endExecutors = createEndExecutors({
     }
   },
 });
+// One drive-type cache for Start and Browse.
+const driveType = cachedDriveType(powershellDriveType(programs.powershell));
 actionsRef.current = createActionTracker({
   listing: () => poller.state(),
   freshListing: async () =>
@@ -269,9 +272,13 @@ actionsRef.current = createActionTracker({
     forceEnd: (session, record) => endExecutors.forceEnd(session, record),
   },
   isProtected: (session) => protection.isProtected(session),
+  listFolders: createFolderPicker({
+    driveType,
+    localDrives: powershellLocalDrives(programs.powershell),
+  }),
   start: createStartExecutor({
     programs,
-    driveType: cachedDriveType(powershellDriveType(programs.powershell)),
+    driveType,
     launch: launchDetached,
     watch: watchPoller(() => poller.state(), FAILURE_WATCH_MS),
   }),

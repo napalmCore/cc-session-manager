@@ -265,6 +265,44 @@ describe("POST /api/actions", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("takes a listFolders request, with or without a folder, and nothing else", async () => {
+    const cookie = await login();
+    const headers = {
+      cookie,
+      "x-ccsm-key": pageKey,
+      origin: origin(),
+      "content-type": "application/json",
+    };
+    for (const body of [
+      { action: "listFolders" },
+      { action: "listFolders", folder: "C:/work" },
+    ]) {
+      expect(
+        (await send("POST", "/api/actions", headers, JSON.stringify(body)))
+          .status,
+      ).toBe(200);
+    }
+    expect(
+      (
+        await send(
+          "POST",
+          "/api/actions",
+          headers,
+          JSON.stringify({ action: "listFolders", key: "abcd1234" }),
+        )
+      ).status,
+    ).toBe(400);
+    // Without the page key, nothing is listed (NFR-6).
+    const withoutKey = await send(
+      "POST",
+      "/api/actions",
+      { cookie, origin: origin(), "content-type": "application/json" },
+      JSON.stringify({ action: "listFolders" }),
+    );
+    expect(withoutKey.status).toBe(403);
+    expect(onAction).toHaveBeenCalledTimes(2);
+  });
+
   it("can't be triggered by a read", async () => {
     const cookie = await login();
     await send("GET", "/api/actions?action=stop&key=abcd1234", {

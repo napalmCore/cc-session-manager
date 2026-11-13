@@ -3,6 +3,7 @@ import type { SessionView } from "../shared/protocol.js";
 import type { ActionResult } from "./actions.js";
 import { claudeArguments, planBackground, planTerminal } from "./launch.js";
 import { checkLocalFolder, type DriveTypeReader } from "./local-folder.js";
+import { hasControl } from "./text-checks.js";
 import {
   type LaunchPlan,
   type Programs,
@@ -29,15 +30,6 @@ const refused = (message: string): ActionResult => ({
   outcome: "refused",
   message,
 });
-
-/** Whether text has a control character, other than any in `allowed` (0025). */
-export function hasControl(text: string, allowed = ""): boolean {
-  for (const ch of text) {
-    const code = ch.charCodeAt(0);
-    if ((code < 0x20 || code === 0x7f) && !allowed.includes(ch)) return true;
-  }
-  return false;
-}
 
 /** Checks a name and prompt by NFR-14. Returns a refusal message, or null if they're fine. */
 export function checkStartText(
@@ -75,14 +67,17 @@ export type BackgroundRun =
   | { kind: "error" };
 
 /** Runs `claude` for a background start, with no shell (C-15). */
-export function runBackground(plan: LaunchPlan): Promise<BackgroundRun> {
+export function runBackground(
+  plan: LaunchPlan,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<BackgroundRun> {
   return new Promise((resolve) => {
     execFile(
       plan.file,
       plan.args,
       {
         cwd: plan.cwd,
-        env: sessionLaunchEnv(process.env),
+        env: sessionLaunchEnv(environment),
         timeout: BACKGROUND_TIMEOUT_MS,
         maxBuffer: 100_000,
         windowsHide: true,
@@ -110,11 +105,13 @@ export function refusalMessage(stderr: string): string {
   if (/workspace not trusted/i.test(stderr)) {
     return "Claude Code doesn't trust this folder yet. Run `claude` there once and accept its prompt.";
   }
-  if (/no such file|does not exist|not found|ENOENT/i.test(stderr)) {
-    return "Claude Code couldn't find that folder.";
-  }
-  if (/log ?in|credential|authenticat/i.test(stderr)) {
+  if (/not (logged|signed) in|\/login|credential|authenticat/i.test(stderr)) {
     return "Claude Code isn't signed in. Run `claude` and sign in first.";
+  }
+  if (
+    /no such file or directory|ENOENT|directory does not exist/i.test(stderr)
+  ) {
+    return "Claude Code couldn't find that folder.";
   }
   if (/outdated|update|restart/i.test(stderr)) {
     return "Claude Code's background service needs updating. Restart Claude Code and try again.";
@@ -128,7 +125,10 @@ export interface StartOptions {
   programs: Programs;
   driveType: DriveTypeReader;
   launch: (plan: LaunchPlan, env: NodeJS.ProcessEnv) => Promise<void>;
-  run?: (plan: LaunchPlan) => Promise<BackgroundRun>;
+  run?: (
+    plan: LaunchPlan,
+    environment: NodeJS.ProcessEnv,
+  ) => Promise<BackgroundRun>;
   /** Watches the listing after a background start, for up to FAILURE_WATCH_MS. */
   watch: ListingWatch;
   environment?: NodeJS.ProcessEnv;
@@ -202,7 +202,10 @@ export function createStartExecutor(options: StartOptions) {
       };
     }
 
-    const result = await run(planBackground(programs, args, folder.folder));
+    const result = await run(
+      planBackground(programs, args, folder.folder),
+      options.environment ?? process.env,
+    );
     if (result.kind === "timeout") {
       return {
         outcome: "unknown",
