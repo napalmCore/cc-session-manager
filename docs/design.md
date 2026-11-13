@@ -534,6 +534,8 @@ Each step is a separate pull request, approved by an independent agent before me
 
 ### Screen-reader testing (NFR-12, U-19)
 
+Dropped by decision 0021. Kept here as it was designed.
+
 - **Setup:** a portable copy of NVDA, made from the NVDA installer with its portable-copy option into a scratch folder, with no install (0020). The owner approves the download when Testing starts.
 - **Speech output:** NVDA's log level set to input/output, which logs speech. The speech synthesizer is set to silence where possible. Keystrokes are logged too, so the test runs while the owner isn't typing, and the log and folder are deleted afterwards.
 - **Driving:** the agent sends keyboard input to the dashboard in a test browser window, and reads what NVDA spoke from the log.
@@ -583,5 +585,5 @@ Each step is a separate pull request, approved by an independent agent before me
   - The ownership check's start-time window for background sessions, which was measured only on interactive ones.
   - CPU of a `check` run.
   - L10, with the owner accepting the trust prompt.
-  - NVDA testing (NFR-12).
+  - NVDA testing (NFR-12), dropped by decision 0021.
 - **Security review:** the new action, the helper modes, and the printed link, before release (NFR-9).
