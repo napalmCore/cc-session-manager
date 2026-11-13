@@ -230,6 +230,12 @@ if ($Action -eq 'check') {
       $table = Get-ProcessTable $true
       $family = Get-ToolFamily $table
       foreach ($parent in $parents) {
+        # The snapshot must still hold the same parent, by start time, or a process that reused
+        # its ID could pass its children off as the session's (security review L-1).
+        $snapshot = $table[$parent.pid]
+        if ($null -eq $snapshot -or [Math]::Abs($snapshot.StartMs - $parent.startMs) -gt $StartToleranceMs) {
+          continue
+        }
         foreach ($child in $table.Values) {
           if ($child.Parent -eq $parent.pid -and $child.StartMs -ge $parent.startMs -and
               -not $asked.ContainsKey($child.Id) -and (Test-Recordable $table $family $child.Id)) {

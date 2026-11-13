@@ -12,6 +12,19 @@ import type {
 
 /** The most bytes read across all transcripts in one poll (NFR-11). */
 export const READ_BUDGET_BYTES = 8 * 1024 * 1024;
+/**
+ * Reading stops for the poll once this much time has gone, so a large first read never pushes
+ * a poll past FR-9's 5 seconds (NFR-11, BUG-33). It goes on from there next poll.
+ */
+export const READ_BUDGET_MS = 500;
+/** Each read takes at most this much, so the time limit is checked often. */
+export const READ_CHUNK_BYTES = 256 * 1024;
+
+/** What one poll may still read. */
+interface Budget {
+  left: number;
+  deadline: number;
+}
 
 /** Complete lines in a row with no usable entry before a format warning (BUG-24, BUG-26). */
 export const FORMAT_RUN = 20;
@@ -405,10 +418,19 @@ export async function transcriptExists(
 
 export function createTranscriptReader(
   root: string = claudeProjectsDirectory(),
-  options: { budgetBytes?: number; now?: () => number } = {},
+  options: {
+    budgetBytes?: number;
+    budgetMs?: number;
+    now?: () => number;
+    /** A clock that never goes back, for the time limit. */
+    clock?: () => number;
+  } = {},
 ) {
   const budgetBytes = options.budgetBytes ?? READ_BUDGET_BYTES;
+  const budgetMs = options.budgetMs ?? READ_BUDGET_MS;
   const now = options.now ?? Date.now;
+  const clock = options.clock ?? (() => performance.now());
+  const timeLeft = (budget: Budget) => clock() < budget.deadline;
   const sessions = new Map<string, SessionState>();
   const internals = { readBytes };
 
@@ -423,10 +445,10 @@ export function createTranscriptReader(
     return null;
   };
 
-  /** Reads new bytes of one file within the budget; false if the file has gone. */
-  const readFile = async (
+  /** Reads the next piece of one file within the budget; false if the file has gone. */
+  const readPiece = async (
     state: FileState,
-    budget: { left: number },
+    budget: Budget,
   ): Promise<boolean> => {
     const stats = await statFile(state.file);
     if (!stats) return false;
@@ -452,8 +474,12 @@ export function createTranscriptReader(
 
     state.size = stats.size;
     state.mtimeMs = stats.mtimeMs;
-    const length = Math.min(stats.size - state.offset, budget.left);
-    if (length <= 0) return true;
+    const length = Math.min(
+      stats.size - state.offset,
+      budget.left,
+      READ_CHUNK_BYTES,
+    );
+    if (length <= 0 || !timeLeft(budget)) return true;
 
     const bytes = await internals.readBytes(state.file, state.offset, length);
     budget.left -= bytes.length;
@@ -565,9 +591,26 @@ export function createTranscriptReader(
     return { ...metadata };
   };
 
+  /** Reads new bytes of one file, piece by piece, while the budget lasts. */
+  const readFile = async (
+    state: FileState,
+    budget: Budget,
+  ): Promise<boolean> => {
+    for (;;) {
+      const before = state.offset;
+      if (!(await readPiece(state, budget))) return false;
+      const more =
+        state.offset > before &&
+        state.offset < state.size &&
+        budget.left > 0 &&
+        timeLeft(budget);
+      if (!more) return true;
+    }
+  };
+
   const read = async (
     sessionId: string,
-    budget: { left: number },
+    budget: Budget,
   ): Promise<{
     metadata: TranscriptMetadata;
     usage: SessionUsage;
@@ -634,7 +677,10 @@ export function createTranscriptReader(
       sessions.delete(sessionId);
     },
     async enrich(current: SessionView[]): Promise<EnrichResult> {
-      const budget = { left: budgetBytes };
+      const budget: Budget = {
+        left: budgetBytes,
+        deadline: clock() + budgetMs,
+      };
       let formatChanged = false;
       const results = new Map<SessionView, SessionView>();
 

@@ -5,6 +5,7 @@
 Notes gathered for 0.2.0 while it's built.
 
 - Each session shows its token use, by input, output, cache writes, and cache reads, and an estimated cost at API list prices. A bar under the page heading adds them up for the listed sessions, and says which sessions it leaves out (FR-23, FR-24, FR-25).
+- Reading transcripts for the first time after a start is spread over polls, at most half a second each, so session updates aren't slowed (NFR-11, BUG-33).
 - Format warnings for transcripts are no longer raised by large lines or new header lines, and are raised when many lines in a row can't be read (BUG-24, BUG-26).
 
 - Finished sessions keep their token use and estimated cost after a restart. Going back to 0.1.0 drops the saved usage the next time it saves the list (FR-26).
