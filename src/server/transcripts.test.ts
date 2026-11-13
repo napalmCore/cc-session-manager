@@ -21,6 +21,7 @@ import {
   FORMAT_RUN,
   isValidSessionId,
   metadataOf,
+  READ_CHUNK_BYTES,
   summarizeUsage,
   transcriptExists,
 } from "./transcripts.js";
@@ -672,6 +673,38 @@ ${late}
 
     expect(sessions[0]?.usage?.counting).toBe(true);
     expect(sessions[0]?.gitBranch).toBeUndefined();
+  });
+
+  it("stops reading for the poll when its time is up, and goes on next poll (BUG-33)", async () => {
+    // Two replies, each in a piece of its own past a 1 MB filler line.
+    writeTranscript(`${reply()}
+${"x".repeat(READ_CHUNK_BYTES)}
+${reply({ id: "msg_2" })}
+`);
+    let time = 0;
+    const reader = createTranscriptReader(root, {
+      budgetMs: 100,
+      clock: () => time,
+    });
+    const real = reader.internals.readBytes;
+    // Every piece read takes 60 ms of the 100 ms budget.
+    reader.internals.readBytes = async (file, position, length) => {
+      time += 60;
+      return real(file, position, length);
+    };
+
+    const first = await reader.enrich([view(ID)]);
+    expect(first.sessions[0]?.usage?.counting).toBe(true);
+
+    let polls = 1;
+    let latest = first;
+    while (latest.sessions[0]?.usage?.counting === true && polls < 10) {
+      latest = await reader.enrich([view(ID)]);
+      polls += 1;
+    }
+    expect(polls).toBeGreaterThan(1);
+    expect(latest.sessions[0]?.usage?.counting).toBe(false);
+    expect(latest.sessions[0]?.usage?.groups[0]?.output).toBe(40);
   });
 
   it("still reports metadata with no read budget", async () => {
