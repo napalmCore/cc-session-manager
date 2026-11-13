@@ -176,8 +176,8 @@ The NFR-9 review, by an independent agent on `2a0dba7`, found one High issue and
 ## Iteration 3
 
 - **Status:** Testing in progress. Implementation steps 1 to 9 are merged, with the Testing fixes in #47. The agent-led checks below are done. These are still to do:
-  - L10, with the owner accepting the trust prompt.
   - A live re-measure of the first read from a cold start (BUG-33).
+- **Not run:** L10, skipped by decision 0022 because `claude --bg` still saw the throwaway repository as untrusted after the owner accepted its trust prompt twice. NVDA testing (NFR-12) was dropped by decision 0021.
 - **Also seen live:** a background session's listed start time changes when its process appears and again after Stop (BUG-23). The tool keeps the first one it saw for display and sorting, and the ownership check uses a fresh listing, so neither is affected. A short `claude -p` session showed as finished with its model, as BUG-27's fix intends.
 - **Exit criteria:** the same as iteration 2, including NFR-9's security review.
 
