@@ -304,6 +304,12 @@ describe("notifications kept for a tab that takes over (BUG-32)", () => {
     expect(pendingToShow(kept, 1_001 + PENDING_NOTIFY_MS)).toEqual([]);
   });
 
+  it("doesn't keep, or drops, one the notifying tab says it showed (FR-13)", () => {
+    expect(keepPending([], content("t1"), 0, new Set(["t1"]))).toEqual([]);
+    const kept = keepPending([], content("t1"), 0);
+    expect(keepPending(kept, null, 1, new Set(["t1"]))).toEqual([]);
+  });
+
   it("keeps several, drops old ones, and never more than five", () => {
     let kept = keepPending([], content("old"), 0);
     kept = keepPending(kept, null, PENDING_NOTIFY_MS + 1);

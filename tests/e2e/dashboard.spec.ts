@@ -516,6 +516,23 @@ test.describe("desktop notifications", () => {
       .toBe(1);
   });
 
+  test("doesn't show it again in the next tab when the first tab already showed it (FR-13)", async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(fakeNotifications("granted"));
+    await open(page, busyOnly());
+    const second = await context.newPage();
+    await second.goto(`http://127.0.0.1:${String(server.port)}/`);
+    await expect(second.getByText("Loading sessions…")).toHaveCount(0);
+
+    server.publish(waitingNow(2));
+    await expect.poll(async () => (await shown(page)).length).toBe(1);
+    await page.close();
+    await second.waitForTimeout(1500);
+    expect(await shown(second)).toEqual([]);
+  });
+
   test("highlights the session's row when the notification is clicked", async ({
     page,
   }) => {

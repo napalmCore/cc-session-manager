@@ -14,6 +14,10 @@ import type { Snapshot } from "../shared/protocol.js";
 export type NotifyPermission = NotificationPermission | "unavailable";
 
 const LOCK_NAME = "cc-session-manager-notifier";
+/** The notifying tab says here which notifications it showed, so no other tab shows them. */
+const SHOWN_CHANNEL = "cc-session-manager-shown";
+/** How many shown tags a tab remembers. */
+const SHOWN_LIMIT = 50;
 
 function currentPermission(): NotifyPermission {
   return typeof Notification === "undefined"
@@ -42,22 +46,55 @@ export function useNotifications(
   }, [onClick]);
   // Notifications this tab didn't show because another tab was showing them (BUG-32).
   const pending = useRef<PendingNotification[]>([]);
+  // Tags the notifying tab has shown, so this tab never shows them again (FR-13).
+  const shownTags = useRef(new Set<string>());
+  const channel = useRef<BroadcastChannel | null>(null);
 
-  const show = useCallback((content: NotificationContent) => {
-    try {
-      const notification = new Notification(content.title, {
-        body: content.body,
-        tag: content.tag,
-      });
-      notification.onclick = () => {
-        window.focus();
-        clickHandler.current(content.keys);
-        notification.close();
-      };
-    } catch {
-      // Some browsers only allow notifications from a service worker.
+  const remember = useCallback((tag: string) => {
+    const tags = shownTags.current;
+    tags.add(tag);
+    if (tags.size > SHOWN_LIMIT) {
+      const oldest = tags.values().next().value;
+      if (oldest !== undefined) tags.delete(oldest);
     }
+    pending.current = pending.current.filter(
+      (item) => item.content.tag !== tag,
+    );
   }, []);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const shownChannel = new BroadcastChannel(SHOWN_CHANNEL);
+    shownChannel.onmessage = (event: MessageEvent<unknown>) => {
+      if (typeof event.data === "string") remember(event.data);
+    };
+    channel.current = shownChannel;
+    return () => {
+      channel.current = null;
+      shownChannel.close();
+    };
+  }, [remember]);
+
+  const show = useCallback(
+    (content: NotificationContent) => {
+      remember(content.tag);
+      channel.current?.postMessage(content.tag);
+      try {
+        const notification = new Notification(content.title, {
+          body: content.body,
+          tag: content.tag,
+        });
+        notification.onclick = () => {
+          window.focus();
+          clickHandler.current(content.keys);
+          notification.close();
+        };
+      } catch {
+        // Some browsers only allow notifications from a service worker.
+      }
+    },
+    [remember],
+  );
 
   // Permission can change in another tab or in the browser's settings.
   useEffect(() => {
@@ -93,7 +130,7 @@ export function useNotifications(
       .request(LOCK_NAME, { signal: controller.signal }, () => {
         leader.current = true;
         // Shows what arrived while the previous tab was closing, if it's still recent.
-        const waiting = pendingToShow(pending.current, Date.now());
+        const waiting = pendingToShow(pending.current, performance.now());
         pending.current = [];
         if (currentPermission() === "granted") waiting.forEach(show);
         return new Promise<void>((resolve) => {
@@ -122,7 +159,12 @@ export function useNotifications(
       snapshot.runId,
     );
     if (!leader.current) {
-      pending.current = keepPending(pending.current, content, Date.now());
+      pending.current = keepPending(
+        pending.current,
+        content,
+        performance.now(),
+        shownTags.current,
+      );
       return;
     }
     if (content !== null) show(content);

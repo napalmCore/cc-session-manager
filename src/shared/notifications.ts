@@ -199,17 +199,22 @@ export interface PendingNotification {
 }
 
 /**
- * Adds a notification a tab didn't show, and drops ones too old to show, keeping the newest
- * few. The tag is the same in every tab, so showing one the closed tab already showed only
- * replaces it.
+ * Adds a notification a tab didn't show, unless the notifying tab says it showed it, and drops
+ * ones too old to show, keeping the newest few (BUG-32, FR-13).
  */
 export function keepPending(
   pending: readonly PendingNotification[],
   content: NotificationContent | null,
   now: number,
+  shown: ReadonlySet<string> = new Set(),
 ): PendingNotification[] {
-  const kept = pending.filter((item) => now - item.at <= PENDING_NOTIFY_MS);
-  if (content !== null) kept.push({ content, at: now });
+  const kept = pending.filter(
+    (item) =>
+      now - item.at <= PENDING_NOTIFY_MS && !shown.has(item.content.tag),
+  );
+  if (content !== null && !shown.has(content.tag)) {
+    kept.push({ content, at: now });
+  }
   return kept.slice(-5);
 }
 
