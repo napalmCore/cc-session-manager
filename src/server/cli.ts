@@ -31,7 +31,9 @@ import {
 import { createFolderWatch } from "./folders.js";
 import { createLeftoverTracker } from "./leftovers.js";
 import { createInputRunner, parseRecord } from "./leftovers-helper.js";
-import { createOpenExecutors } from "./open.js";
+import { cachedDriveType, powershellDriveType } from "./local-folder.js";
+import { createOpenExecutors, launchDetached } from "./open.js";
+import { createStartExecutor, FAILURE_WATCH_MS } from "./start.js";
 import {
   createStopDeleteExecutors,
   runClaude,
@@ -267,6 +269,12 @@ actionsRef.current = createActionTracker({
     forceEnd: (session, record) => endExecutors.forceEnd(session, record),
   },
   isProtected: (session) => protection.isProtected(session),
+  start: createStartExecutor({
+    programs,
+    driveType: cachedDriveType(powershellDriveType(programs.powershell)),
+    launch: launchDetached,
+    watch: watchPoller(() => poller.state(), FAILURE_WATCH_MS),
+  }),
   leftovers: {
     // Stop and Delete record the session's programs first, with the same ownership check End
     // uses. A session with no process, such as a stopped one, has nothing new to record.
