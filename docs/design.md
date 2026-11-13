@@ -613,7 +613,7 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
   - **`execFile` without a shell:** passes any prompt or name unchanged.
   - **Windows Terminal:** splits on `;`, mishandles quotes and tabs, and expands `%NAME%` with no way to escape it.
   - **The current console fallback, `cmd /c start`:** cuts line breaks, loses quotes, and expands `%NAME%`.
-  - **`conhost.exe` through `execFile`:** passed every probe except `%NAME%`.
+  - **`conhost.exe` through `execFile`:** passed every probe except `%NAME%`, but step 1 found it exits at once through a detached launch, so it isn't used.
 
 ### New components
 
@@ -641,7 +641,7 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
   - **After it starts:** the tool watches the listing for 10 seconds, and the response waits for it, so a background Start or Fork answers in up to about 15 seconds; the button says "Starting…" meanwhile. If the new ID shows `failed`, the result is "Claude Code started the session, but it failed straight away" (0025). The job file that would give the reason isn't read.
 - **Interactive:** launched the way Open is, with the new argument builder:
   - **With Windows Terminal:** `wt -w new -d . -- claude -n <name> --`, with the folder given only as the process's working folder, as Open does today, so the folder is never in command text (NFR-7). The name is escaped for Windows Terminal: MSVCRT quoting, trailing backslashes doubled when it has a space, then `;` becomes `\;`.
-  - **Without it:** `conhost.exe claude -n <name> --` through `execFile`, with the folder as the working folder, replacing the `cmd /c start` fallback for Open and Resume too. `conhost.exe` is resolved from System32 by `resolvePrograms`, with a C-11 test using a planted `conhost.exe`. Implementation step 1 must show this works with a real interactive session. If it doesn't, interactive Start and Fork refuse a name without Windows Terminal, and Open and Resume keep today's fallback (0025).
+  - **Without it:** `cmd /c start`, as Open has used since iteration 2, for arguments that are only options, session IDs, and `--`. A name is refused there, because `cmd` would change it (0025). `conhost.exe` was tried in step 1 and dropped: it only runs while its parent keeps live pipes to it, which the dashboard's detached launch doesn't.
   - **Result:** success means the terminal launched (FR-18), because Claude Code may first show its own trust prompt.
 - **One at a time:** one Start runs at a time across the tool, under its own lock key, held until the 10-second watch ends. The button is disabled until the result arrives, and nothing is retried.
 - **Not kept:** the prompt and name aren't logged, stored, or kept after the action (C-18). The result names the folder and kind, not the prompt.
@@ -737,7 +737,7 @@ Each step is a separate pull request, approved by an independent agent before me
 
 | Step | Pull request                                                                                                        | Covers                 |
 | ---- | ------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| 1    | Launch arguments, the Windows Terminal escape, and the conhost fallback, proven with a real session                 | C-15, NFR-14, U-24     |
+| 1    | Launch arguments and the Windows Terminal escape, proven through the dashboard's own launch                         | C-15, NFR-14, U-24     |
 | 2    | Folder checks, the action route's schemas, and the Start action, with validation, the lock, and the 10-second watch | FR-32, FR-34, NFR-14   |
 | 3    | Folder picker                                                                                                       | FR-32, NFR-15          |
 | 4    | History index and its route                                                                                         | FR-35, NFR-15          |

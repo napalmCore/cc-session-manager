@@ -1,14 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   claudeArguments,
+  consoleSafe,
   planBackground,
   planTerminal,
   windowsTerminalArgument,
 } from "./launch.js";
-import { resolvePrograms, type Programs } from "./programs.js";
+import type { Programs } from "./programs.js";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const HOSTILE_PROMPT =
@@ -18,7 +16,7 @@ const HOSTILE_NAME = '-n "q" ; a;b ^ & | ! \\';
 const programs: Programs = {
   claude: "C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
   wt: "C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe",
-  conhost: "C:\\Windows\\System32\\conhost.exe",
+  cmd: "C:\\Windows\\System32\\cmd.exe",
   powershell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
 };
 
@@ -116,6 +114,10 @@ describe("Windows Terminal escaping (U-24)", () => {
     ["ends with space\\", "ends with space\\\\"],
     ['q\\"x', 'q\\\\\\"x'],
     ["--", "--"],
+    ['a"b', 'a\\"b'],
+    ['""', '\\"\\"'],
+    ["a\\\\", "a\\\\"],
+    ["a\\;b c", "a\\\\;b c"],
   ])("escapes %j as %j", (value, expected) => {
     expect(windowsTerminalArgument(value)).toBe(expected);
   });
@@ -144,18 +146,34 @@ describe("terminal plans", () => {
     expect(plan.windowsVerbatimArguments).toBe(false);
   });
 
-  it("falls back to conhost, passing arguments unchanged with no shell", () => {
-    const args = claudeArguments({ kind: "interactive", name: HOSTILE_NAME });
+  it("falls back to cmd /c start for arguments with no name", () => {
+    const args = claudeArguments({ kind: "interactive", forkOf: SESSION_ID });
     const plan = planTerminal({ ...programs, wt: null }, args, folder);
-    expect(plan.file).toBe(programs.conhost);
-    expect(plan.args).toEqual([programs.claude, "-n", HOSTILE_NAME, "--"]);
+    expect(plan.file).toBe(programs.cmd);
+    expect(plan.windowsVerbatimArguments).toBe(true);
+    expect(plan.args).toEqual([
+      "/d",
+      "/v:off",
+      "/c",
+      `start "" "${String(programs.claude)}" --resume ${SESSION_ID} --fork-session --`,
+    ]);
     expect(plan.cwd).toBe(folder);
-    expect(plan.windowsVerbatimArguments).toBe(false);
+    expect(plan.args.join(" ")).not.toContain("work");
+  });
+
+  it("refuses a name without Windows Terminal (0025)", () => {
+    for (const name of ["plain", HOSTILE_NAME, "a b"]) {
+      const args = claudeArguments({ kind: "interactive", name });
+      expect(consoleSafe(args)).toBe(false);
+      expect(() =>
+        planTerminal({ ...programs, wt: null }, args, folder),
+      ).toThrow("A name needs Windows Terminal");
+    }
   });
 
   it("is unavailable with neither terminal, or without claude", () => {
     expect(() =>
-      planTerminal({ ...programs, wt: null, conhost: null }, ["--"], folder),
+      planTerminal({ ...programs, wt: null, cmd: null }, ["--"], folder),
     ).toThrow();
     expect(() =>
       planTerminal({ ...programs, claude: null }, ["--"], folder),
@@ -171,29 +189,5 @@ describe("terminal plans", () => {
     expect(plan.file).toBe(programs.claude);
     expect(plan.args).toEqual(["--bg", "--", HOSTILE_PROMPT]);
     expect(plan.windowsVerbatimArguments).toBe(false);
-  });
-});
-
-describe("resolving conhost (C-11)", () => {
-  let root = "";
-  afterEach(() => {
-    if (root !== "") rmSync(root, { recursive: true, force: true });
-    root = "";
-  });
-
-  it("finds conhost.exe only under System32, never in PATH or the session's folder", () => {
-    root = mkdtempSync(join(tmpdir(), "ccsm-conhost-"));
-    const windows = join(root, "Windows");
-    const planted = join(root, "planted");
-    mkdirSync(join(windows, "System32"), { recursive: true });
-    mkdirSync(planted);
-    writeFileSync(join(planted, "conhost.exe"), "");
-
-    const missing = resolvePrograms({ SystemRoot: windows, PATH: planted });
-    expect(missing.conhost).toBeNull();
-
-    writeFileSync(join(windows, "System32", "conhost.exe"), "");
-    const found = resolvePrograms({ SystemRoot: windows, PATH: planted });
-    expect(found.conhost).toBe(join(windows, "System32", "conhost.exe"));
   });
 });

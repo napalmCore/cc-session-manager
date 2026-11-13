@@ -33,6 +33,6 @@ Design experiments on throwaway sessions answered U-20 to U-24. The iteration 4 
 
 ## Consequences
 
-- `planOpen`'s `cmd /c start` fallback is replaced by `conhost.exe` for Open and Resume too, if step 1 proves it. That's because it also passes Resume's arguments.
+- **Step 1 result:** `conhost.exe` failed through the dashboard's own detached launch, because it exits at once unless its parent keeps live pipes to it. The owner chose this decision's fallback: `cmd /c start` stays the console fallback for Open, Resume, and interactive Start and Fork, and a name is refused without Windows Terminal. `conhost.exe` isn't used.
 - The release notes must say names can't contain `%`.
 - Design's review follows 0019: an independent agent reviews, and merging after CI passes signs it off.

@@ -62,7 +62,8 @@ function msvcrtInner(value: string): string {
  * and wraps an argument in quotes only when it has a space, without escaping quotes inside. So
  * the inside is MSVCRT-escaped, trailing backslashes stay doubled only when there's a space, and
  * `;` becomes `\;`. `%NAME%` and tabs can't be passed this way, so names refuse `%` and control
- * characters (0025). Proven with real sessions in design (U-24).
+ * characters (0025). Proven with real sessions in design (U-24), and through the
+ * dashboard's own detached launch in step 1.
  */
 export function windowsTerminalArgument(value: string): string {
   const inner = msvcrtInner(value);
@@ -73,9 +74,22 @@ export function windowsTerminalArgument(value: string): string {
 }
 
 /**
+ * Arguments the console fallback can pass: options, session IDs, and `--`. `cmd /c start`
+ * re-reads its command line, so anything else, such as a name, could be changed (0025).
+ */
+const CONSOLE_SAFE = /^[A-Za-z0-9-]+$/;
+
+/** Whether these arguments can be passed without Windows Terminal. */
+export function consoleSafe(args: string[]): boolean {
+  // Any name, however plain, needs Windows Terminal (0025).
+  return !args.includes("-n") && args.every((arg) => CONSOLE_SAFE.test(arg));
+}
+
+/**
  * A new terminal running `claude` with these arguments, in `cwd`, which is only ever the
- * process's working folder, never command text (NFR-7). Windows Terminal is preferred; without
- * it, `conhost.exe` opens a console window and runs `claude` directly, with no shell (0025).
+ * process's working folder, never command text (NFR-7). Windows Terminal is preferred. Without
+ * it, `cmd /c start` opens a console window, as Open has since iteration 2, for arguments that
+ * are only options, session IDs, and `--`. A name needs Windows Terminal (0025).
  */
 export function planTerminal(
   programs: Programs,
@@ -99,12 +113,21 @@ export function planTerminal(
       windowsVerbatimArguments: false,
     };
   }
-  if (programs.conhost !== null) {
+  if (programs.cmd !== null) {
+    if (!consoleSafe(args)) {
+      throw new Error("A name needs Windows Terminal");
+    }
     return {
-      file: programs.conhost,
-      args: [programs.claude, ...args],
+      file: programs.cmd,
+      // /v:off stops a delayed-expansion registry setting from expanding ! in the path.
+      args: [
+        "/d",
+        "/v:off",
+        "/c",
+        `start "" "${programs.claude}" ${args.join(" ")}`,
+      ],
       cwd,
-      windowsVerbatimArguments: false,
+      windowsVerbatimArguments: true,
     };
   }
   throw new Error("No terminal program was found");

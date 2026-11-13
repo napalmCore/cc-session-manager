@@ -10,8 +10,7 @@ import { isValidSessionId } from "./transcripts.js";
 export interface Programs {
   claude: string | null;
   wt: string | null;
-  /** Opens a console window when Windows Terminal isn't installed (0025). */
-  conhost: string | null;
+  cmd: string | null;
   powershell: string | null;
 }
 
@@ -104,7 +103,7 @@ export function resolvePrograms(
   return {
     claude: findClaude(env),
     wt: wt !== null && isSafeProgramPath(wt) && exists(wt) ? wt : null,
-    conhost: systemProgram(env, "conhost.exe"),
+    cmd: systemProgram(env, "cmd.exe"),
     powershell: systemProgram(
       env,
       "WindowsPowerShell",

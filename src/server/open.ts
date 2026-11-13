@@ -66,7 +66,7 @@ export function createOpenExecutors(options: OpenOptions) {
         message: "Claude Code's program wasn't found.",
       };
     }
-    if (options.programs.wt === null && options.programs.conhost === null) {
+    if (options.programs.wt === null && options.programs.cmd === null) {
       return {
         outcome: "unavailable",
         message: "No terminal program was found.",
