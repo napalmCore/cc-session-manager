@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 4, Phase 1: Planning, done; Requirements next.** 0.1.0 and 0.2.0 are released ([0017](decisions/0017-first-release.md)). Iteration 3 is closed ([0023](decisions/0023-iteration-4-plan.md)). Iteration 4, for 0.3.0, covers starting sessions, forking, a history of past sessions, and search inside conversations, with names set only when a session starts ([0023](decisions/0023-iteration-4-plan.md)).
+**Iteration 4, Phase 2: Requirements.** 0.1.0 and 0.2.0 are released ([0017](decisions/0017-first-release.md)). Iteration 3 is closed ([0023](decisions/0023-iteration-4-plan.md)). Iteration 4, for 0.3.0, covers starting sessions, forking, a history of past sessions, and search inside conversations, with names set only when a session starts ([0023](decisions/0023-iteration-4-plan.md)).
 
 ## How these docs work
 
@@ -47,3 +47,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0021](decisions/0021-drop-nvda-testing.md)             | Drop screen-reader testing with NVDA                | Accepted                                  |
 | [0022](decisions/0022-skip-l10-iteration-3.md)          | Skip L10 in iteration 3                             | Accepted                                  |
 | [0023](decisions/0023-iteration-4-plan.md)              | Close iteration 3, and iteration 4 scope            | Accepted                                  |
+| [0024](decisions/0024-iteration-4-requirements.md)      | Iteration 4 requirements choices                    | Accepted                                  |
