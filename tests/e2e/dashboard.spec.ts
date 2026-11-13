@@ -528,6 +528,8 @@ test.describe("desktop notifications", () => {
 
     server.publish(waitingNow(2));
     await expect.poll(async () => (await shown(page)).length).toBe(1);
+    // The second tab has the event too, so showing nothing proves it held back.
+    await expect(section(second, /needs you/i)).toBeVisible();
     await page.close();
     await second.waitForTimeout(1500);
     expect(await shown(second)).toEqual([]);

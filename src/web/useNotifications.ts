@@ -167,7 +167,8 @@ export function useNotifications(
       );
       return;
     }
-    if (content !== null) show(content);
+    // Another tab may have shown it just before handing over the lock.
+    if (content !== null && !shownTags.current.has(content.tag)) show(content);
   }, [snapshot, show]);
 
   const request = useCallback(() => {
