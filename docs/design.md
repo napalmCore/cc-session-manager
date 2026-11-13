@@ -587,3 +587,179 @@ Each step is a separate pull request, approved by an independent agent before me
   - L10, with the owner accepting the trust prompt, skipped by decision 0022.
   - NVDA testing (NFR-12), dropped by decision 0021.
 - **Security review:** the new action, the helper modes, and the printed link, before release (NFR-9).
+
+## Iteration 4 design
+
+Requirements: the Iteration 4 section of [requirements.md](requirements.md). Decisions: [0023](decisions/0023-iteration-4-plan.md), [0024](decisions/0024-iteration-4-requirements.md), and [0025](decisions/0025-iteration-4-design.md).
+
+### Evidence
+
+From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, run through Node's `execFile` with no shell. Other transcripts were measured by timings, counts, and field names only.
+
+- **Background start (U-20):**
+  - **Success:** `claude --bg` exits 0 and prints `backgrounded · <short ID>` first, adding ` · <name>` when it has one. It took 5.9 s cold and 3.6 to 4.1 s warm. The session was listed on the next `claude agents` call.
+  - **Refusal:** exits 1 with one line on standard error. An untrusted folder gives "Workspace not trusted. Run `claude` in <path> once and accept the trust prompt, then retry.", read from the binary, not seen live.
+  - **Late failure:** some failures exit 0 and show only as `state: "failed"` 2 to 3 seconds later, with no reason in the listing. Examples are a bad option and an unknown resume ID.
+- **Fork (U-21):** `--resume <ID> --fork-session` worked on idle, working, stopped, and running interactive sessions. Each got a new session ID, and the original's transcript stayed byte for byte the same. A fork copies the original's name unless `-n` is given, and copies its lines with their original timestamps.
+- **Message text (U-22):** text comes from two kinds of line:
+  - A prompt is a `user` line with `origin.kind: "human"` or `promptSource: "sdk"`.
+  - A reply is an `assistant` line's `text` blocks.
+
+  Everything else is left out by not being allowed: thinking, tool use and results, `isMeta`, compaction summaries, task notifications, command lines, interrupts, and `system`, `attachment`, and `api-request-blob` lines. Synthetic replies, which are `assistant` lines, are excluded explicitly (see Search). Scanning all 80 local transcripts, 147 MB, took 1.3 s wall and 1.5 s CPU with the file cache warm.
+
+- **History fields (U-23):** every transcript has `cwd`, timestamps, `gitBranch`, and `sessionId`, which matches the file name, within its first 64 KB and last 256 KB. A fork's first timestamps are the original's.
+- **Arguments (U-24):**
+  - **`--`:** works before the prompt in every mode.
+  - **`execFile` without a shell:** passes any prompt or name unchanged.
+  - **Windows Terminal:** splits on `;`, mishandles quotes and tabs, and expands `%NAME%` with no way to escape it.
+  - **The current console fallback, `cmd /c start`:** cuts line breaks, loses quotes, and expands `%NAME%`.
+  - **`conhost.exe` through `execFile`:** passed every probe except `%NAME%`.
+
+### New components
+
+| Component        | Responsibility                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Launch arguments | Builds `claude` argument lists for Start and Fork, with every option before `--`, and the Windows Terminal escaping for an interactive name.     |
+| Start and Fork   | Two new actions on the existing route, with their own validation, the one-Start lock, and the 10-second watch for a late failure.                |
+| History index    | Lists main transcripts on disk, and reads each one's folder, branch, model, times, and usage through the reader's allow-list.                    |
+| Search           | Scans prompts and replies on demand in a worker thread, returns matches and snippets, and keeps nothing.                                         |
+| Folder picker    | Lists folders under a chosen local folder, through the server, for the New session form.                                                         |
+| Folder checks    | Decides whether a folder is local: refuses network shares, device paths, and mapped, `subst`, or linked folders that lead to a network location. |
+| Action routes    | One request schema per action, and a larger body limit for Start and Fork.                                                                       |
+
+### Start (FR-32, C-15, NFR-14)
+
+- **Request:** `{ action: "start", folder, kind, name?, prompt? }`. The server checks these against NFR-14:
+  - **Folder:** an existing local absolute path, by the folder checks below. Network shares, device paths (`\\?\`, `\\.\`), and relative paths are refused.
+  - **Name:** at most 100 characters, with no control characters and no `%` (0025).
+  - **Prompt:** required for a background start. At most 8,000 characters. Line breaks and tabs are allowed; other control characters are refused.
+- **Background:**
+  - **Command:** `execFile(claude, ["--bg", "-n", name, "--", prompt], { cwd: folder })`, with no shell and `sessionLaunchEnv`. `-n` is left out when there's no name. The timeout is 30 s.
+  - **Started:** exit 0 and a first line of `backgrounded · <ID>`.
+  - **Refused:** a non-zero exit. The tool shows its own words only (FR-18, 0025). Known reasons map to messages: an untrusted folder ("Claude Code doesn't trust this folder yet. Run `claude` there once and accept its prompt."), a folder that's gone, Claude Code not signed in, and its background service being out of date. Anything else is "Claude Code refused to start the session." Claude Code's own text is never shown, logged, or kept.
+  - **Unknown:** a timeout, or exit 0 without a `backgrounded · <ID>` line, is reported as unknown (FR-18), and the page says to check the list.
+  - **After it starts:** the tool watches the listing for 10 seconds, and the response waits for it, so a background Start or Fork answers in up to about 15 seconds; the button says "Starting…" meanwhile. If the new ID shows `failed`, the result is "Claude Code started the session, but it failed straight away" (0025). The job file that would give the reason isn't read.
+- **Interactive:** launched the way Open is, with the new argument builder:
+  - **With Windows Terminal:** `wt -w new -d . -- claude -n <name> --`, with the folder given only as the process's working folder, as Open does today, so the folder is never in command text (NFR-7). The name is escaped for Windows Terminal: MSVCRT quoting, trailing backslashes doubled when it has a space, then `;` becomes `\;`.
+  - **Without it:** `conhost.exe claude -n <name> --` through `execFile`, with the folder as the working folder, replacing the `cmd /c start` fallback for Open and Resume too. `conhost.exe` is resolved from System32 by `resolvePrograms`, with a C-11 test using a planted `conhost.exe`. Implementation step 1 must show this works with a real interactive session. If it doesn't, interactive Start and Fork refuse a name without Windows Terminal, and Open and Resume keep today's fallback (0025).
+  - **Result:** success means the terminal launched (FR-18), because Claude Code may first show its own trust prompt.
+- **One at a time:** one Start runs at a time across the tool, under its own lock key, held until the 10-second watch ends. The button is disabled until the result arrives, and nothing is retried.
+- **Not kept:** the prompt and name aren't logged, stored, or kept after the action (C-18). The result names the folder and kind, not the prompt.
+
+### Fork (FR-33)
+
+- **Request:** `{ action: "fork", key, kind, name?, prompt? }`. The key is a session ID from the main list or History. The server finds the session's folder and ID in its own data, and refuses a key it doesn't know.
+- **Before forking:** the folder must pass the same folder checks as Start, and the original's main transcript must be on disk. That avoids the unknown-ID case that kept restarting. Fork is hidden when the folder has gone, using the folder watch Resume uses, and refused if pressed anyway (FR-33).
+- **Command:** `claude --resume <ID> --fork-session [--bg] [-n name] -- [prompt]`, with the same launch, validation, results, and 10-second watch as Start. `--fork-session` is always present, and a test checks it.
+- **Locking:** one Fork per session at a time, locked on the session ID, so it holds whether Fork was pressed in the main list or History (NFR-10). FR-22's protection isn't checked, by decision 0024.
+- **History rows:** a History session that isn't listed needs no freshness check (C-9), because nothing about it is changed. A listed session uses the listing as today.
+
+### Folder checks (FR-32, FR-33, NFR-14)
+
+- **Path form:** an absolute path on a drive letter. `\\server\share`, `\\?\`, `\\.\`, and relative paths are refused.
+- **Drive type:** the drive letter's type is read through the PowerShell program the tool already uses, as `[System.IO.DriveInfo]::new('<letter>').DriveType`, with the letter checked to be A to Z first and passed as the only argument. A `Network` drive, which is how mapped drives appear, is refused, and so is any folder whose check fails or times out.
+- **`subst` and links:** the path is resolved with `fs.realpath.native` first, because the plain JavaScript version doesn't resolve `subst` drives, which follows `subst` drives, junctions, and symbolic links. The resolved path is checked again, by form and drive type, and must still exist. Refused if any step fails (0025).
+- These checks also apply to the folder picker, to a Fork's folder, and to Resume from History.
+
+### Action routes (NFR-6, NFR-14)
+
+- **Schemas:** the action route's single strict schema becomes one strict schema per action, chosen by `action`: the existing ones keep `{ action, key }`, `start` takes `{ action, folder, kind, name?, prompt? }`, and `fork` takes `{ action, key, kind, name?, prompt? }`, and `listFolders` takes `{ action, folder? }`. Unknown fields are refused as today.
+- **Body limit:** 32 KB for `start` and `fork`, which fits an 8,000-character prompt, and the current 4 KB for the others, including `listFolders`.
+- **Same guards:** all of them need the dashboard's origin, the page key, and JSON, as NFR-6 says today.
+
+### Resume from History (FR-35, FR-14, C-9)
+
+- Resume on a History row that Claude Code no longer lists isn't refused for being unlisted. The server finds the session in the History index by session ID, checks its folder with the folder checks, and takes a fresh listing first (C-9): if the session is listed again, the request goes through today's Resume rules for listed sessions instead, and Resume is refused if it's running.
+- It then runs today's Resume launch (`claude --resume <ID>`) in the session's folder, with its result rules (FR-14, FR-18).
+- A listed session's Resume is unchanged.
+
+### History (FR-35, NFR-15)
+
+- **Finding transcripts:** `~/.claude/projects/*/<session ID>.jsonl` main transcripts, found with directory listings, newest modified first.
+- **Reading each one:**
+  - **Folder:** the first `cwd`, from the first 64 KB.
+  - **Branch, model, and last activity:** from the last 256 KB.
+  - **Start time:** the first timestamp, unless it's more than 60 seconds before the file's creation time, as for a fork, which copies the original's timestamps. Then it's the file's creation time.
+  - **Usage:** the transcript reader's own incremental reading and allow-list, with `cwd` and `sessionId` added to it, and its budget. The 64 KB and 256 KB reads use the same allow-list.
+
+  No message text is read (C-4, C-12).
+
+- **Cache:** results are kept in memory per file, by size and modified time. A changed file is read again from where it stopped. `cwd` and `sessionId` stay in memory and never go into the store. Like `gitBranch` and `timestamp`, they're metadata, not message text, so C-12 still holds.
+- **Budget:** History reading starts when History opens and stops when it closes. Live sessions keep first claim on the reader's per-poll budget.
+- **Order and paging:** 50 a page, newest first. The first page is sorted by each file's modified time, from directory listings, and shows within 5 seconds. As the 256 KB reads give each session's last activity, the order is refined to newest last activity first. Usage for the page then fills in within the reader's per-poll budget.
+- **No names:** History doesn't show names (C-7). Sessions with no messages are left out. A session in the main list is marked "In the list".
+
+### Search (FR-36, C-16, NFR-15)
+
+- **Routes:** `POST /api/search` starts a search, with `{ query }` in the body, so the text is never in the address. It returns a random 128-bit search id. `POST /api/search/<id>` returns progress and, when done, the results. `POST /api/search/<id>/cancel` cancels. They're all POSTs because browsers send an `Origin` header with a POST but not with a same-origin GET, and NFR-6 checks it. All three need the dashboard's origin, the page key, and the cookie (NFR-6), and every response is `Cache-Control: no-store`.
+- **Who sees results:** results go only in the response to `POST /api/search/<id>`, to whoever has that id, which only the page that started the search knows. Nothing about a search goes over the WebSocket, because every tab shares it.
+- **Limits:** one search at a time; a new one cancels the old. The query must be 2 to 200 characters after trimming.
+- **Scanning:** a worker thread streams each main transcript, newest first, parsing only lines containing `"user"` or `"assistant"`. It keeps prompt and reply text by U-22's allow-list, and also drops `isSidechain` lines, synthetic replies (`message.model: "<synthetic>"` or `isApiErrorMessage`), and, as a safeguard, any line with `isMeta`, `isCompactSummary`, or `toolUseResult`. It matches case-insensitively, as plain text, with no regular expressions. Lines without `origin` or `promptSource` are skipped, and counted toward the format warning.
+- **Results:** per session, the match count and up to three snippets of at most 160 characters, with the match centred. The search stops collecting snippets after 100 matching sessions, but goes on counting. The page shows snippets as text, never as HTML.
+- **Progress:** files done out of total, in the `POST /api/search/<id>` response, which the page asks for every second.
+- **Stopping:** the page can cancel. The scan stops at 30 seconds with what it has, and says so.
+- **Not kept:** results are kept in memory for at most 60 seconds after they're ready, or until they're fetched or cancelled, then dropped, and the worker exits. The query and snippets are never logged.
+
+### Folder picker (FR-32, NFR-15)
+
+- **Request:** `{ action: "listFolders", folder? }`, with the page key. It returns the subfolder names of a local absolute folder, or of the user's home folder if none is given, and of drive roots.
+- **Limits:** at most 500 entries. It never reads file contents, follows no shortcuts, and applies the folder checks to the folder asked for, so network, mapped, `subst`, and linked network folders are refused.
+
+### Page
+
+- **New session:** a "New session" button opens a form: folder (a text field and Browse), kind, name, and prompt (background only). Errors are announced.
+- **Fork:** offered on rows with a session ID, in the main list and History.
+- **History and Search:** two new views, reached from the page header.
+- **Accessibility:** all of these meet NFR-8 (NFR-16), with axe checks in both themes.
+
+### Other choices
+
+- **CPU (NFR-11):** History reading and search run only when you open History or search, so they don't count toward NFR-11's steady-state figure. Search's worker keeps polling on time.
+- **Release notes:** they must say search reads message text while it runs and keeps none (C-16), that `%` isn't allowed in names, and that interactive Start and Fork may wait at Claude Code's trust prompt.
+
+### Requirements coverage
+
+| Requirement  | Where                                                       |
+| ------------ | ----------------------------------------------------------- |
+| FR-32, FR-34 | Start                                                       |
+| FR-33, FR-34 | Fork                                                        |
+| FR-35        | History, Resume from History                                |
+| FR-36        | Search                                                      |
+| C-15, NFR-14 | Start, Fork, launch arguments, folder checks, action routes |
+| C-16         | Search                                                      |
+| C-17, C-18   | Start, Fork                                                 |
+| NFR-15       | History, Search, Folder picker                              |
+| NFR-16       | Page                                                        |
+
+### Build plan
+
+Each step is a separate pull request, approved by an independent agent before merge.
+
+| Step | Pull request                                                                                                        | Covers                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| 1    | Launch arguments, the Windows Terminal escape, and the conhost fallback, proven with a real session                 | C-15, NFR-14, U-24     |
+| 2    | Folder checks, the action route's schemas, and the Start action, with validation, the lock, and the 10-second watch | FR-32, FR-34, NFR-14   |
+| 3    | Folder picker                                                                                                       | FR-32, NFR-15          |
+| 4    | History index and its route                                                                                         | FR-35, NFR-15          |
+| 5    | Fork, and Resume from History                                                                                       | FR-33, FR-35, C-9      |
+| 6    | Search worker and its routes                                                                                        | FR-36, C-16, NFR-15    |
+| 7    | Page: New session and Fork forms, History, and Search                                                               | FR-32 to FR-36, NFR-16 |
+
+### Testing approach
+
+- **Unit tests:**
+  - **Argument building:** the options always come before `--`, and `--fork-session` is always there.
+  - **Hostile input:** prompts and names with quotes, `;`, `%`, `^`, `&`, `|`, `!`, line breaks, a leading `-`, and option-like names.
+  - **Windows Terminal escaping:** checked against a stand-in program.
+  - **Validation:** each limit and refusal.
+  - **Message text:** the U-22 allow-list, using a fixture of every line kind.
+  - **History fields and snippets.**
+  - **Nothing logged:** tests capture the tool's log and output and check that no prompt, name, search text, or snippet ever appears in them.
+  - **Folder checks:** network, mapped, `subst`, and linked folders, using stand-ins.
+- **Browser tests:** the forms, results, History paging, search progress, cancelling, the 30-second stop, focus, and axe.
+- **Live checks:**
+  - Start, both kinds, in a trusted throwaway folder. A refusal in an untrusted one, if the owner can provide one.
+  - Fork of a running and a finished session, with the original's transcript unchanged.
+  - A search over all local transcripts, timed.
+  - History's first page, timed.
+- **Security review (NFR-9):** the new actions, the folder picker, and search's handling of message text, before release.
