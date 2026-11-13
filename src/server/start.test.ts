@@ -390,10 +390,12 @@ describe.runIf(process.platform === "win32")("the real drive-type read", () => {
 describe("text checks (NFR-14)", () => {
   it.each([
     ["a C1 control", "a\u0085b"],
-    ["a right-to-left override", "safe‮txt.exe"],
-    ["a zero-width space", "a​b"],
-    ["a byte-order mark", "﻿name"],
-    ["an isolate", "a⁦b"],
+    ["a right-to-left override", "safe\u202Etxt.exe"],
+    ["a zero-width space", "a\u200Bb"],
+    ["a line separator", "a\u2028b"],
+    ["a soft hyphen", "a\u00ADb"],
+    ["a byte-order mark", "\uFEFFname"],
+    ["an isolate", "a\u2066b"],
   ])("refuses %s in a name", (_label, name) => {
     expect(hasControl(name)).toBe(true);
     expect(checkStartText("interactive", name, undefined)).toBe(
@@ -401,7 +403,11 @@ describe("text checks (NFR-14)", () => {
     );
   });
 
-  it("allows ordinary text, including accents and CJK", () => {
+  it("allows ordinary text, including accents, CJK, and zero-width joiners", () => {
+    expect(hasControl("\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645")).toBe(
+      false,
+    );
+    expect(hasControl("\u{1F469}\u200D\u{1F4BB}")).toBe(false);
     expect(hasControl("Café 日本 – work")).toBe(false);
   });
 
@@ -453,6 +459,51 @@ describe("prompts, names, and Claude Code's text are never logged (C-18)", () =>
           kind: "background",
           name: NAME,
           prompt: SECRET,
+        });
+        expect(JSON.stringify(result)).not.toContain("SECRET");
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect(written.join("\n")).not.toContain("SECRET");
+  });
+});
+
+describe("an interactive start logs no name either (C-18)", () => {
+  it("writes nothing with the name, with or without Windows Terminal", async () => {
+    const written: string[] = [];
+    const spies = [
+      vi
+        .spyOn(console, "log")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi
+        .spyOn(console, "error")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi
+        .spyOn(console, "warn")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi
+        .spyOn(console, "info")
+        .mockImplementation((...args) => written.push(args.join(" "))),
+      vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      }),
+      vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      }),
+    ];
+    try {
+      for (const programsUsed of [programs, { ...programs, wt: null }]) {
+        const { start } = executor(() => exited(0, ""), {
+          programs: programsUsed,
+        });
+        const result = await start({
+          action: "start",
+          folder: root,
+          kind: "interactive",
+          name: "SECRET-NAME-7731",
         });
         expect(JSON.stringify(result)).not.toContain("SECRET");
       }

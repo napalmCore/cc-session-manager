@@ -1,14 +1,21 @@
 /**
  * Characters a name or folder must not contain (NFR-14, 0025): C0 and C1 control characters,
- * delete, and the invisible formatting and direction marks that could make text look like
- * something else, such as right-to-left overrides.
+ * delete, line and paragraph separators, the soft hyphen, and the invisible formatting and
+ * direction marks that could make text look like something else, such as right-to-left
+ * overrides. Zero-width joiners stay allowed, because ordinary text, such as Persian names and
+ * some emoji, needs them.
  */
 function isUnsafe(code: number): boolean {
   return (
     code < 0x20 ||
     (code >= 0x7f && code <= 0x9f) ||
     code === 0x061c ||
-    (code >= 0x200b && code <= 0x200f) ||
+    code === 0x00ad ||
+    code === 0x200b ||
+    code === 0x200e ||
+    code === 0x200f ||
+    code === 0x2028 ||
+    code === 0x2029 ||
     (code >= 0x202a && code <= 0x202e) ||
     (code >= 0x2060 && code <= 0x2069) ||
     code === 0xfeff

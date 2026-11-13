@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { checkLocalFolder, type DriveTypeReader } from "./local-folder.js";
 
 /** At most this many subfolders are returned for one folder (NFR-15). */
@@ -62,6 +63,22 @@ export function powershellLocalDrives(
     });
 }
 
+/** Remembers the local drive list for a while, so Browse doesn't start PowerShell each time. */
+export function cachedLocalDrives(
+  read: () => Promise<string[]>,
+  now: () => number = Date.now,
+  forMs = 30_000,
+): () => Promise<string[]> {
+  let kept: { drives: string[]; at: number } | null = null;
+  return async () => {
+    if (kept !== null && now() - kept.at < forMs) return kept.drives;
+    const drives = await read();
+    // An empty list may be a failed read, so it isn't kept.
+    kept = drives.length > 0 ? { drives, at: now() } : null;
+    return drives;
+  };
+}
+
 export interface FolderPickerOptions {
   driveType: DriveTypeReader;
   localDrives: () => Promise<string[]>;
@@ -87,10 +104,26 @@ export function createFolderPicker(options: FolderPickerOptions) {
     let names: string[];
     try {
       const entries = await readdir(checked.folder, { withFileTypes: true });
-      names = entries
-        .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
-        .map((entry) => entry.name)
-        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+      const kept: string[] = [];
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          kept.push(entry.name);
+        } else if (entry.isSymbolicLink()) {
+          // Windows reports any folder with a reparse point as a link here, including OneDrive
+          // folders. lstat tells a real folder from a junction or symbolic link, which are never
+          // listed, so Browse never follows one.
+          try {
+            const stats = await lstat(join(checked.folder, entry.name));
+            if (stats.isDirectory() && !stats.isSymbolicLink())
+              kept.push(entry.name);
+          } catch {
+            // An entry that can't be read isn't listed.
+          }
+        }
+      }
+      names = kept.sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" }),
+      );
     } catch {
       return {
         outcome: "refused",

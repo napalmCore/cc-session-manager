@@ -31,7 +31,11 @@ import {
 import { createFolderWatch } from "./folders.js";
 import { createLeftoverTracker } from "./leftovers.js";
 import { createInputRunner, parseRecord } from "./leftovers-helper.js";
-import { createFolderPicker, powershellLocalDrives } from "./folder-picker.js";
+import {
+  cachedLocalDrives,
+  createFolderPicker,
+  powershellLocalDrives,
+} from "./folder-picker.js";
 import { cachedDriveType, powershellDriveType } from "./local-folder.js";
 import { createOpenExecutors, launchDetached } from "./open.js";
 import { createStartExecutor, FAILURE_WATCH_MS } from "./start.js";
@@ -274,7 +278,7 @@ actionsRef.current = createActionTracker({
   isProtected: (session) => protection.isProtected(session),
   listFolders: createFolderPicker({
     driveType,
-    localDrives: powershellLocalDrives(programs.powershell),
+    localDrives: cachedLocalDrives(powershellLocalDrives(programs.powershell)),
   }),
   start: createStartExecutor({
     programs,
