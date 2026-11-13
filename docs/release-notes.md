@@ -4,6 +4,7 @@
 
 Notes gathered for 0.2.0 while it's built.
 
+- The dashboard still hasn't been tested with a screen reader. Planned NVDA testing was dropped (decision 0021). The screen-reader fixes below are checked by browser tests only.
 - Each session shows its token use, by input, output, cache writes, and cache reads, and an estimated cost at API list prices. A bar under the page heading adds them up for the listed sessions, and says which sessions it leaves out (FR-23, FR-24, FR-25).
 - Reading transcripts for the first time after a start is spread over polls, at most half a second each, so session updates aren't slowed (NFR-11, BUG-33).
 - Format warnings for transcripts are no longer raised by large lines or new header lines, and are raised when many lines in a row can't be read, or when replies no longer carry their message details (BUG-24, BUG-26).
