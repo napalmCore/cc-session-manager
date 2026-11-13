@@ -1,5 +1,6 @@
 import type { SessionView } from "../shared/protocol.js";
 import type { LeftoverRecord } from "./leftovers-helper.js";
+import type { StartRequest } from "./start.js";
 import { PROTECTED_MESSAGE as PROTECTED } from "./protect.js";
 import { isValidSessionId } from "./transcripts.js";
 
@@ -21,10 +22,14 @@ export const ACTION_NAMES = [
 ] as const;
 export type ActionName = (typeof ACTION_NAMES)[number];
 
-export interface ActionRequest {
+/** An action on a session the tool already knows. */
+export interface SessionActionRequest {
   action: ActionName;
   key: string;
 }
+
+/** Every request the action route takes, one shape per action (NFR-14). */
+export type ActionRequest = SessionActionRequest | StartRequest;
 
 export type ActionOutcome =
   | "started"
@@ -103,6 +108,8 @@ export interface ActionTrackerOptions {
    */
   isProtected: (session: SessionView) => boolean | string;
   leftovers?: LeftoverHooks;
+  /** Starts a new session (FR-32). */
+  start?: (request: StartRequest) => Promise<ActionResult>;
   now?: () => number;
 }
 
@@ -245,7 +252,25 @@ export function createActionTracker(options: ActionTrackerOptions) {
     }
   };
 
+  /** Only one Start runs at a time, through its 10-second watch (NFR-14). */
+  const START_LOCK = "start";
+  const startSession = async (request: StartRequest): Promise<ActionResult> => {
+    if (options.start === undefined) {
+      return { outcome: "unavailable", message: "Not available yet." };
+    }
+    if (locks.has(START_LOCK)) {
+      return refused("Another session is still starting. Wait for its result.");
+    }
+    locks.add(START_LOCK);
+    try {
+      return await options.start(request);
+    } finally {
+      locks.delete(START_LOCK);
+    }
+  };
+
   const run = async (request: ActionRequest): Promise<ActionResult> => {
+    if (request.action === "start") return startSession(request);
     const { action, key } = request;
     if (!(ACTION_NAMES as readonly string[]).includes(action))
       return refused("Unknown action.");

@@ -26,7 +26,9 @@ import { type Identity, identitySchema, toIdentity } from "./protect.js";
 
 const LOOPBACK = "127.0.0.1";
 const PORT_ATTEMPTS = 20;
+/** The body limit for most actions, and the larger one for Start's prompt (NFR-14). */
 const MAX_ACTION_BODY = 4096;
+const MAX_START_BODY = 32_768;
 export const HANDOVER_LINK_MS = 60_000;
 /** A sign-in link printed because no browser opened works for this long (FR-29, BUG-8). */
 export const PRINTED_LINK_MS = 2 * 60_000;
@@ -44,9 +46,19 @@ const handoverRequestSchema = z
   })
   .strict();
 
-const actionRequestSchema = z
-  .object({ action: z.enum(ACTION_NAMES), key: z.string().max(64) })
-  .strict();
+const actionRequestSchema = z.union([
+  z.object({ action: z.enum(ACTION_NAMES), key: z.string().max(64) }).strict(),
+  // Lengths are checked again, with clear messages, by the Start action itself.
+  z
+    .object({
+      action: z.literal("start"),
+      folder: z.string().max(4096),
+      kind: z.enum(["background", "interactive"]),
+      name: z.string().max(1000).optional(),
+      prompt: z.string().max(20_000).optional(),
+    })
+    .strict(),
+]);
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -330,7 +342,7 @@ export async function startServer(
   app.post(
     "/api/actions",
     bodyLimit({
-      maxSize: MAX_ACTION_BODY,
+      maxSize: MAX_START_BODY,
       onError: (c) =>
         c.json({ outcome: "refused", message: "Request too large" }, 413),
     }),
@@ -360,6 +372,17 @@ export async function startServer(
         parsed = JSON.parse(text);
       } catch {
         return c.json({ outcome: "refused", message: "Invalid request" }, 400);
+      }
+      // Only Start carries a prompt, so only it gets the larger limit.
+      const isStart =
+        typeof parsed === "object" &&
+        parsed !== null &&
+        (parsed as { action?: unknown }).action === "start";
+      if (!isStart && text.length > MAX_ACTION_BODY) {
+        return c.json(
+          { outcome: "refused", message: "Request too large" },
+          413,
+        );
       }
       const request = actionRequestSchema.safeParse(parsed);
       if (!request.success) {

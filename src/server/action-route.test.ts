@@ -191,6 +191,80 @@ describe("POST /api/actions", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("accepts a Start with an 8,000-character prompt, up to its own larger limit", async () => {
+    const cookie = await login();
+    const headers = {
+      cookie,
+      "x-ccsm-key": pageKey,
+      origin: origin(),
+      "content-type": "application/json",
+    };
+    const ok = await send(
+      "POST",
+      "/api/actions",
+      headers,
+      JSON.stringify({
+        action: "start",
+        folder: "C:/work",
+        kind: "background",
+        prompt: "x".repeat(8000),
+      }),
+    );
+    expect(ok.status).toBe(200);
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "start", kind: "background" }),
+    );
+    const tooBig = await send(
+      "POST",
+      "/api/actions",
+      headers,
+      JSON.stringify({
+        action: "start",
+        folder: "C:/w",
+        kind: "background",
+        prompt: "x".repeat(40_000),
+      }),
+    );
+    expect(tooBig.status).toBe(413);
+  });
+
+  it("refuses unknown fields, and a session's key, on a Start", async () => {
+    const cookie = await login();
+    const headers = {
+      cookie,
+      "x-ccsm-key": pageKey,
+      origin: origin(),
+      "content-type": "application/json",
+    };
+    for (const body of [
+      {
+        action: "start",
+        folder: "C:/w",
+        kind: "background",
+        prompt: "p",
+        permissionMode: "bypassPermissions",
+      },
+      {
+        action: "start",
+        folder: "C:/w",
+        kind: "background",
+        prompt: "p",
+        key: "abcd1234",
+      },
+      { action: "start", folder: "C:/w", kind: "detached", prompt: "p" },
+      { action: "stop", key: "abcd1234", folder: "C:/w" },
+    ]) {
+      const response = await send(
+        "POST",
+        "/api/actions",
+        headers,
+        JSON.stringify(body),
+      );
+      expect(response.status).toBe(400);
+    }
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it("can't be triggered by a read", async () => {
     const cookie = await login();
     await send("GET", "/api/actions?action=stop&key=abcd1234", {
