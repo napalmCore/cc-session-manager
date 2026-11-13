@@ -180,3 +180,48 @@ Decisions are in [0018](decisions/0018-iteration-3-plan.md) and [0019](decisions
 | U-17 | Resolved: every repeat of a response ID carries identical usage, so each `message.id` is counted once. See design.md.                           | Done           |
 | U-18 | Resolved: subagent transcripts hold their own usage, and none of their response IDs appear in the main transcript. See design.md.               | Done           |
 | U-19 | Partly resolved: NVDA's input/output log level records speech, and a portable copy needs no install. Testing confirms it reads reliably.        | Dropped (0021) |
+
+## Iteration 4
+
+Decisions are in [0023](decisions/0023-iteration-4-plan.md) and [0024](decisions/0024-iteration-4-requirements.md). Iteration 4 is released as 0.3.0.
+
+### Functional requirements
+
+| ID    | Requirement                     | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-32 | Start a session                 | A "New session" form takes a folder, a kind, an optional name, and, for a background session, a prompt. The folder can be any existing folder, typed or picked. A background session starts as `claude --bg` with the prompt. An interactive one opens in a new terminal, as Open does. A name is passed with `-n`. Pressing Start is the confirmation. The result says the session started, or why it didn't, in the tool's own words, such as Claude Code refusing an untrusted folder. A started session appears in the list within FR-9's 5 seconds. |
+| FR-33 | Fork a session                  | Any session with a session ID can be forked: running, finished, or from History. The Fork form takes a kind, an optional name, and, for a background fork, a prompt. It runs `claude --resume <session ID> --fork-session` in the session's folder, with `--bg` for a background fork. The original session is never changed. Fork isn't offered, and is refused, when the folder no longer exists. Pressing Fork is the confirmation.                                                                                                                   |
+| FR-34 | Name sessions only at start     | A name can be given when a session is started (FR-32) or forked (FR-33), through `-n`. Existing sessions can't be renamed.                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| FR-35 | Show a history of past sessions | A History view lists every session whose transcript is still on disk under `~/.claude/projects`, newest last activity first, a page at a time. Each shows its folder, branch, model, start time, last activity, token use, and estimated cost, by FR-23 and FR-24's rules, and offers Resume (FR-14's rules) and Fork (FR-33). A session already in the main list is marked as such.                                                                                                                                                                     |
+| FR-36 | Search inside conversations     | A search box finds sessions whose prompts or Claude's replies contain the search text, case-insensitive and as plain text. It covers user and assistant message text in main transcripts only, not tool calls, tool results, or subagents. Each result shows the session as History does, the number of matches, and a short snippet around up to three of them. Results open the session's entry in History or the main list.                                                                                                                           |
+
+### Constraints
+
+| ID   | Constraint                                                                                                                                                                                                                                                                                                                                                                             |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-15 | Starting and forking pass only these Claude Code options: `--bg`, `-n`, `--resume`, and `--fork-session`. Never a permission mode, `--dangerously-skip-permissions`, allowed or disallowed tools, settings, or agents, so the folder's own settings decide, as when you start Claude Code yourself. The prompt and name are passed as single arguments, never through a shell (NFR-7). |
+| C-16 | Search is the only feature that reads message text, and it does so only when the user searches, with no index. It reads user and assistant message text from main transcripts, holds it only while that search runs, and never stores, logs, or sends it. Snippets are shown on the page only. Everything else, including History, keeps C-4 and C-12: no message text is read.        |
+| C-17 | Iteration 4 doesn't use hooks, doesn't answer permission requests, and sends prompts only as the starting prompt of a session the user starts or forks.                                                                                                                                                                                                                                |
+
+### Non-functional requirements
+
+| ID     | Requirement                        | Acceptance criteria                                                                                                                                                                                                                                                                                         |
+| ------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NFR-14 | Start and Fork are guarded         | Start and Fork meet NFR-6 (the dashboard's own page, with its key) and NFR-7 (the folder, name, and prompt are checked, and nothing runs through a shell). One Fork runs per session at a time (NFR-10). The page names a folder or a session; the server builds the command.                               |
+| NFR-15 | History and search stay responsive | Building or paging History, and running a search, never delays session updates beyond FR-9's 5 seconds. A search shows progress, can be cancelled, and stops after 30 seconds with the results so far, saying so. History reads transcripts only through the reader's allow-list and budget (C-12, NFR-11). |
+
+### Out of scope for iteration 4
+
+- Renaming an existing session (decision 0023).
+- Searching tool calls, tool results, or subagent transcripts, and any saved or in-memory search index (decision 0024).
+- Choosing a permission mode or a git worktree for a started or forked session.
+- Answering prompts or sending messages to a running session, and macOS and Linux support, which decision 0018 plans for iteration 5.
+
+### Known unknowns
+
+| ID   | Question                                                                                                                                | Resolve in |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| U-20 | How does `claude --bg` report a refusal, such as an untrusted folder, and how fast does a started session appear in `claude agents`?    | Design     |
+| U-21 | Does `claude --resume <ID> --fork-session` work on a session that's still running, and with `--bg`, without touching the original?      | Design     |
+| U-22 | Where is user and assistant message text in a transcript line, and how long does a plain-text search over all local transcripts take?   | Design     |
+| U-23 | Can History tell a session's folder, start time, and last activity from its transcript alone, for sessions Claude Code no longer lists? | Design     |
