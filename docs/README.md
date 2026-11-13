@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 3, Phase 5: Testing.** 0.1.0 is released ([0017](decisions/0017-first-release.md)). Iteration 3 covers cost and token use, bug fixes, and L10, for release as 0.2.0. Screen-reader testing was dropped ([0021](decisions/0021-drop-nvda-testing.md)) ([0018](decisions/0018-iteration-3-plan.md)). Requirements are signed off ([0019](decisions/0019-iteration-3-requirements.md)), and so is the design ([0020](decisions/0020-iteration-3-design.md)). Implementation steps 1 to 9 are merged, and Testing is under way: see the [test plan](test-plan.md#iteration-3).
+**Iteration 3, Phase 5: Testing.** 0.1.0 is released ([0017](decisions/0017-first-release.md)). Iteration 3 covers cost and token use, bug fixes, and L10, for release as 0.2.0 ([0018](decisions/0018-iteration-3-plan.md)). Screen-reader testing was dropped ([0021](decisions/0021-drop-nvda-testing.md)). Requirements are signed off ([0019](decisions/0019-iteration-3-requirements.md)), and so is the design ([0020](decisions/0020-iteration-3-design.md)). Implementation steps 1 to 9 are merged, and Testing is under way: see the [test plan](test-plan.md#iteration-3).
 
 ## How these docs work
 
