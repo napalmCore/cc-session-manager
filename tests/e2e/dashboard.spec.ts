@@ -504,12 +504,35 @@ test.describe("desktop notifications", () => {
     const second = await context.newPage();
     await second.goto(`http://127.0.0.1:${String(server.port)}/`);
     await expect(second.getByRole("heading", { level: 1 })).toBeVisible();
+    // The second tab's first data is its starting point, so it must arrive before the event.
+    await expect(second.getByText("Loading sessions…")).toHaveCount(0);
 
     await page.close();
-    // Gives the second tab a moment to be granted the lock.
-    await second.waitForTimeout(500);
+    // Published at once: the second tab shows it whenever it gets the lock, within 10 seconds,
+    // however slowly the browser hands the lock over (BUG-32).
     server.publish(waitingNow(2));
-    await expect.poll(async () => (await shown(second)).length).toBe(1);
+    await expect
+      .poll(async () => (await shown(second)).length, { timeout: 12_000 })
+      .toBe(1);
+  });
+
+  test("doesn't show it again in the next tab when the first tab already showed it (FR-13)", async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(fakeNotifications("granted"));
+    await open(page, busyOnly());
+    const second = await context.newPage();
+    await second.goto(`http://127.0.0.1:${String(server.port)}/`);
+    await expect(second.getByText("Loading sessions…")).toHaveCount(0);
+
+    server.publish(waitingNow(2));
+    await expect.poll(async () => (await shown(page)).length).toBe(1);
+    // The second tab has the event too, so showing nothing proves it held back.
+    await expect(section(second, /needs you/i)).toBeVisible();
+    await page.close();
+    await second.waitForTimeout(1500);
+    expect(await shown(second)).toEqual([]);
   });
 
   test("highlights the session's row when the notification is clicked", async ({

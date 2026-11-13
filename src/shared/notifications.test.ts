@@ -3,8 +3,12 @@ import { toSessionView } from "../server/rules.js";
 import {
   folderName,
   initialNotifyState,
+  keepPending,
   nextEvents,
   notificationContent,
+  PENDING_NOTIFY_MS,
+  pendingToShow,
+  type NotificationContent,
   type NotifyEvent,
   type NotifyState,
 } from "./notifications.js";
@@ -281,5 +285,44 @@ describe("folderName", () => {
     ["", "Unknown project"],
   ])("names %s as %s", (cwd, name) => {
     expect(folderName(cwd)).toBe(name);
+  });
+});
+
+describe("notifications kept for a tab that takes over (BUG-32)", () => {
+  const content = (tag: string): NotificationContent => ({
+    title: "Claude Code session",
+    body: "alpha: permission prompt",
+    tag,
+    keys: ["a"],
+  });
+
+  it("keeps a notification the tab didn't show, and shows it within 10 seconds", () => {
+    const kept = keepPending([], content("t1"), 1_000);
+    expect(pendingToShow(kept, 1_000 + PENDING_NOTIFY_MS)).toEqual([
+      content("t1"),
+    ]);
+    expect(pendingToShow(kept, 1_001 + PENDING_NOTIFY_MS)).toEqual([]);
+  });
+
+  it("doesn't keep, or drops, one the notifying tab says it showed (FR-13)", () => {
+    expect(keepPending([], content("t1"), 0, new Set(["t1"]))).toEqual([]);
+    const kept = keepPending([], content("t1"), 0);
+    expect(keepPending(kept, null, 1, new Set(["t1"]))).toEqual([]);
+  });
+
+  it("keeps several, drops old ones, and never more than five", () => {
+    let kept = keepPending([], content("old"), 0);
+    kept = keepPending(kept, null, PENDING_NOTIFY_MS + 1);
+    expect(kept).toEqual([]);
+    for (let i = 0; i < 7; i += 1) {
+      kept = keepPending(kept, content(`t${String(i)}`), 100 + i);
+    }
+    expect(pendingToShow(kept, 200).map((item) => item.tag)).toEqual([
+      "t2",
+      "t3",
+      "t4",
+      "t5",
+      "t6",
+    ]);
   });
 });
