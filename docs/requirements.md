@@ -162,7 +162,7 @@ Decisions are in [0018](decisions/0018-iteration-3-plan.md) and [0019](decisions
 
 ### Testing
 
-- L10 runs live, with the owner accepting one trust prompt for a throwaway repository (0018).
+- L10 was planned to run live, with the owner accepting one trust prompt for a throwaway repository (0018). It was skipped by decision 0022.
 
 ### Out of scope for iteration 3
 
