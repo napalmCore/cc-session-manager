@@ -1,5 +1,6 @@
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
+import { planTerminal } from "./launch.js";
 import { isValidSessionId } from "./transcripts.js";
 
 /**
@@ -153,27 +154,5 @@ export function planOpen(
     claudeArgs = ["--resume", target.sessionId];
   }
 
-  if (programs.wt !== null) {
-    return {
-      file: programs.wt,
-      args: ["-w", "new", "-d", ".", "--", programs.claude, ...claudeArgs],
-      cwd,
-      windowsVerbatimArguments: false,
-    };
-  }
-  if (programs.cmd !== null) {
-    return {
-      file: programs.cmd,
-      // /v:off stops a delayed-expansion registry setting from expanding ! in the path.
-      args: [
-        "/d",
-        "/v:off",
-        "/c",
-        `start "" "${programs.claude}" ${claudeArgs.join(" ")}`,
-      ],
-      cwd,
-      windowsVerbatimArguments: true,
-    };
-  }
-  throw new Error("No terminal program was found");
+  return planTerminal(programs, claudeArgs, cwd);
 }
