@@ -584,6 +584,6 @@ Each step is a separate pull request, approved by an independent agent before me
   - Leftover programs after Stop, Delete, End, and Force end on throwaway sessions, and no offer while a failed action leaves the session running.
   - The ownership check's start-time window for background sessions, which was measured only on interactive ones.
   - CPU of a `check` run.
-  - L10, with the owner accepting the trust prompt.
+  - L10, with the owner accepting the trust prompt, skipped by decision 0022.
   - NVDA testing (NFR-12), dropped by decision 0021.
 - **Security review:** the new action, the helper modes, and the printed link, before release (NFR-9).

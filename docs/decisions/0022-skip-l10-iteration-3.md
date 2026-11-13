@@ -8,7 +8,7 @@
 
 L10 checks FR-16's kept case live: Delete on a background session whose worktree has uncommitted, untracked, and ignored files should show Kept with the FR-16 message, and the files should survive (U-10). `claude --bg` won't start in a git repository until someone accepts its trust prompt there, and agents don't accept trust prompts.
 
-In iteration 3 Testing, an agent made a throwaway repository, `ccsm-l10`. The owner ran `claude` in it and accepted the trust prompt, twice. Both times, `claude --bg` in that folder, with Claude Code 2.1.323, still answered "Workspace not trusted", so the check never started. Meanwhile, `claude rm` kept answering "the background service may be restarting" for leftover test sessions.
+In iteration 3 Testing, an agent made a throwaway repository, `ccsm-l10`. The owner ran `claude` in it and accepted the trust prompt. An agent's `claude --bg` there, with Claude Code 2.1.323, answered "Workspace not trusted" (attempt 2 in the evidence). The owner accepted the prompt again, and the next run answered the same (attempt 2b). So the check never started. Meanwhile, `claude rm` kept answering "the background service may be restarting" for leftover test sessions.
 
 ## Options considered
 
