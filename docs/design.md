@@ -476,7 +476,7 @@ Each step is a separate pull request, approved by an independent agent before me
 - The record lists:
   - descendants found through parent links, each started after its parent, and
   - members of each console owned by one of those descendants, if they started after the session did. The session's own console is never used, because it can include the user's shell and terminal.
-- It never includes the tool's own processes (the tool's Node process, its descendants, the helper, and the tool's chain of parent processes recorded at startup), the shared daemon, any `--bg-pty-host` process, or any `claude.exe` process.
+- It never includes the tool's own processes (the tool's Node process, its descendants, the helper, and the tool's chain of parent processes, worked out by the helper on each run), the shared daemon, any `--bg-pty-host` process, or any `claude.exe` process.
 - Each entry keeps the process ID, creation time, image path, and name. No other process's environment or command line is read (0020).
 - **If recording fails or takes over 10 seconds**, the action goes ahead, and its result says leftover programs can't be checked for this session (0020).
 
