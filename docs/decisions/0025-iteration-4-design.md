@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-13
 - **Builds on:** [0024](0024-iteration-4-requirements.md)
-- **Amends:** NFR-14 in [requirements.md](../requirements.md), which now also refuses `%` in a name
+- **Amends:** NFR-14 in [requirements.md](../requirements.md): it refuses `%` in a name, refuses control characters in a prompt other than line breaks and tabs, and says where the prompt and name are tested
 
 ## Context
 
@@ -15,11 +15,13 @@ Design experiments on throwaway sessions answered U-20 to U-24. The iteration 4 
 
 ## The owner's decisions
 
-| Area                                                | Options considered                                                                                         | Decision                                                                                                                               |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `%` in a session name                               | Refuse `%`; allow a single `%`                                                                             | Refuse `%` in names                                                                                                                    |
-| Interactive Start and Fork without Windows Terminal | Launch through `conhost.exe` and prove it; refuse names without Windows Terminal; require Windows Terminal | Launch through `conhost.exe`, proven with a real session in implementation step 1. If it fails, refuse names without Windows Terminal. |
-| A background session that fails after starting      | Watch for 10 seconds and say it failed, with no reason; also read the reason from Claude Code's job file   | Watch for 10 seconds and say it failed straight away, without reading the job file                                                     |
+| Area                                                                    | Options considered                                                                                         | Decision                                                                                                                               |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `%` in a session name                                                   | Refuse `%`; allow a single `%`                                                                             | Refuse `%` in names                                                                                                                    |
+| Interactive Start and Fork without Windows Terminal                     | Launch through `conhost.exe` and prove it; refuse names without Windows Terminal; require Windows Terminal | Launch through `conhost.exe`, proven with a real session in implementation step 1. If it fails, refuse names without Windows Terminal. |
+| A background session that fails after starting                          | Watch for 10 seconds and say it failed, with no reason; also read the reason from Claude Code's job file   | Watch for 10 seconds and say it failed straight away, without reading the job file                                                     |
+| Refusal text from Claude Code (asked after review)                      | The tool's own words, mapping known reasons; also show Claude Code's line, amending FR-18                  | The tool's own words only, mapping known reasons. FR-18 is unchanged                                                                   |
+| Mapped drives, `subst` drives, and links to shares (asked after review) | Detect and refuse them; accept as a known limit                                                            | Detect and refuse them                                                                                                                 |
 
 ## Additions by the author
 
