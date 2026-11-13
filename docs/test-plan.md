@@ -1,6 +1,7 @@
 # Test plan
 
 - **Status:** Exit criteria met for iteration 1 on 2026-11-06, with M2 not run by decision 0013, and L3 to L5 not fully repeated on the final code, as described under How checks are approved
+- **Iteration 3:** Testing in progress, see [Iteration 3](#iteration-3)
 - **Iteration 2:** exit criteria met on 2026-11-08, closed by the owner with L10 deferred and the limits in decision 0016, see [Iteration 2](#iteration-2)
 - **Requirements:** [requirements.md](requirements.md)
 
@@ -171,6 +172,55 @@ The NFR-9 review, by an independent agent on `2a0dba7`, found one High issue and
 | L9  | Record `claude stop` exit codes for working, stopped, and unknown sessions                   | The listing decides the result, whatever the exit code                                     | Recorded with the CLI directly: 0 for a working session, which stopped within 2 s, 0 for one already stopped, and 1 for an unknown ID. The result doesn't depend on the exit code, as designed.                                                                                                                                                                                                                       |
 | L10 | Delete a session whose worktree has uncommitted, untracked, and ignored files                | The page shows Kept with the FR-16 message, and the files survive (U-10)                   | Deferred by decision 0016. `claude --bg` refuses an untrusted git repository, a git repository doesn't inherit trust, and agents don't accept trust prompts.                                                                                                                                                                                                                                                          |
 | L11 | Trigger a real permission prompt with the tab in the background, then click the notification | One notification with the folder and reason. The click highlights and focuses the row.     | Partly passed, with permission granted, on a build whose exact code isn't recorded (see Status). A real permission prompt produced one notification, "l11-notify: permission prompt", within 5.5 to 9.6 s, and a click focused and highlighted only that row. The page always reported itself visible, and the window was unfocused only in the headed runs, so delivery to a background or hidden tab is unverified. |
+
+## Iteration 3
+
+- **Status:** Testing in progress. Implementation steps 1 to 9 are merged, with the Testing fixes in #47. The agent-led checks below are done. These are still to do:
+  - L10, with the owner accepting the trust prompt.
+  - NVDA testing (NFR-12), once the owner approves the download.
+  - A live re-measure of the first read from a cold start (BUG-33).
+  - BUG-32.
+- **Exit criteria:** the same as iteration 2, including NFR-9's security review.
+
+### Requirements coverage
+
+| ID     | Automated                                                                             | Live or manual check | Status                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| FR-23  | `transcripts`, `usage-summary` tests; `dashboard` e2e                                 | L12                  | Passing live: one real session matched a hand sum of its transcript exactly                                                        |
+| FR-24  | `prices`, `usage-summary` tests                                                       | L12                  | Passing live: the cost matched a hand calculation at Opus 5.5 prices                                                               |
+| FR-25  | `usage-summary` tests; `dashboard` and `actions` e2e, including Deleted rows left out | Code review          | Passing                                                                                                                            |
+| FR-26  | `store`, `tracker` tests                                                              | Code review          | Passing                                                                                                                            |
+| FR-27  | `leftovers`, `leftovers-helper` (real helper), `actions`, `end` tests; `actions` e2e  | L13, L14             | Passing live after Stop, Delete, Stop then Delete, End, and Force end, and no offer while a failed action left the session running |
+| FR-28  | `session-groups`, `session-memory` tests                                              | Code review          | Passing                                                                                                                            |
+| FR-29  | `server`, `browser` tests                                                             | Security review      | Passing. The real browser launch failing is left to the owner's own runs.                                                          |
+| FR-30  | `store` tests                                                                         | Code review          | Passing                                                                                                                            |
+| FR-31  | A test per bug, see the Bugs table                                                    | See the Bugs table   | Passing, except BUG-29 (not reproduced, guard test added) and BUG-32 (being looked into)                                           |
+| C-12   | `transcripts` allow-list tests with message text in the input                         | Security review      | Passing                                                                                                                            |
+| C-13   | Code review                                                                           | Security review      | Passing                                                                                                                            |
+| C-14   | `leftovers-helper` tests with a real helper                                           | L13, security review | Passing, after L-1's fix in #47                                                                                                    |
+| NFR-11 | `transcripts` time and byte budget tests                                              | L15                  | Steady state passing. The first read needed BUG-33's fix, and its cold-start re-measure is still to do.                            |
+| NFR-12 | `dashboard` and `actions` e2e: accessible names, focus, axe in both themes            | M2 with NVDA         | Not yet run: waits for the owner to approve the download                                                                           |
+| NFR-13 | `actions` tests; `action-route` schema                                                | Security review      | Passing: the route takes only `{action, key}`, and the program list comes from the server's record                                 |
+
+### Security review
+
+The NFR-9 review, by an independent agent on `b2d3348`, found no Critical or High issue.
+
+- **L-1, fixed in #47:** the helper's `check` didn't confirm that a recorded wrapper's entry in its process snapshot was the same process. If the wrapper exited and its ID was reused, a child of the new process could have joined the offer. Very unlikely, and each entry was still checked by handle before ending.
+- **Info, accepted:** the 1 MB input limit is checked after reading; the tool's own processes are worked out on each run rather than at startup (the design text says startup); a reused ID held by another user's process can keep an offer showing until a restart; daylight saving could make start times disagree by an hour, which only causes a refusal; the handover link's 60 seconds use the wall clock; model, speed, and routing strings from transcripts have no length cap. Iteration 2's accepted items still apply.
+
+### Live checks
+
+A runner agent ran these on `b2d3348` with Claude Code 2.1.322, and a verifier agent audited the evidence and repeated some of them (decision 0011). The runner ended one of its own `claude.exe` processes and two of its own test processes directly, against its instructions; the verifier judged the results still valid.
+
+| ID  | Check                                                     | Expected                                                    | Result                                                                                                                                                                                                                        |
+| --- | --------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L12 | Usage of a real session against its transcript            | The same counts, and the cost at list prices                | Passed, and the verifier agreed: input 2, output 159, 1-hour cache write 17,785, cache read 14,252, $0.1483184                                                                                                                |
+| L13 | Leftover programs after Stop, Delete, End, and Force end  | An offer of exactly the survivors, and only they are ended  | Passed, and the verifier agreed and repeated Stop. Stop and Delete each left 4 of 8 recorded programs, and "Ended 4 of 4 programs" ended only those. After End and Force end nothing survived, so there was rightly no offer. |
+| L14 | No offer while a failed action leaves the session running | No offer, and End leftover programs refused                 | Passed in three cases                                                                                                                                                                                                         |
+| L15 | CPU per poll, and the first read of about 110 MB          | Within about 530 ms per poll (NFR-11), and polls within 5 s | Steady state passed: 380 ms (runner) and 462 ms (verifier), with one verifier poll at 563 ms. The first read passed for the runner (slowest cycle 3.8 s) but not for the verifier (8.1 s), which is BUG-33, fixed in #47.     |
+| L16 | Start-time window for background sessions                 | Within −5 s / +1 s                                          | Passed for 8 sessions: the process started 1.5 to 3.8 s before the listed time                                                                                                                                                |
+| L17 | CPU of one helper `check` run                             | Measured; no limit                                          | 806 ms without a running wrapper, 1247 ms with one, counting only PowerShell's own CPU                                                                                                                                        |
 
 ## Bugs
 
