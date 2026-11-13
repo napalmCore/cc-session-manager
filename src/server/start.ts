@@ -3,7 +3,7 @@ import type { SessionView } from "../shared/protocol.js";
 import type { ActionResult } from "./actions.js";
 import { claudeArguments, planBackground, planTerminal } from "./launch.js";
 import { checkLocalFolder, type DriveTypeReader } from "./local-folder.js";
-import { hasControl } from "./text-checks.js";
+import { hasControl, hasRawControl } from "./text-checks.js";
 import {
   type LaunchPlan,
   type Programs,
@@ -52,7 +52,7 @@ export function checkStartText(
     if (prompt.length > MAX_PROMPT) {
       return `A prompt can be at most ${String(MAX_PROMPT)} characters.`;
     }
-    if (hasControl(prompt, "\n\r\t")) {
+    if (hasRawControl(prompt, "\n\r\t")) {
       return "A prompt can't contain control characters other than line breaks and tabs.";
     }
   } else if (prompt !== undefined && prompt !== "") {

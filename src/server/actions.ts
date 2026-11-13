@@ -1,6 +1,7 @@
 import type { SessionView } from "../shared/protocol.js";
 import type { LeftoverRecord } from "./leftovers-helper.js";
 import type { FolderListing } from "./folder-picker.js";
+import type { HistoryPage } from "./history.js";
 import type { StartRequest } from "./start.js";
 import { PROTECTED_MESSAGE as PROTECTED } from "./protect.js";
 import { isValidSessionId } from "./transcripts.js";
@@ -35,9 +36,15 @@ export interface ListFoldersRequest {
   folder?: string | undefined;
 }
 
+/** One page of History (FR-35). */
+export interface HistoryRequest {
+  action: "history";
+  page?: number | undefined;
+}
+
 /** Every request the action route takes, one shape per action (NFR-14). */
 export type ActionRequest =
-  SessionActionRequest | StartRequest | ListFoldersRequest;
+  SessionActionRequest | StartRequest | ListFoldersRequest | HistoryRequest;
 
 export type ActionOutcome =
   | "started"
@@ -70,6 +77,8 @@ export interface ActionResult {
   folders?: string[];
   truncated?: boolean;
   drives?: string[];
+  /** A page of History, for history only. */
+  history?: HistoryPage;
 }
 
 /** Recording and ending the programs a session leaves running (FR-27). */
@@ -125,6 +134,8 @@ export interface ActionTrackerOptions {
   start?: (request: StartRequest) => Promise<ActionResult>;
   /** Lists a folder for Browse (FR-32). */
   listFolders?: (folder: string | undefined) => Promise<FolderListing>;
+  /** Reads a page of History (FR-35). */
+  history?: (page: number, listing: SessionView[]) => Promise<HistoryPage>;
   now?: () => number;
 }
 
@@ -286,6 +297,24 @@ export function createActionTracker(options: ActionTrackerOptions) {
 
   const run = async (request: ActionRequest): Promise<ActionResult> => {
     if (request.action === "start") return startSession(request);
+    if (request.action === "history") {
+      if (options.history === undefined) {
+        return { outcome: "unavailable", message: "Not available yet." };
+      }
+      try {
+        const page = await options.history(
+          request.page ?? 0,
+          options.listing().sessions,
+        );
+        return {
+          outcome: "succeeded",
+          message: "History read.",
+          history: page,
+        };
+      } catch {
+        return { outcome: "failed", message: "History couldn't be read." };
+      }
+    }
     if (request.action === "listFolders") {
       if (options.listFolders === undefined) {
         return { outcome: "unavailable", message: "Not available yet." };

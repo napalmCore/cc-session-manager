@@ -160,3 +160,36 @@ describe("folders Windows reports as links", () => {
     expect(calls).toBe(3);
   });
 });
+
+describe("entries that look like links, on any machine", () => {
+  it("lists one lstat calls a folder, and leaves out real links", async () => {
+    mkdirSync(join(root, "plain"));
+    if (process.platform !== "win32") return;
+    // A junction and a second junction stand in for two reparse-point entries; the injected
+    // lstat says the first is a real folder, as OneDrive's is, and the second a link.
+    mkdirSync(join(root, "target"));
+    for (const name of ["onedrive-like", "junction"]) {
+      execFileSync(
+        "cmd.exe",
+        ["/d", "/c", "mklink", "/J", join(root, name), join(root, "target")],
+        {
+          windowsHide: true,
+        },
+      );
+    }
+    const pick = createFolderPicker({
+      driveType: fixed,
+      localDrives: drives,
+      lstat: (path) =>
+        Promise.resolve({
+          isDirectory: () => true,
+          isSymbolicLink: () => !path.endsWith("onedrive-like"),
+        }),
+    });
+    expect((await pick(root)).folders).toEqual([
+      "onedrive-like",
+      "plain",
+      "target",
+    ]);
+  });
+});

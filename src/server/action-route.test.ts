@@ -303,6 +303,37 @@ describe("POST /api/actions", () => {
     expect(onAction).toHaveBeenCalledTimes(2);
   });
 
+  it("takes a history request with an optional page, and nothing else", async () => {
+    const cookie = await login();
+    const headers = {
+      cookie,
+      "x-ccsm-key": pageKey,
+      origin: origin(),
+      "content-type": "application/json",
+    };
+    for (const body of [
+      { action: "history" },
+      { action: "history", page: 2 },
+    ]) {
+      expect(
+        (await send("POST", "/api/actions", headers, JSON.stringify(body)))
+          .status,
+      ).toBe(200);
+    }
+    for (const body of [
+      { action: "history", page: -1 },
+      { action: "history", page: 1.5 },
+      { action: "history", page: "1" },
+      { action: "history", folder: "C:/x" },
+    ]) {
+      expect(
+        (await send("POST", "/api/actions", headers, JSON.stringify(body)))
+          .status,
+      ).toBe(400);
+    }
+    expect(onAction).toHaveBeenCalledTimes(2);
+  });
+
   it("can't be triggered by a read", async () => {
     const cookie = await login();
     await send("GET", "/api/actions?action=stop&key=abcd1234", {

@@ -83,6 +83,10 @@ export interface FolderPickerOptions {
   driveType: DriveTypeReader;
   localDrives: () => Promise<string[]>;
   home?: string;
+  /** For tests: how an entry that looks like a link is checked. */
+  lstat?: (
+    path: string,
+  ) => Promise<{ isDirectory(): boolean; isSymbolicLink(): boolean }>;
 }
 
 /**
@@ -113,7 +117,9 @@ export function createFolderPicker(options: FolderPickerOptions) {
           // folders. lstat tells a real folder from a junction or symbolic link, which are never
           // listed, so Browse never follows one.
           try {
-            const stats = await lstat(join(checked.folder, entry.name));
+            const stats = await (options.lstat ?? lstat)(
+              join(checked.folder, entry.name),
+            );
             if (stats.isDirectory() && !stats.isSymbolicLink())
               kept.push(entry.name);
           } catch {
