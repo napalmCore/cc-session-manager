@@ -10,12 +10,12 @@
 
 Decision 0018 planned iteration 4 as 0.3.0: history and search, and starting, renaming, and forking sessions. It wasn't committed.
 
-What Claude Code 2.1.323's command line supports, from `claude --help`:
+What Claude Code 2.1.323 supports, mostly from `claude --help`:
 
-- **Starting:** `claude --bg "<prompt>"` starts a background session in the current folder, and `claude` starts an interactive one.
-- **Naming:** `-n, --name <name>` sets a display name when a session starts. No command renames an existing session.
-- **Forking:** `--resume <session-id> --fork-session` starts a new session that continues an earlier one, with a new session ID.
-- **History:** transcripts of past sessions stay on disk under `~/.claude/projects`.
+- **Starting:** `claude --bg "<prompt>"` starts a background session, in the folder it's run from or, with `-w`, in a new git worktree. `claude` starts an interactive one.
+- **Naming:** `-n, --name <name>` sets a display name when a session starts. No command-line option renames an existing session.
+- **Forking:** `--fork-session` with `--resume <session-id>` or `--continue` starts a new session that continues an earlier one, with a new session ID. `--bg --resume` on a session that's still running starts a copy instead of continuing it.
+- **History:** transcripts of past sessions stay on disk under `~/.claude/projects` until Claude Code's own cleanup or `claude purge` removes them.
 
 ## Options considered
 
