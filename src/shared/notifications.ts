@@ -186,3 +186,39 @@ export function notificationContent(
     keys,
   };
 }
+
+/**
+ * How long a tab that isn't showing notifications keeps one, in case the tab that shows them
+ * has just closed and this one takes over (BUG-32).
+ */
+export const PENDING_NOTIFY_MS = 10_000;
+
+export interface PendingNotification {
+  content: NotificationContent;
+  at: number;
+}
+
+/**
+ * Adds a notification a tab didn't show, and drops ones too old to show, keeping the newest
+ * few. The tag is the same in every tab, so showing one the closed tab already showed only
+ * replaces it.
+ */
+export function keepPending(
+  pending: readonly PendingNotification[],
+  content: NotificationContent | null,
+  now: number,
+): PendingNotification[] {
+  const kept = pending.filter((item) => now - item.at <= PENDING_NOTIFY_MS);
+  if (content !== null) kept.push({ content, at: now });
+  return kept.slice(-5);
+}
+
+/** The kept notifications still recent enough to show once this tab takes over. */
+export function pendingToShow(
+  pending: readonly PendingNotification[],
+  now: number,
+): NotificationContent[] {
+  return pending
+    .filter((item) => now - item.at <= PENDING_NOTIFY_MS)
+    .map((item) => item.content);
+}

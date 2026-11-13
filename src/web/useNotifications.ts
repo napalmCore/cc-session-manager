@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   initialNotifyState,
+  keepPending,
   nextEvents,
   notificationContent,
+  pendingToShow,
+  type NotificationContent,
   type NotifyState,
+  type PendingNotification,
 } from "../shared/notifications.js";
 import type { Snapshot } from "../shared/protocol.js";
 
@@ -36,6 +40,24 @@ export function useNotifications(
   useEffect(() => {
     clickHandler.current = onClick;
   }, [onClick]);
+  // Notifications this tab didn't show because another tab was showing them (BUG-32).
+  const pending = useRef<PendingNotification[]>([]);
+
+  const show = useCallback((content: NotificationContent) => {
+    try {
+      const notification = new Notification(content.title, {
+        body: content.body,
+        tag: content.tag,
+      });
+      notification.onclick = () => {
+        window.focus();
+        clickHandler.current(content.keys);
+        notification.close();
+      };
+    } catch {
+      // Some browsers only allow notifications from a service worker.
+    }
+  }, []);
 
   // Permission can change in another tab or in the browser's settings.
   useEffect(() => {
@@ -70,6 +92,10 @@ export function useNotifications(
     navigator.locks
       .request(LOCK_NAME, { signal: controller.signal }, () => {
         leader.current = true;
+        // Shows what arrived while the previous tab was closing, if it's still recent.
+        const waiting = pendingToShow(pending.current, Date.now());
+        pending.current = [];
+        if (currentPermission() === "granted") waiting.forEach(show);
         return new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -82,34 +108,25 @@ export function useNotifications(
       controller.abort();
       release?.();
     };
-  }, []);
+  }, [show]);
 
   useEffect(() => {
     if (snapshot === null) return;
     const result = nextEvents(state.current, snapshot, Date.now());
     state.current = result.state;
     // Events from before notifications were turned on are never sent later.
-    if (!leader.current || currentPermission() !== "granted") return;
+    if (currentPermission() !== "granted") return;
     const content = notificationContent(
       result.events,
       snapshot.seq,
       snapshot.runId,
     );
-    if (content === null) return;
-    try {
-      const notification = new Notification(content.title, {
-        body: content.body,
-        tag: content.tag,
-      });
-      notification.onclick = () => {
-        window.focus();
-        clickHandler.current(content.keys);
-        notification.close();
-      };
-    } catch {
-      // Some browsers only allow notifications from a service worker.
+    if (!leader.current) {
+      pending.current = keepPending(pending.current, content, Date.now());
+      return;
     }
-  }, [snapshot]);
+    if (content !== null) show(content);
+  }, [snapshot, show]);
 
   const request = useCallback(() => {
     if (typeof Notification === "undefined") return;
