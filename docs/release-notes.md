@@ -6,7 +6,7 @@ The second release. It covers iteration 3. Get it from the GitHub release: clone
 
 cc-session-manager is an independent tool. It isn't made, endorsed, or supported by Anthropic.
 
-**Upgrading from 0.1.0:** stop the old version, check out `v0.2.0`, and run `pnpm install` and `pnpm build` again. The saved list of finished sessions carries over. Going back to 0.1.0 drops the saved usage the next time it saves the list.
+**Upgrading from 0.1.0:** stop the old version, run `git fetch --tags`, check out `v0.2.0`, and run `pnpm install` and `pnpm build` again. The saved list of finished sessions carries over. Sessions that finished under 0.1.0 show no usage, because 0.1.0 didn't save it. Going back to 0.1.0 drops the saved usage the next time it saves the list.
 
 ### What's new
 
@@ -19,21 +19,36 @@ cc-session-manager is an independent tool. It isn't made, endorsed, or supported
 - If no browser opens, the printed sign-in link now works once, for 2 minutes, and the terminal says so and to restart for a new one. If a second start can't open a browser, the link it prints works once, for 60 seconds, and says so (FR-29, BUG-8).
 - With the dashboard open in more than one tab, a notification that arrives just as the notifying tab closes is shown by the next tab instead of being lost (BUG-32).
 - Screen readers no longer read the decorative triangles and dots, and each row reads as its name, then its status or reason, with pauses between (BUG-10). Announcements are queued, so one arriving straight after another isn't lost (BUG-16). When a focused expandable section disappears, focus moves to a heading instead of the page body (BUG-11).
-- Reading transcripts for the first time after a start is spread over polls, at most half a second each, so session updates aren't slowed (NFR-11, BUG-33).
+- Reading transcripts for the first time after a start is spread over polls, stopping after about half a second of reading each time, so session updates aren't held up (NFR-11, BUG-33). In the measured case a poll's reading took at most 770 ms.
 - A corrupt saved list is set aside once, with names removed, or deleted if it isn't JSON. Copies that 0.1.0 set aside are reduced to the newest one, scrubbed the same way (FR-30, BUG-12).
 - A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
 - Format warnings for transcripts are no longer raised by large lines or new header lines, and are raised when many lines in a row can't be read, or when replies no longer carry their message details (BUG-24, BUG-26).
+
+- Other fixes from 0.1.0's open bugs: a stale session whose transcript can no longer be read keeps its last activity time, instead of moving to Needs you and being announced (BUG-13). A second session with no ID and no name is announced separately, by folder, kind, and start time (BUG-14). A new session's missing status is excused only when it really just started, for at most 10 seconds, and gaining an ID doesn't renew the excuse (BUG-19, BUG-20). A background session's start time no longer jumps by about 3 seconds once it has a process: the first one seen is shown and sorted on (BUG-23).
+
+### Privacy and security
+
+0.1.0's privacy and security notes still apply, with these changes:
+
+- The tool now reads each session's whole transcript, from where it last stopped, rather than its last 256 KB. From each line it keeps only response IDs, model IDs, token counts, speed, routing, the timestamp, and the branch. It never keeps message text (C-12).
+- Finished sessions are saved with their token counts by model, in the same file. Still no names, message text, or response IDs.
+- A corrupt saved list is set aside once with its names removed, or deleted if it isn't JSON. 0.1.0's earlier copies are reduced to the newest one, scrubbed the same way, so set-aside files no longer hold names.
+- Ending leftover programs runs a PowerShell helper that ends only programs the dashboard recorded before its own action, each checked by start time and program file. The page names only the session; the list comes from the dashboard's own record.
+- Live updates now include a small message after each poll with only the age of the last successful read.
+- If no browser opens, the printed sign-in link works once, for 2 minutes.
 
 ### Known limits
 
 The known limits of 0.1.0 still apply, except where this release fixes them. Also:
 
-- Estimated costs use Anthropic's API list prices of 9 November 2026. They aren't what a Pro or Max plan costs, and a model missing from the price table shows its tokens with no cost.
+- Estimated costs use Anthropic's API list prices of 9 November 2026. The price table is built into the tool, so it goes out of date when prices change, until a new release updates it. The estimates aren't what a Pro or Max plan costs, and a model missing from the table shows its tokens with no cost.
 - Leftover programs are only found for sessions stopped, deleted, or ended from the dashboard while it runs. Programs started outside the session's process tree and the consoles of its programs, in the second between recording them and the action, or later by a program whose shell has gone, aren't found. The list is kept in memory, so it's gone after a restart.
+- If recording a session's programs fails before Stop, Delete, End, or Force end, the action goes ahead, and its result says leftover programs can't be checked for that session.
 - Ending leftover programs ends each one at once, with no chance to save. Programs whose start time or program file no longer match the record are skipped and named in the result.
 - The first read of large transcripts after a start can take a few polls. While it runs, usage shows "still counting", and reading takes at most about 0.8 seconds per poll in the measured case.
 - `claude -p` runs are still listed as interactive sessions, as Claude Code reports them (BUG-23).
 - A background session's start time, as Claude Code lists it, moves when its process starts and again after Stop. The dashboard shows the first one it saw.
+- Branch and model now come from the latest lines read from the whole transcript, not from its last 256 KB, so 0.1.0's limit about branch or model lines near the end of a transcript no longer applies.
 
 ### Open bugs
 
@@ -58,6 +73,10 @@ These were checked by automated tests and review, but not on real sessions:
 - Delete on a session whose worktree has unsaved work, which Claude Code should keep (L10, skipped by decision 0022).
 - A notification arriving while the dashboard tab is hidden.
 - The printed sign-in link when the browser really fails to open, and the BUG-32 hand-over between tabs in a real browser with real notifications.
+- Usage from subagents. The live check used a session with none.
+- The totals bar on real sessions, and saved usage surviving a restart or a downgrade to 0.1.0.
+- A corrupt saved list being set aside or deleted (FR-30).
+- The security review's L-1 fix in the helper, which came after the live checks.
 
 ## 0.1.0
 

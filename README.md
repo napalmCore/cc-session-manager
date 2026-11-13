@@ -31,12 +31,14 @@ To use Stop, Delete, and End on every session, start it from a normal terminal, 
 - Lists your interactive and background sessions, puts the ones that need you first, and keeps finished ones for 24 hours.
 - Sends a desktop notification when a session needs you, finishes, or fails, while the page is open. Turn them on from the page.
 - Opens or resumes a session in a new terminal, and stops, deletes, or ends one after you confirm.
+- Shows each session's token use and an estimated cost at API list prices, with totals for the listed sessions.
+- After it stops, deletes, or ends a session, lists any programs that session left running, and can end them after you confirm.
 
 See the [release notes](docs/release-notes.md) for details, the safety rules for actions, privacy, and known limits.
 
 ## Privacy
 
-The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open and Resume start Claude Code, which works as it normally does. It reads a little metadata from session transcripts, and saves finished sessions, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager`. A damaged older file is set aside unchanged, so it could still hold names.
+The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open and Resume start Claude Code, which works as it normally does. It reads session transcripts for token counts, model, branch, and times, never keeping message text, and saves finished sessions with their token counts, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager`. A damaged saved file is set aside with names removed, or deleted if it isn't JSON.
 
 ## Development
 
