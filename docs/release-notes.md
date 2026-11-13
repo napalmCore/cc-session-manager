@@ -1,26 +1,63 @@
 # Release notes
 
-## Unreleased
+## 0.2.0
 
-Notes gathered for 0.2.0 while it's built.
+The second release. It covers iteration 3. Get it from the GitHub release: clone the repository at the `v0.2.0` tag, then follow the README. It isn't published to npm.
 
-- Delete on a session whose worktree has unsaved work, which Claude Code should keep, still hasn't been checked live (L10, skipped by decision 0022). It's covered by unit tests and review.
-- The dashboard still hasn't been tested with a screen reader. Planned NVDA testing was dropped (decision 0021). The screen-reader fixes below are checked by browser tests only.
+cc-session-manager is an independent tool. It isn't made, endorsed, or supported by Anthropic.
+
+**Upgrading from 0.1.0:** stop the old version, check out `v0.2.0`, and run `pnpm install` and `pnpm build` again. The saved list of finished sessions carries over. Going back to 0.1.0 drops the saved usage the next time it saves the list.
+
+### What's new
+
 - Each session shows its token use, by input, output, cache writes, and cache reads, and an estimated cost at API list prices. A bar under the page heading adds them up for the listed sessions, and says which sessions it leaves out (FR-23, FR-24, FR-25).
-- Reading transcripts for the first time after a start is spread over polls, at most half a second each, so session updates aren't slowed (NFR-11, BUG-33).
-- Format warnings for transcripts are no longer raised by large lines or new header lines, and are raised when many lines in a row can't be read, or when replies no longer carry their message details (BUG-24, BUG-26).
 - Finished sessions keep their token use and estimated cost after a restart. Going back to 0.1.0 drops the saved usage the next time it saves the list (FR-26).
-- A corrupt saved list is set aside once, with names removed, or deleted if it isn't JSON. Copies that 0.1.0 set aside are reduced to the newest one, scrubbed the same way (FR-30, BUG-12).
-- A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
+- After the dashboard stops, deletes, or ends a session, programs it started that keep running are listed on its row, by name and process ID, with an "End leftover programs" button. A deleted session's row stays at the top of Finished, marked Deleted, until none of its programs run. The dialog lists the programs and says unsaved work in them is lost (FR-27).
 - Active sessions stay in order of start time, newest first, instead of moving as their activity changes (BUG-6). A new session with no status yet shows "starting" (BUG-18).
-- `claude -p` runs are still listed as interactive sessions, as Claude Code reports them (BUG-23).
 - When Claude Code is slow to answer and the data is over 10 seconds old, the page says so, and that actions on sessions are paused (BUG-9).
 - Before the first successful read of the session list, the page says it can't read sessions yet, instead of "No sessions to show" (BUG-17).
-- Screen readers no longer read the decorative triangles and dots, and each row reads as its name, then its status or reason, with pauses between (BUG-10). Announcements are queued, so one arriving straight after another isn't lost (BUG-16). When a focused expandable section disappears, focus moves to a heading instead of the page body (BUG-11).
-- With the dashboard open in more than one tab, a notification that arrives just as the notifying tab closes is shown by the next tab instead of being lost (BUG-32).
 - If no browser opens, the printed sign-in link now works once, for 2 minutes, and the terminal says so and to restart for a new one. If a second start can't open a browser, the link it prints works once, for 60 seconds, and says so (FR-29, BUG-8).
-- After the dashboard stops, deletes, or ends a session, programs it started that keep running are listed on its row, by name and process ID, with an "End leftover programs" button. A deleted session's row stays at the top of Finished, marked Deleted, until none of its programs run. The dialog lists the programs and says unsaved work in them is lost (FR-27).
+- With the dashboard open in more than one tab, a notification that arrives just as the notifying tab closes is shown by the next tab instead of being lost (BUG-32).
+- Screen readers no longer read the decorative triangles and dots, and each row reads as its name, then its status or reason, with pauses between (BUG-10). Announcements are queued, so one arriving straight after another isn't lost (BUG-16). When a focused expandable section disappears, focus moves to a heading instead of the page body (BUG-11).
+- Reading transcripts for the first time after a start is spread over polls, at most half a second each, so session updates aren't slowed (NFR-11, BUG-33).
+- A corrupt saved list is set aside once, with names removed, or deleted if it isn't JSON. Copies that 0.1.0 set aside are reduced to the newest one, scrubbed the same way (FR-30, BUG-12).
+- A finished session's Finished row picks up lines written just after it ended, such as its model (BUG-27).
+- Format warnings for transcripts are no longer raised by large lines or new header lines, and are raised when many lines in a row can't be read, or when replies no longer carry their message details (BUG-24, BUG-26).
+
+### Known limits
+
+The known limits of 0.1.0 still apply, except where this release fixes them. Also:
+
+- Estimated costs use Anthropic's API list prices of 9 November 2026. They aren't what a Pro or Max plan costs, and a model missing from the price table shows its tokens with no cost.
 - Leftover programs are only found for sessions stopped, deleted, or ended from the dashboard while it runs. Programs started outside the session's process tree and the consoles of its programs, in the second between recording them and the action, or later by a program whose shell has gone, aren't found. The list is kept in memory, so it's gone after a restart.
+- Ending leftover programs ends each one at once, with no chance to save. Programs whose start time or program file no longer match the record are skipped and named in the result.
+- The first read of large transcripts after a start can take a few polls. While it runs, usage shows "still counting", and reading takes at most about 0.8 seconds per poll in the measured case.
+- `claude -p` runs are still listed as interactive sessions, as Claude Code reports them (BUG-23).
+- A background session's start time, as Claude Code lists it, moves when its process starts and again after Stop. The dashboard shows the first one it saw.
+
+### Open bugs
+
+One open bug is Medium, and the rest are Low.
+
+| ID     | Bug                                                                                                                                                                                      |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BUG-7  | Sessions with an inherited `CLAUDE_CODE_CHILD_SESSION` weren't listed by the CLI in one observation                                                                                      |
+| BUG-22 | Claude Code doesn't list a session at a trust dialog                                                                                                                                     |
+| BUG-23 | `claude -p` runs are listed as interactive sessions, as Claude Code reports them. The start-time part is fixed.                                                                          |
+| BUG-29 | A terminal started by Open might keep the tool's output open after the tool exits. It was seen once and couldn't be reproduced, and a guard test now checks it.                          |
+| BUG-30 | **Medium.** After Stop or Delete, programs the session started can keep running. This is Claude Code's behavior. The dashboard now lists them and can end them, within the limits above. |
+
+### Accessibility
+
+The dashboard is built towards WCAG 2.2 AA and passes automated accessibility scans and keyboard tests, but it doesn't claim conformance and **hasn't been tested with a screen reader**. Planned testing with NVDA was dropped (decision 0021). This release's screen-reader fixes (BUG-10, BUG-11, BUG-16) are checked by browser tests only.
+
+### Not checked live
+
+These were checked by automated tests and review, but not on real sessions:
+
+- Delete on a session whose worktree has unsaved work, which Claude Code should keep (L10, skipped by decision 0022).
+- A notification arriving while the dashboard tab is hidden.
+- The printed sign-in link when the browser really fails to open, and the BUG-32 hand-over between tabs in a real browser with real notifications.
 
 ## 0.1.0
 
