@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 3, Phase 5: Testing.** 0.1.0 is released ([0017](decisions/0017-first-release.md)). Iteration 3 covers cost and token use and bug fixes, for release as 0.2.0 ([0018](decisions/0018-iteration-3-plan.md)). Screen-reader testing was dropped ([0021](decisions/0021-drop-nvda-testing.md)), and L10 was skipped ([0022](decisions/0022-skip-l10-iteration-3.md)). Requirements are signed off ([0019](decisions/0019-iteration-3-requirements.md)), and so is the design ([0020](decisions/0020-iteration-3-design.md)). Implementation steps 1 to 9 are merged, and Testing is under way: see the [test plan](test-plan.md#iteration-3).
+**Iteration 3, Phase 6: Release.** 0.1.0 is released ([0017](decisions/0017-first-release.md)). Iteration 3 covers cost and token use and bug fixes, for release as 0.2.0 ([0018](decisions/0018-iteration-3-plan.md)). Screen-reader testing was dropped ([0021](decisions/0021-drop-nvda-testing.md)), and L10 was skipped ([0022](decisions/0022-skip-l10-iteration-3.md)). Requirements are signed off ([0019](decisions/0019-iteration-3-requirements.md)), and so is the design ([0020](decisions/0020-iteration-3-design.md)). Implementation steps 1 to 9 are merged, and Testing is closed: see the [test plan](test-plan.md#iteration-3). Releasing 0.2.0 is next.
 
 ## How these docs work
 
@@ -13,12 +13,12 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Living documents
 
-| Document                               | Status                                                             |
-| -------------------------------------- | ------------------------------------------------------------------ |
-| [`requirements.md`](requirements.md)   | Signed off for iteration 3                                         |
-| [`design.md`](design.md)               | Signed off for iteration 3                                         |
-| [`test-plan.md`](test-plan.md)         | Exit criteria met for iteration 2; iteration 3 Testing in progress |
-| [`release-notes.md`](release-notes.md) | 0.1.0                                                              |
+| Document                               | Status                                   |
+| -------------------------------------- | ---------------------------------------- |
+| [`requirements.md`](requirements.md)   | Signed off for iteration 3               |
+| [`design.md`](design.md)               | Signed off for iteration 3               |
+| [`test-plan.md`](test-plan.md)         | Exit criteria met for iterations 2 and 3 |
+| [`release-notes.md`](release-notes.md) | 0.1.0                                    |
 
 ## Decision log
 
