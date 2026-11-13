@@ -657,14 +657,14 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
 ### Folder checks (FR-32, FR-33, NFR-14)
 
 - **Path form:** an absolute path on a drive letter. `\\server\share`, `\\?\`, `\\.\`, and relative paths are refused.
-- **Drive type:** the drive letter's type is read with `GetDriveTypeW`. A network drive, which is how mapped drives appear, is refused.
-- **`subst` and links:** the path is resolved with `realpath` first, which follows `subst` drives, junctions, and symbolic links. The resolved path is checked again, by form and drive type, and must still exist. Refused if any step fails (0025).
+- **Drive type:** the drive letter's type is read through the PowerShell program the tool already uses, as `[System.IO.DriveInfo]::new('<letter>').DriveType`, with the letter checked to be A to Z first and passed as the only argument. A `Network` drive, which is how mapped drives appear, is refused, and so is any folder whose check fails or times out.
+- **`subst` and links:** the path is resolved with `fs.realpath.native` first, because the plain JavaScript version doesn't resolve `subst` drives, which follows `subst` drives, junctions, and symbolic links. The resolved path is checked again, by form and drive type, and must still exist. Refused if any step fails (0025).
 - These checks also apply to the folder picker, to a Fork's folder, and to Resume from History.
 
 ### Action routes (NFR-6, NFR-14)
 
-- **Schemas:** the action route's single strict schema becomes one strict schema per action, chosen by `action`: the existing ones keep `{ action, key }`, `start` takes `{ action, folder, kind, name?, prompt? }`, and `fork` takes `{ action, key, kind, name?, prompt? }`. Unknown fields are refused as today.
-- **Body limit:** 32 KB for `start` and `fork`, which fits an 8,000-character prompt, and the current 4 KB for the others.
+- **Schemas:** the action route's single strict schema becomes one strict schema per action, chosen by `action`: the existing ones keep `{ action, key }`, `start` takes `{ action, folder, kind, name?, prompt? }`, and `fork` takes `{ action, key, kind, name?, prompt? }`, and `listFolders` takes `{ action, folder? }`. Unknown fields are refused as today.
+- **Body limit:** 32 KB for `start` and `fork`, which fits an 8,000-character prompt, and the current 4 KB for the others, including `listFolders`.
 - **Same guards:** all of them need the dashboard's origin, the page key, and JSON, as NFR-6 says today.
 
 ### Resume from History (FR-35, FR-14, C-9)
@@ -691,19 +691,19 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
 
 ### Search (FR-36, C-16, NFR-15)
 
-- **Routes:** `POST /api/search` starts a search, with `{ query }` in the body, so the text is never in the address. It returns a random 128-bit search id. `GET /api/search/<id>` returns progress and, when done, the results. `DELETE /api/search/<id>` cancels. All three need the dashboard's origin, the page key, and the cookie (NFR-6), and every response is `Cache-Control: no-store`.
-- **Who sees results:** results go only in the response to `GET /api/search/<id>`, to whoever has that id, which only the page that started the search knows. Nothing about a search goes over the WebSocket, because every tab shares it.
+- **Routes:** `POST /api/search` starts a search, with `{ query }` in the body, so the text is never in the address. It returns a random 128-bit search id. `POST /api/search/<id>` returns progress and, when done, the results. `POST /api/search/<id>/cancel` cancels. They're all POSTs because browsers send an `Origin` header with a POST but not with a same-origin GET, and NFR-6 checks it. All three need the dashboard's origin, the page key, and the cookie (NFR-6), and every response is `Cache-Control: no-store`.
+- **Who sees results:** results go only in the response to `POST /api/search/<id>`, to whoever has that id, which only the page that started the search knows. Nothing about a search goes over the WebSocket, because every tab shares it.
 - **Limits:** one search at a time; a new one cancels the old. The query must be 2 to 200 characters after trimming.
 - **Scanning:** a worker thread streams each main transcript, newest first, parsing only lines containing `"user"` or `"assistant"`. It keeps prompt and reply text by U-22's allow-list, and also drops `isSidechain` lines, synthetic replies (`message.model: "<synthetic>"` or `isApiErrorMessage`), and, as a safeguard, any line with `isMeta`, `isCompactSummary`, or `toolUseResult`. It matches case-insensitively, as plain text, with no regular expressions. Lines without `origin` or `promptSource` are skipped, and counted toward the format warning.
 - **Results:** per session, the match count and up to three snippets of at most 160 characters, with the match centred. The search stops collecting snippets after 100 matching sessions, but goes on counting. The page shows snippets as text, never as HTML.
-- **Progress:** files done out of total, in the `GET` response, which the page asks for every second.
+- **Progress:** files done out of total, in the `POST /api/search/<id>` response, which the page asks for every second.
 - **Stopping:** the page can cancel. The scan stops at 30 seconds with what it has, and says so.
 - **Not kept:** results are kept in memory for at most 60 seconds after they're ready, or until they're fetched or cancelled, then dropped, and the worker exits. The query and snippets are never logged.
 
 ### Folder picker (FR-32, NFR-15)
 
 - **Request:** `{ action: "listFolders", folder? }`, with the page key. It returns the subfolder names of a local absolute folder, or of the user's home folder if none is given, and of drive roots.
-- **Limits:** at most 500 entries. It never reads file contents, follows no shortcuts, and refuses network shares.
+- **Limits:** at most 500 entries. It never reads file contents, follows no shortcuts, and applies the folder checks to the folder asked for, so network, mapped, `subst`, and linked network folders are refused.
 
 ### Page
 
