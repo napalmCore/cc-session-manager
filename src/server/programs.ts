@@ -1,5 +1,6 @@
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
+import { planTerminal } from "./launch.js";
 import { isValidSessionId } from "./transcripts.js";
 
 /**
@@ -9,7 +10,8 @@ import { isValidSessionId } from "./transcripts.js";
 export interface Programs {
   claude: string | null;
   wt: string | null;
-  cmd: string | null;
+  /** Opens a console window when Windows Terminal isn't installed (0025). */
+  conhost: string | null;
   powershell: string | null;
 }
 
@@ -102,7 +104,7 @@ export function resolvePrograms(
   return {
     claude: findClaude(env),
     wt: wt !== null && isSafeProgramPath(wt) && exists(wt) ? wt : null,
-    cmd: systemProgram(env, "cmd.exe"),
+    conhost: systemProgram(env, "conhost.exe"),
     powershell: systemProgram(
       env,
       "WindowsPowerShell",
@@ -153,27 +155,5 @@ export function planOpen(
     claudeArgs = ["--resume", target.sessionId];
   }
 
-  if (programs.wt !== null) {
-    return {
-      file: programs.wt,
-      args: ["-w", "new", "-d", ".", "--", programs.claude, ...claudeArgs],
-      cwd,
-      windowsVerbatimArguments: false,
-    };
-  }
-  if (programs.cmd !== null) {
-    return {
-      file: programs.cmd,
-      // /v:off stops a delayed-expansion registry setting from expanding ! in the path.
-      args: [
-        "/d",
-        "/v:off",
-        "/c",
-        `start "" "${programs.claude}" ${claudeArgs.join(" ")}`,
-      ],
-      cwd,
-      windowsVerbatimArguments: true,
-    };
-  }
-  throw new Error("No terminal program was found");
+  return planTerminal(programs, claudeArgs, cwd);
 }

@@ -13,7 +13,7 @@ const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const programs: Programs = {
   claude: "C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
   wt: "C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe",
-  cmd: "C:\\Windows\\System32\\cmd.exe",
+  conhost: "C:\\Windows\\System32\\conhost.exe",
   powershell: null,
 };
 
@@ -107,7 +107,7 @@ describe("Open", () => {
 
   it("is unavailable without any terminal program", async () => {
     const { executors } = setup({
-      programs: { ...programs, wt: null, cmd: null },
+      programs: { ...programs, wt: null, conhost: null },
     });
     expect((await executors.open(background())).outcome).toBe("unavailable");
   });

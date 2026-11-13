@@ -213,7 +213,7 @@ describe("planOpen", () => {
     claude:
       "C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
     wt: "C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe",
-    cmd: "C:\\Windows\\System32\\cmd.exe",
+    conhost: "C:\\Windows\\System32\\conhost.exe",
     powershell:
       "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
   };
@@ -251,21 +251,17 @@ describe("planOpen", () => {
     expect(plan.cwd).toBe(hostile);
   });
 
-  it("falls back to a standard console with one exact command string", () => {
+  it("falls back to a console window through conhost, with no shell", () => {
     const plan = planOpen(
       { ...programs, wt: null },
       { mode: "attach", id: "abcd1234" },
       hostile,
     );
 
-    expect(plan.file).toBe(programs.cmd);
-    expect(plan.windowsVerbatimArguments).toBe(true);
-    expect(plan.args).toEqual([
-      "/d",
-      "/v:off",
-      "/c",
-      `start "" "${programs.claude}" attach abcd1234`,
-    ]);
+    expect(plan.file).toBe(programs.conhost);
+    expect(plan.windowsVerbatimArguments).toBe(false);
+    expect(plan.args).toEqual([programs.claude, "attach", "abcd1234"]);
+    expect(plan.cwd).toBe(hostile);
     expect(plan.args.join(" ")).not.toContain("work");
   });
 
