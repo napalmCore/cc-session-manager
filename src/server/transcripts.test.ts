@@ -676,7 +676,7 @@ ${late}
   });
 
   it("stops reading for the poll when its time is up, and goes on next poll (BUG-33)", async () => {
-    // Two replies, each in a piece of its own past a 1 MB filler line.
+    // Two replies, each in a piece of its own past a filler line of one piece (256 KB).
     writeTranscript(`${reply()}
 ${"x".repeat(READ_CHUNK_BYTES)}
 ${reply({ id: "msg_2" })}
