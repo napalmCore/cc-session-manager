@@ -60,6 +60,15 @@ const actionRequestSchema = z.union([
     .strict(),
   z
     .object({
+      action: z.literal("fork"),
+      key: z.string().max(64),
+      kind: z.enum(["background", "interactive"]),
+      name: z.string().max(1000).optional(),
+      prompt: z.string().max(20_000).optional(),
+    })
+    .strict(),
+  z
+    .object({
       action: z.literal("history"),
       page: z.number().int().min(0).max(100_000).optional(),
     })
@@ -389,7 +398,9 @@ export async function startServer(
       const isStart =
         typeof parsed === "object" &&
         parsed !== null &&
-        (parsed as { action?: unknown }).action === "start";
+        ["start", "fork"].includes(
+          String((parsed as { action?: unknown }).action),
+        );
       if (!isStart && text.length > MAX_ACTION_BODY) {
         return c.json(
           { outcome: "refused", message: "Request too large" },

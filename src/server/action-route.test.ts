@@ -334,6 +334,44 @@ describe("POST /api/actions", () => {
     expect(onAction).toHaveBeenCalledTimes(2);
   });
 
+  it("takes a Fork naming only a session, never a folder, with the larger limit", async () => {
+    const cookie = await login();
+    const headers = {
+      cookie,
+      "x-ccsm-key": pageKey,
+      origin: origin(),
+      "content-type": "application/json",
+    };
+    const ok = await send(
+      "POST",
+      "/api/actions",
+      headers,
+      JSON.stringify({
+        action: "fork",
+        key: "11111111-1111-4111-8111-111111111111",
+        kind: "background",
+        prompt: "x".repeat(8000),
+      }),
+    );
+    expect(ok.status).toBe(200);
+    for (const body of [
+      {
+        action: "fork",
+        key: "abcd1234",
+        kind: "interactive",
+        folder: "C:/elsewhere",
+      },
+      { action: "fork", key: "abcd1234", kind: "detached" },
+      { action: "fork", kind: "interactive" },
+    ]) {
+      expect(
+        (await send("POST", "/api/actions", headers, JSON.stringify(body)))
+          .status,
+      ).toBe(400);
+    }
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
   it("can't be triggered by a read", async () => {
     const cookie = await login();
     await send("GET", "/api/actions?action=stop&key=abcd1234", {
