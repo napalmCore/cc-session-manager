@@ -31,6 +31,11 @@ export interface HistoryEntry {
   usage?: SessionUsage;
   /** True when Claude Code still lists the session, so it's also in the main list. */
   inList: boolean;
+  /**
+   * False when the folder is gone or isn't on a local drive, so Resume and Fork aren't offered
+   * (FR-33). Absent when it couldn't be checked.
+   */
+  folderUsable?: boolean;
 }
 
 export interface HistoryPage {
@@ -70,6 +75,8 @@ export interface HistoryOptions {
   /** A transcript reader of History's own, so live sessions keep their own budget. */
   read: UsageReader;
   now?: () => number;
+  /** Whether a folder can be used, checking the drive type before touching it (FR-33). */
+  canUse?: (folder: string) => Promise<boolean>;
 }
 
 /** The whole lines of a buffer, leaving out a cut-off first or last line. */
@@ -319,6 +326,18 @@ export function createHistory(options: HistoryOptions) {
     };
   };
 
+  const usableFolder = async (
+    folder: string | null,
+  ): Promise<boolean | undefined> => {
+    if (folder === null) return false;
+    if (options.canUse === undefined) return undefined;
+    try {
+      return await options.canUse(folder);
+    } catch {
+      return undefined;
+    }
+  };
+
   return {
     /**
      * One page of History. Transcripts with no timestamp, which have no messages, are left out
@@ -341,6 +360,18 @@ export function createHistory(options: HistoryOptions) {
             .filter((id) => id !== undefined),
         );
         const entries = slice.map((file) => entryOf(file, listedIds));
+        // Each distinct folder is checked once a page.
+        const checks = new Map<string | null, Promise<boolean | undefined>>();
+        for (const entry of entries) {
+          if (!checks.has(entry.folder))
+            checks.set(entry.folder, usableFolder(entry.folder));
+        }
+        await Promise.all(
+          entries.map(async (entry) => {
+            const usable = await checks.get(entry.folder);
+            if (usable !== undefined) entry.folderUsable = usable;
+          }),
+        );
 
         // Branch, model, and usage, through the reader's allow-list and budget.
         const views = entries.map(
@@ -377,6 +408,53 @@ export function createHistory(options: HistoryOptions) {
       return [...files]
         .sort((a, b) => b.mtimeMs - a.mtimeMs)
         .map(({ sessionId, file }) => ({ sessionId, file }));
+    },
+
+    /** History's details for some sessions, for search results (FR-36). */
+    describe(
+      sessionIds: string[],
+      listing: SessionView[],
+    ): Promise<
+      Map<
+        string,
+        {
+          folder: string | null;
+          lastActivityAt: number | null;
+          inList: boolean;
+          folderUsable?: boolean;
+        }
+      >
+    > {
+      return inTurn(async () => {
+        const wanted = new Set(sessionIds.filter(isValidSessionId));
+        const listedIds = new Set(
+          listing
+            .map((session) => session.sessionId)
+            .filter((id) => id !== undefined),
+        );
+        const found = new Map<
+          string,
+          {
+            folder: string | null;
+            lastActivityAt: number | null;
+            inList: boolean;
+            folderUsable?: boolean;
+          }
+        >();
+        for (const file of await listFiles()) {
+          if (!wanted.has(file.sessionId)) continue;
+          const info = await knownOf(file);
+          if (info === null) continue;
+          const usable = await usableFolder(info.folder);
+          found.set(file.sessionId, {
+            folder: info.folder,
+            lastActivityAt: info.lastTimestamp ?? Math.round(file.mtimeMs),
+            inList: listedIds.has(file.sessionId),
+            ...(usable === undefined ? {} : { folderUsable: usable }),
+          });
+        }
+        return found;
+      });
     },
 
     /** Finds a past session's folder by its ID, for Resume and Fork from History. */

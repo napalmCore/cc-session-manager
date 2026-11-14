@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useRef } from "react";
 import {
   Button,
   Dialog,
@@ -42,17 +42,22 @@ export function RowActions({
   pending,
   result,
   onAction,
+  onFork,
 }: {
   actions: SessionAction[];
   label: string;
   pending: SessionAction | undefined;
   result: ActionResultView | undefined;
   onAction: (action: SessionAction) => void;
+  /** Offered on rows with a session ID (FR-33). */
+  onFork?: ((from: HTMLElement | null) => void) | undefined;
 }) {
-  if (actions.length === 0 && result === undefined) return null;
+  const forkButton = useRef<HTMLButtonElement>(null);
+  if (actions.length === 0 && result === undefined && onFork === undefined)
+    return null;
   return (
     <>
-      {actions.length > 0 && (
+      {(actions.length > 0 || onFork !== undefined) && (
         <div
           role="group"
           aria-label={`Actions for ${label}`}
@@ -80,6 +85,19 @@ export function RowActions({
                   : ACTION_LABELS[action]}
             </Button>
           ))}
+          {onFork !== undefined && (
+            <Button
+              ref={forkButton}
+              data-action="fork"
+              className={styles.button}
+              isDisabled={pending !== undefined}
+              onPress={() => {
+                onFork(forkButton.current);
+              }}
+            >
+              Fork…
+            </Button>
+          )}
         </div>
       )}
       {result !== undefined && (

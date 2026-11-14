@@ -111,10 +111,11 @@ test.describe("row actions", () => {
       "Delete…",
     ]);
     const editor = actionsFor(page, /"editor"/);
-    await expect(editor.getByRole("button")).toHaveText(["End…"]);
+    await expect(editor.getByRole("button")).toHaveText(["End…", "Fork…"]);
     await expect(row(page, "editor")).toContainText("Process ID 4321");
     await expect(actionsFor(page, /"earlier"/).getByRole("button")).toHaveText([
       "Resume",
+      "Fork…",
     ]);
   });
 
@@ -464,7 +465,10 @@ test.describe("self-protection on the page (FR-22)", () => {
     await expect(actionsFor(page, /"worker"/).getByRole("button")).toHaveText([
       "Open",
     ]);
-    await expect(actionsFor(page, /"editor"/)).toHaveCount(0);
+    // Fork changes nothing, so it stays (0024).
+    await expect(actionsFor(page, /"editor"/).getByRole("button")).toHaveText([
+      "Fork…",
+    ]);
   });
 
   test("hides them for the session that started the tool, and says so on its row", async ({
@@ -473,7 +477,9 @@ test.describe("self-protection on the page (FR-22)", () => {
     await open(page, snapshot({ protectedSessions: [LIVE_ID] }));
 
     await expect(row(page, "editor")).toBeVisible();
-    await expect(actionsFor(page, /"editor"/)).toHaveCount(0);
+    await expect(actionsFor(page, /"editor"/).getByRole("button")).toHaveText([
+      "Fork…",
+    ]);
     await expect(row(page, "editor")).toContainText(
       "The dashboard was started from this session",
     );

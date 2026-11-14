@@ -590,7 +590,7 @@ Each step is a separate pull request, approved by an independent agent before me
 
 ## Iteration 4 design
 
-Requirements: the Iteration 4 section of [requirements.md](requirements.md). Decisions: [0023](decisions/0023-iteration-4-plan.md), [0024](decisions/0024-iteration-4-requirements.md), and [0025](decisions/0025-iteration-4-design.md).
+Requirements: the Iteration 4 section of [requirements.md](requirements.md). Decisions: [0023](decisions/0023-iteration-4-plan.md), [0024](decisions/0024-iteration-4-requirements.md), [0025](decisions/0025-iteration-4-design.md), and [0026](decisions/0026-iteration-4-page.md).
 
 ### Evidence
 
@@ -707,9 +707,11 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
 
 ### Page
 
-- **New session:** a "New session" button opens a form: folder (a text field and Browse), kind, name, and prompt (background only). Errors are announced.
-- **Fork:** offered on rows with a session ID, in the main list and History.
-- **History and Search:** two new views, reached from the page header.
+- **New session:** a "New session…" button in the header opens a modal dialog: folder (a text field and Browse), kind, name, and prompt (background only). Browse lists folders through the server, with drives, "Up one level", and "Use this folder". A refusal stays in the dialog as an alert; a start closes it, is announced, and returns focus to the button (0026).
+- **Fork:** a "Fork…" button on rows with a session ID, in the main list, History, and search results, the protected session included, but not where Claude Code reports the folder gone. It opens its own dialog with kind, name, and prompt; the folder is the recorded one, shown but not editable (0026).
+- **Views:** Sessions, History, and Search are header links with their own addresses (`#history`, `#search`), so Back and reload keep the view. The new view's heading takes focus (0026).
+- **History:** 50 past sessions a page, newest first, with Newer and Older. Each shows its folder, branch, model, start, last activity, and usage, and Resume and Fork; one still in Claude Code's list offers only Fork. While usage is still counting, the page is read again every 5 seconds.
+- **Search:** a search box; progress while it runs, with Cancel; leaving the view cancels it. Each result shows its match count, up to 3 snippets as plain text, its folder and last activity from History, and Resume and Fork (0026). History's details are read for the sessions shown with snippets, once the search is done.
 - **Accessibility:** all of these meet NFR-8 (NFR-16), with axe checks in both themes.
 
 ### Other choices

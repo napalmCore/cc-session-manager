@@ -312,3 +312,59 @@ describe("reading the last timestamp quickly", () => {
     ).toBe(T0 + 9000);
   });
 });
+
+describe("details for search results (FR-36)", () => {
+  it("gives folder, last activity, and whether it's listed, for the sessions asked for only", async () => {
+    transcript("a", id(1), [header, user(T0)], T0 + 1000);
+    transcript("b", id(2), [header, user(T0 + 5000, "C:\\work\\beta")]);
+    transcript("c", id(3), [header, user(T0)]);
+    const history = createHistory({ root, read: noUsage });
+    const listed = {
+      sessionId: id(2),
+      needsAttention: false,
+      attentionReason: null,
+      finished: false,
+      statusLabel: "idle",
+    } satisfies SessionView;
+    const found = await history.describe([id(1), id(2), "not-an-id"], [listed]);
+    expect([...found.keys()].sort()).toEqual([id(1), id(2)]);
+    expect(found.get(id(1))).toEqual({
+      folder: "C:\\work\\alpha",
+      lastActivityAt: T0,
+      inList: false,
+    });
+    expect(found.get(id(2))).toMatchObject({
+      folder: "C:\\work\\beta",
+      lastActivityAt: T0 + 5000,
+      inList: true,
+    });
+  });
+});
+
+describe("whether a past session's folder can be used (FR-33)", () => {
+  it("asks for each entry on a page and in search details, and leaves it out if the check fails", async () => {
+    transcript("a", id(1), [header, user(T0)], T0 + 1000);
+    transcript("b", id(2), [header, user(T0, "C:\\work\\gone")], T0 + 2000);
+    const canUse = vi.fn((folder: string) =>
+      folder.endsWith("gone") ? Promise.resolve(false) : Promise.resolve(true),
+    );
+    const history = createHistory({ root, read: noUsage, canUse });
+    const page = await history.page(0, []);
+    expect(
+      page.sessions.map((entry) => [entry.sessionId, entry.folderUsable]),
+    ).toEqual([
+      [id(2), false],
+      [id(1), true],
+    ]);
+    const found = await history.describe([id(2)], []);
+    expect(found.get(id(2))?.folderUsable).toBe(false);
+
+    const broken = createHistory({
+      root,
+      read: noUsage,
+      canUse: () => Promise.reject(new Error("no")),
+    });
+    const unknown = await broken.page(0, []);
+    expect(unknown.sessions[0]?.folderUsable).toBeUndefined();
+  });
+});

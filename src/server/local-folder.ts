@@ -52,14 +52,25 @@ export function cachedDriveType(
   now: () => number = Date.now,
 ): DriveTypeReader {
   const cache = new Map<string, { type: string; at: number }>();
+  // A read still running is shared, so many checks at once start one read per drive.
+  const running = new Map<string, Promise<string | null>>();
   return async (letter) => {
     const key = letter.toUpperCase();
     const hit = cache.get(key);
     if (hit !== undefined && now() - hit.at < DRIVE_TYPE_CACHE_MS)
       return hit.type;
-    const type = await read(key);
-    if (type !== null) cache.set(key, { type, at: now() });
-    return type;
+    const shared = running.get(key);
+    if (shared !== undefined) return shared;
+    const reading = read(key)
+      .then((type) => {
+        if (type !== null) cache.set(key, { type, at: now() });
+        return type;
+      })
+      .finally(() => {
+        running.delete(key);
+      });
+    running.set(key, reading);
+    return reading;
   };
 }
 
