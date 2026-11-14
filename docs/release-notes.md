@@ -11,7 +11,7 @@ cc-session-manager is an independent tool. It isn't made, endorsed, or supported
 ### What's new
 
 - **New session:** a button in the header opens a form with a folder, typed or picked with Browse, a kind, an optional name, and, for a background session, a prompt. A background session starts with `claude --bg`; an interactive one opens in a new terminal. Pressing Start is the confirmation, and a refusal stays in the form in the tool's own words (FR-32).
-- **Fork:** a Fork button starts a new session from a conversation so far, in its recorded folder, with `--resume <ID> --fork-session`. It's offered on sessions with a session ID whose folder can still be used: in the list, unless Claude Code reports the folder gone, and in History and search results, when the folder is still a local folder. The original is never changed, so Fork is offered on the session that started the dashboard too (FR-33).
+- **Fork:** a Fork button starts a new session from a conversation so far, in its recorded folder, with `--resume <ID> --fork-session`. It's offered on sessions with a session ID whose folder can still be used: in the list, unless its folder has been deleted, and in History and search results, when the folder is still a local folder. The original is never changed, so Fork is offered on the session that started the dashboard too (FR-33).
 - **Names only at start:** a name can be given when a session is started or forked, and isn't changed afterwards (FR-34).
 - **History:** a view of every past session whose main transcript is still under `~/.claude/projects`, newest first, 50 to a page, with folder, branch, model, times, and usage, and Resume and Fork. A session still in Claude Code's list offers only Fork (FR-35).
 - **Search:** a view that searches your prompts and Claude's visible replies, as plain text ignoring case, for 2 to 200 characters. It shows progress and can be cancelled, and each result shows its match count, up to three snippets, its folder and last activity, and Resume and Fork (FR-36).
@@ -24,9 +24,9 @@ cc-session-manager is an independent tool. It isn't made, endorsed, or supported
 - **Search is the only thing that reads message text**, and only when you search, with no index. It reads prompts and visible replies only: not thinking, tool calls or results, subagents, or text Claude Code inserts. The text it reads goes no further than the search. The matches and snippets are kept in memory until the page fetches them, or for at most 60 seconds after the search finishes, then dropped; until then a snippet may keep its whole message in memory. Snippets go only to the page that asked, in responses that aren't cached. Nothing about a search is logged, saved, or put in the page address (C-16).
 - History reads every main transcript under `~/.claude/projects` for its folder, branch, model, times, and token counts, as the dashboard already did for listed sessions, and keeps them in memory only. It shows no names.
 - The tool doesn't store or log a starting prompt or a name (C-18). Claude Code keeps them in the session's transcript, as it does for any session. The name, folder, prompt, and search fields ask the browser not to autofill or spell-check them, though the browser decides.
-- A prompt and a name are passed on Claude Code's command line, and a name also on Windows Terminal's, where other programs running as you can read them, as with 0.2.0's sign-in link.
+- A prompt and a name are passed on Claude Code's command line, and a name also on Windows Terminal's, where other programs running as you can read them, as with the sign-in link a browser is started with.
 - New session and Fork pass only `--bg`, `--name=<name>`, `--resume`, and `--fork-session`, all before `--`. No permission mode or permission-skipping option is ever passed, so each folder's own Claude Code settings decide, as when you start Claude Code yourself (C-15). A background session runs with no shell. A terminal session runs through Windows Terminal, or, without it, through `cmd /c start`, which is given only options and a session ID: never a prompt or a name.
-- New session takes only a local folder. Network shares, mapped network drives, and `subst` drives or links that lead to a share are refused, while ones that lead to a local folder are used as that folder. The drive type is checked before the folder is touched.
+- New session takes only a local folder. Network shares, mapped network drives, and `subst` drives or links that lead to a share are refused, while ones that lead to a local folder are used as that folder. The drive type is checked before the folder is touched, except through a local link (see Known limits).
 - Fork and Resume from History take the session's folder from its transcript on the server, never from the page.
 
 ### Known limits
@@ -39,7 +39,7 @@ The known limits of 0.2.0 still apply. Also:
 - An interactive session may wait at Claude Code's own trust prompt in a folder you haven't used before. The dashboard never answers it, and Claude Code doesn't list a session waiting there (BUG-22).
 - A typed path that is a local link to a network share is refused, but resolving it first reaches the share. History and search check each past session's folder the same way, so a planted link of this kind is reached without you opening it.
 - Resume from History is refused for a minute after a session's last activity, and while a session in the same folder is still starting, in case it's still running.
-- History reads with its own transcript reader, so while it's open, the dashboard can read up to twice as much per poll. Once in testing, a first History page took 6.7 seconds, over FR-35's 5 seconds, just after a fork while another build was running; eight other first pages took 0.56 to 1.3 seconds.
+- History reads with its own transcript reader, so while it's open, the dashboard can read up to twice as much per poll. Once in testing, a first History page took 6.7 seconds, over FR-35's 5 seconds, just after a fork while another build was running; seven later first pages took 0.56 to 1.3 seconds.
 - Search skips any single line of more than about a million characters, stops after 30 seconds with what it found, and shows snippets for at most 100 sessions.
 - A very slow Windows PowerShell can make New session, Fork, or History wait up to 15 seconds to check a folder's drive. If it can't, the folder isn't used, and the result says so.
 
@@ -53,7 +53,7 @@ The dashboard is built towards WCAG 2.2 AA and passes automated accessibility sc
 
 ### Not checked live
 
-These were checked by automated tests and review, but not on real sessions:
+These weren't checked live on the final code, or at all. They're covered by automated tests and review:
 
 - No live check ran on the final code. The verifier's repeats of background Start, Fork, refusals, History, and Search ran just before the last Testing fixes (BUG-34 to BUG-36).
 - Interactive Start, interactive Fork, Fork and Resume from History, and the keyboard pass ran only before the security fixes. The Resume from History that was checked would now wait for the one-minute guard.
