@@ -13,6 +13,8 @@ export const SESSIONS_WITH_SNIPPETS = 100;
 export const SEARCH_TIME_MS = 30_000;
 /** Results are kept this long after they're ready, unless fetched or cancelled sooner (C-16). */
 export const RESULTS_KEPT_MS = 60_000;
+/** A single transcript line longer than this is skipped, so memory and work stay bounded. */
+export const MAX_LINE_CHARS = 8 * 1024 * 1024;
 const CHUNK_BYTES = 64 * 1024;
 
 /** A main transcript to search, newest first. */
@@ -85,6 +87,42 @@ export function visibleText(fields: Fields): string[] {
   return [];
 }
 
+/**
+ * Every place the needle appears in the text, case-insensitively, as positions and lengths in
+ * the original text. Lowercasing one character can change its length, as "İ" does, so matching
+ * runs on a lowercased copy that keeps where each of its characters came from.
+ */
+export function findMatches(
+  text: string,
+  needle: string,
+): { at: number; length: number }[] {
+  let lower = "";
+  const from: number[] = [];
+  let index = 0;
+  for (const ch of text) {
+    const folded = ch.toLowerCase();
+    lower += folded;
+    for (let i = 0; i < folded.length; i += 1) from.push(index);
+    index += ch.length;
+  }
+  from.push(text.length);
+  const matches: { at: number; length: number }[] = [];
+  let at = lower.indexOf(needle);
+  while (at !== -1) {
+    const start = from[at] ?? 0;
+    const end = from[at + needle.length] ?? text.length;
+    matches.push({ at: start, length: Math.max(1, end - start) });
+    at = lower.indexOf(needle, at + Math.max(1, needle.length));
+  }
+  return matches;
+}
+
+/** Moves a cut point off the second half of a surrogate pair, so an emoji is never split. */
+function safeCut(text: string, at: number): number {
+  const code = text.charCodeAt(at);
+  return code >= 0xdc00 && code <= 0xdfff ? at - 1 : at;
+}
+
 /** Up to SNIPPET_LENGTH characters around a match, with the match near the middle. */
 export function snippetAround(
   text: string,
@@ -95,11 +133,14 @@ export function snippetAround(
   // Positions shift when whitespace collapses, so find the match again in the flat text.
   const before = text.slice(0, at).replace(/\s+/g, " ").length;
   const room = SNIPPET_LENGTH - 2;
-  const start = Math.max(
-    0,
-    Math.min(before - Math.floor((room - length) / 2), flat.length - room),
+  const start = safeCut(
+    flat,
+    Math.max(
+      0,
+      Math.min(before - Math.floor((room - length) / 2), flat.length - room),
+    ),
   );
-  const end = Math.min(flat.length, start + room);
+  const end = safeCut(flat, Math.min(flat.length, start + room));
   return `${start > 0 ? "…" : ""}${flat.slice(start, end)}${end < flat.length ? "…" : ""}`;
 }
 
@@ -108,10 +149,10 @@ interface Running {
   filesDone: number;
   filesTotal: number;
   hits: Map<string, SearchHit>;
+  withSnippets: number;
   done: boolean;
   stopped: boolean;
   cancelled: boolean;
-  readyAt: number | null;
 }
 
 export interface SearchOptions {
@@ -119,18 +160,57 @@ export interface SearchOptions {
   files: () => Promise<SearchFile[]>;
   now?: () => number;
   timeMs?: number;
+  /** For tests: how long unfetched results are kept. */
+  keptMs?: number;
 }
 
 /**
  * Search inside conversations (FR-36, C-16). It reads prompts and replies only when asked, holds
  * them only while a search runs, and keeps nothing but the matches it returns, for at most a
- * minute. One search runs at a time; a new one cancels the old. Reading pauses after each piece,
- * so session updates aren't held up (NFR-15). Nothing here is ever logged.
+ * minute. One search runs at a time; a new one cancels the old. It reads in pieces in the
+ * server's own thread, pausing after each, so session updates aren't held up (NFR-15). Nothing
+ * here is ever logged.
  */
 export function createSearch(options: SearchOptions) {
   const now = options.now ?? Date.now;
   const limit = options.timeMs ?? SEARCH_TIME_MS;
+  const keptMs = options.keptMs ?? RESULTS_KEPT_MS;
   let current: Running | null = null;
+  let dropTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const clearDrop = () => {
+    if (dropTimer !== undefined) clearTimeout(dropTimer);
+    dropTimer = undefined;
+  };
+
+  const drop = () => {
+    clearDrop();
+    if (current !== null) current.cancelled = true;
+    current = null;
+  };
+
+  const record = (
+    run: Running,
+    sessionId: string,
+    text: string,
+    needle: string,
+  ) => {
+    for (const match of findMatches(text, needle)) {
+      let hit = run.hits.get(sessionId);
+      if (hit === undefined) {
+        hit = { sessionId, count: 0, snippets: [] };
+        run.hits.set(sessionId, hit);
+      }
+      hit.count += 1;
+      const roomForSession = hit.snippets.length < SNIPPETS_PER_SESSION;
+      const roomForSessions =
+        hit.snippets.length > 0 || run.withSnippets < SESSIONS_WITH_SNIPPETS;
+      if (roomForSession && roomForSessions) {
+        if (hit.snippets.length === 0) run.withSnippets += 1;
+        hit.snippets.push(snippetAround(text, match.at, match.length));
+      }
+    }
+  };
 
   const scanFile = async (
     run: Running,
@@ -138,8 +218,13 @@ export function createSearch(options: SearchOptions) {
     needle: string,
     deadline: number,
   ): Promise<void> => {
-    const stream = createReadStream(file.file, { highWaterMark: CHUNK_BYTES });
+    // Decoded as a stream, so a character split between two pieces stays whole.
+    const stream = createReadStream(file.file, {
+      highWaterMark: CHUNK_BYTES,
+      encoding: "utf8",
+    });
     let carry = "";
+    let skipping = false;
     const consume = (line: string) => {
       if (!line.includes('"user"') && !line.includes('"assistant"')) return;
       let fields: unknown;
@@ -150,42 +235,37 @@ export function createSearch(options: SearchOptions) {
       }
       if (fields === null || typeof fields !== "object") return;
       for (const text of visibleText(fields as Fields)) {
-        const lower = text.toLowerCase();
-        let at = lower.indexOf(needle);
-        while (at !== -1) {
-          let hit = run.hits.get(file.sessionId);
-          if (hit === undefined) {
-            hit = { sessionId: file.sessionId, count: 0, snippets: [] };
-            run.hits.set(file.sessionId, hit);
-          }
-          hit.count += 1;
-          const withSnippets = [...run.hits.values()].filter(
-            (h) => h.snippets.length > 0,
-          ).length;
-          if (
-            hit.snippets.length < SNIPPETS_PER_SESSION &&
-            (hit.snippets.length > 0 || withSnippets < SESSIONS_WITH_SNIPPETS)
-          ) {
-            hit.snippets.push(snippetAround(text, at, needle.length));
-          }
-          at = lower.indexOf(needle, at + needle.length);
-        }
+        record(run, file.sessionId, text, needle);
       }
     };
     try {
       for await (const chunk of stream) {
-        const text = carry + (chunk as Buffer).toString("utf8");
-        const lines = text.split("\n");
-        carry = lines.pop() ?? "";
-        for (const line of lines) consume(line);
+        const piece = chunk as string;
+        let start = 0;
+        let newline = piece.indexOf("\n");
+        while (newline !== -1) {
+          // A line too long to hold is skipped, even when its end arrives in this piece.
+          if (!skipping && carry.length + (newline - start) <= MAX_LINE_CHARS) {
+            consume(carry + piece.slice(start, newline));
+          }
+          carry = "";
+          skipping = false;
+          start = newline + 1;
+          newline = piece.indexOf("\n", start);
+        }
+        if (!skipping) {
+          carry += piece.slice(start);
+          // A line too long to hold is skipped to its end.
+          if (carry.length > MAX_LINE_CHARS) {
+            carry = "";
+            skipping = true;
+          }
+        }
         // Let polls and other requests run between pieces (NFR-15).
         await nextTurn();
-        if (run.cancelled || now() >= deadline) {
-          stream.destroy();
-          return;
-        }
+        if (run.cancelled || now() >= deadline) return;
       }
-      if (carry !== "") consume(carry);
+      if (!skipping && carry !== "") consume(carry);
     } catch {
       // A file that can't be read is skipped.
     } finally {
@@ -209,23 +289,19 @@ export function createSearch(options: SearchOptions) {
         break;
       }
       await scanFile(run, file, needle, deadline);
-      if (now() >= deadline && run.filesDone < files.length - 1)
-        run.stopped = true;
       if (run.cancelled) return;
       run.filesDone += 1;
-      if (run.stopped) break;
+      if (now() >= deadline && run.filesDone < files.length) {
+        run.stopped = true;
+        break;
+      }
     }
     run.done = true;
-    run.readyAt = now();
-  };
-
-  const expire = () => {
-    if (
-      current !== null &&
-      current.readyAt !== null &&
-      now() - current.readyAt > RESULTS_KEPT_MS
-    ) {
-      current = null;
+    // Unfetched results are dropped after a minute, whether or not anything asks again (C-16).
+    if (current === run) {
+      clearDrop();
+      dropTimer = setTimeout(drop, keptMs);
+      dropTimer.unref?.();
     }
   };
 
@@ -234,16 +310,16 @@ export function createSearch(options: SearchOptions) {
     start(query: string): string | null {
       const trimmed = query.trim();
       if (trimmed.length < MIN_QUERY || trimmed.length > MAX_QUERY) return null;
-      if (current !== null) current.cancelled = true;
+      drop();
       const run: Running = {
         id: randomBytes(16).toString("hex"),
         filesDone: 0,
         filesTotal: 0,
         hits: new Map(),
+        withSnippets: 0,
         done: false,
         stopped: false,
         cancelled: false,
-        readyAt: null,
       };
       current = run;
       void scan(run, trimmed.toLowerCase());
@@ -252,7 +328,6 @@ export function createSearch(options: SearchOptions) {
 
     /** Progress, or the results once, after which they're dropped (C-16). */
     poll(id: string): SearchStatus {
-      expire();
       const run = current;
       if (run === null || run.id !== id || run.cancelled)
         return { status: "gone" };
@@ -263,21 +338,21 @@ export function createSearch(options: SearchOptions) {
           filesTotal: run.filesTotal,
         };
       }
-      current = null;
+      const sessions = [...run.hits.values()].sort((a, b) => b.count - a.count);
+      drop();
       return {
         status: "done",
         filesDone: run.filesDone,
         filesTotal: run.filesTotal,
         stopped: run.stopped,
-        sessions: [...run.hits.values()].sort((a, b) => b.count - a.count),
+        sessions,
       };
     },
 
     /** Stops a search and drops what it found. */
     cancel(id: string): boolean {
       if (current === null || current.id !== id) return false;
-      current.cancelled = true;
-      current = null;
+      drop();
       return true;
     },
   };

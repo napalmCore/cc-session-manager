@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSearch,
   MAX_QUERY,
-  RESULTS_KEPT_MS,
+  findMatches,
+  MAX_LINE_CHARS,
   SNIPPET_LENGTH,
   type SearchFile,
   type SearchStatus,
@@ -204,17 +205,14 @@ describe("searching (FR-36, NFR-15, C-16)", () => {
     expect(search.poll(searchId).status).toBe("gone");
   });
 
-  it("drops unfetched results after a minute", async () => {
-    let time = 0;
+  it("drops unfetched results after a while, even if nothing asks again (C-16)", async () => {
     const search = createSearch({
       files: () => Promise.resolve([transcript(1, [typed("needle")])]),
-      now: () => time,
+      keptMs: 50,
     });
     const searchId = search.start("needle") ?? "";
-    // Let it finish without fetching the results.
-    for (let i = 0; i < 50; i += 1)
-      await new Promise((resolve) => setTimeout(resolve, 2));
-    time += RESULTS_KEPT_MS + 1;
+    // Never polled until well after it's done and the keep time has passed.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(search.poll(searchId).status).toBe("gone");
   });
 
@@ -297,4 +295,73 @@ describe("searching (FR-36, NFR-15, C-16)", () => {
     }
     expect(written.join("\n")).not.toContain("SECRET");
   });
+});
+
+describe("text that's easy to get wrong (review of #63)", () => {
+  it("matches a character split across two 64 KB pieces", async () => {
+    // A line whose "é" straddles byte 65,536 of the file.
+    const prefix = JSON.stringify(typed("x")).length + 1;
+    const lead = {
+      type: "user",
+      origin: { kind: "human" },
+      message: { content: "" },
+    };
+    const before = JSON.stringify(lead).length - 2;
+    const pad = 65_536 - prefix - before - 1 - 1;
+    const line = { ...lead, message: { content: `${"a".repeat(pad)}éxyzzy` } };
+    const file = join(root, `${id(1)}.jsonl`);
+    writeFileSync(
+      file,
+      `${JSON.stringify(typed("x"))}\n${JSON.stringify(line)}\n`,
+    );
+    const search = createSearch({
+      files: () => Promise.resolve([{ sessionId: id(1), file }]),
+    });
+    const result = await finish(search, search.start("éxyzzy") ?? "");
+    expect(result.status === "done" ? result.sessions[0]?.count : 0).toBe(1);
+    expect(
+      result.status === "done" ? result.sessions[0]?.snippets[0] : "",
+    ).not.toContain("\uFFFD");
+  });
+
+  it("finds matches where lowercasing changes the text's length, and keeps them in the snippet", () => {
+    const text = `${"\u0130".repeat(200)} the needle here`;
+    const [match] = findMatches(text, "needle");
+    expect(match).toBeDefined();
+    expect(
+      text.slice(match?.at ?? 0, (match?.at ?? 0) + (match?.length ?? 0)),
+    ).toBe("needle");
+    expect(snippetAround(text, match?.at ?? 0, match?.length ?? 0)).toContain(
+      "needle",
+    );
+    expect(findMatches("\u0130stanbul", "i\u0307stan")[0]).toEqual({
+      at: 0,
+      length: 5,
+    });
+  });
+
+  it("never cuts an emoji in half at a snippet's edge", () => {
+    const text = `${"\u{1F600}".repeat(200)}needle${"\u{1F600}".repeat(200)}`;
+    const [match] = findMatches(text, "needle");
+    const snippet = snippetAround(text, match?.at ?? 0, match?.length ?? 0);
+    expect(snippet).toContain("needle");
+    expect(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+        snippet,
+      ),
+    ).toBe(false);
+  });
+
+  it("skips a line too long to hold, and still reads the next one", async () => {
+    const file = join(root, `${id(2)}.jsonl`);
+    const huge = JSON.stringify(
+      typed(`needle${"x".repeat(MAX_LINE_CHARS + 10)}`),
+    );
+    writeFileSync(file, `${huge}\n${JSON.stringify(typed("needle again"))}\n`);
+    const search = createSearch({
+      files: () => Promise.resolve([{ sessionId: id(2), file }]),
+    });
+    const result = await finish(search, search.start("needle") ?? "");
+    expect(result.status === "done" ? result.sessions[0]?.count : 0).toBe(1);
+  }, 20_000);
 });
