@@ -379,6 +379,49 @@ export function createHistory(options: HistoryOptions) {
         .map(({ sessionId, file }) => ({ sessionId, file }));
     },
 
+    /** History's details for some sessions, for search results (FR-36). */
+    describe(
+      sessionIds: string[],
+      listing: SessionView[],
+    ): Promise<
+      Map<
+        string,
+        {
+          folder: string | null;
+          lastActivityAt: number | null;
+          inList: boolean;
+        }
+      >
+    > {
+      return inTurn(async () => {
+        const wanted = new Set(sessionIds.filter(isValidSessionId));
+        const listedIds = new Set(
+          listing
+            .map((session) => session.sessionId)
+            .filter((id) => id !== undefined),
+        );
+        const found = new Map<
+          string,
+          {
+            folder: string | null;
+            lastActivityAt: number | null;
+            inList: boolean;
+          }
+        >();
+        for (const file of await listFiles()) {
+          if (!wanted.has(file.sessionId)) continue;
+          const info = await knownOf(file);
+          if (info === null) continue;
+          found.set(file.sessionId, {
+            folder: info.folder,
+            lastActivityAt: info.lastTimestamp ?? Math.round(file.mtimeMs),
+            inList: listedIds.has(file.sessionId),
+          });
+        }
+        return found;
+      });
+    },
+
     /** Finds a past session's folder by its ID, for Resume and Fork from History. */
     find(sessionId: string): Promise<HistoryEntry | null> {
       return inTurn(async () => {

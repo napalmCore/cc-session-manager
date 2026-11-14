@@ -1108,6 +1108,11 @@ test.describe("accessibility", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /stale/i })).toBeVisible();
 
+    // The header's button and view links come first.
+    await page
+      .getByRole("navigation", { name: "Views" })
+      .getByRole("link", { name: "Search" })
+      .focus();
     await page.keyboard.press("Tab");
     const focused = page.locator(":focus");
     await expect(focused).toHaveAccessibleName(/may be missing/i);
@@ -1116,7 +1121,14 @@ test.describe("accessibility", () => {
     );
     expect(outline).toBe("solid");
 
-    await page.keyboard.press("Tab");
+    // Rows with a session ID offer Fork, so a few Tabs may come first.
+    for (let i = 0; i < 10; i += 1) {
+      await page.keyboard.press("Tab");
+      const name = await page
+        .locator(":focus")
+        .evaluate((element) => element.textContent ?? "");
+      if (/stale/i.test(name)) break;
+    }
     await expect(page.locator(":focus")).toHaveAccessibleName(/stale/i);
   });
 });

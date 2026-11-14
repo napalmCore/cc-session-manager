@@ -383,3 +383,36 @@ describe("query and text fold the same way (re-review of #63)", () => {
     expect(findMatches("é NEEDLE", "needle")).toEqual([{ at: 2, length: 6 }]);
   });
 });
+
+describe("details beside the results (FR-36)", () => {
+  it("adds History's details to sessions with snippets, and still answers if that fails", async () => {
+    const describe = vi.fn((ids: string[]) =>
+      Promise.resolve(
+        new Map(
+          ids.map((sessionId) => [
+            sessionId,
+            { folder: "C:\\work", lastActivityAt: 42, inList: false },
+          ]),
+        ),
+      ),
+    );
+    const search = createSearch({
+      files: () => Promise.resolve([transcript(4, [typed("needle")])]),
+      describe,
+    });
+    const result = await finish(search, search.start("needle") ?? "");
+    expect(describe).toHaveBeenCalledWith([id(4)]);
+    expect(result.status === "done" ? result.sessions[0] : null).toMatchObject({
+      folder: "C:\\work",
+      lastActivityAt: 42,
+      inList: false,
+    });
+
+    const failing = createSearch({
+      files: () => Promise.resolve([transcript(5, [typed("needle")])]),
+      describe: () => Promise.reject(new Error("no")),
+    });
+    const plain = await finish(failing, failing.start("needle") ?? "");
+    expect(plain.status === "done" ? plain.sessions[0]?.count : 0).toBe(1);
+  });
+});

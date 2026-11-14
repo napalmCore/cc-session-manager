@@ -14,6 +14,7 @@ import {
   actionKey,
   availableActions,
   canEndLeftovers,
+  canFork,
   isProtectedSession,
   ACTION_LABELS,
   isRisky,
@@ -48,6 +49,13 @@ import {
 } from "./useSessionActions.js";
 import { createAnnouncer } from "./announcer.js";
 import { type Freshness, useSnapshot } from "./useSnapshot.js";
+import { HistoryView, SearchView } from "./PastSessions.js";
+import {
+  ForkDialog,
+  NewSessionDialog,
+  type ForkTargetView,
+} from "./StartDialog.js";
+import { useView, VIEWS, type View } from "./useView.js";
 
 const CLOCK_MS = 30_000;
 /** Data older than this gets a line saying so (BUG-9, 0020). */
@@ -60,6 +68,9 @@ const styles = cssClasses as Record<
   | "disclosureButton"
   | "flagged"
   | "group"
+  | "header"
+  | "tab"
+  | "tabs"
   | "groupTitle"
   | "highlighted"
   | "lastResult"
@@ -179,6 +190,7 @@ interface RowActionProps {
     label: string,
     groupId: string,
   ) => void;
+  onFork: (target: ForkTargetView, from: HTMLElement | null) => void;
 }
 
 function rowActions(
@@ -349,6 +361,16 @@ function SessionList({
               onAction={(action) => {
                 actionProps.onAction(session, action, label, groupId);
               }}
+              onFork={
+                key === undefined || !canFork(session, actionProps.context)
+                  ? undefined
+                  : (from) => {
+                      actionProps.onFork(
+                        { key, label, folder: session.cwd ?? null },
+                        from,
+                      );
+                    }
+              }
             />
           </li>
         );
@@ -619,6 +641,30 @@ function StaleNotice({ freshness }: { freshness: Freshness | null }) {
   );
 }
 
+const VIEW_LABELS: Record<View, string> = {
+  sessions: "Sessions",
+  history: "History",
+  search: "Search",
+};
+
+/** Sessions, History, and Search, each with its own address so Back works (0025). */
+function ViewTabs({ view }: { view: View }) {
+  return (
+    <nav aria-label="Views" className={styles.tabs}>
+      {VIEWS.map((name) => (
+        <a
+          key={name}
+          href={`#${name}`}
+          className={styles.tab}
+          aria-current={view === name ? "page" : undefined}
+        >
+          {VIEW_LABELS[name]}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 export function App() {
   const { snapshot, connected, freshness, signedIn } = useSnapshot();
   const [now, setNow] = useState(() => Date.now());
@@ -713,6 +759,30 @@ export function App() {
     };
   }, []);
 
+  const view = useView();
+  const [newOpen, setNewOpen] = useState(false);
+  const [forkTarget, setForkTarget] = useState<ForkTargetView | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const newButton = useRef<HTMLButtonElement>(null);
+  const onFork = useCallback(
+    (target: ForkTargetView, from: HTMLElement | null) => {
+      opener.current = from;
+      setForkTarget(target);
+    },
+    [],
+  );
+  // Focus goes back to the button that opened a form, once it's closed.
+  const closeForm = useCallback(() => {
+    setNewOpen(false);
+    setForkTarget(null);
+    const back = opener.current;
+    opener.current = null;
+    window.setTimeout(() => {
+      if (back?.isConnected === true) back.focus();
+      else document.querySelector<HTMLElement>("h1")?.focus();
+    }, 0);
+  }, []);
+
   const groups = groupSessions(snapshot?.sessions ?? [], now);
   const offers = snapshot?.leftovers ?? [];
   // Sessions no longer listed, such as deleted ones, whose programs still run.
@@ -724,6 +794,7 @@ export function App() {
     forceOffers: actions.forceOffers,
     offers,
     onAction,
+    onFork,
   };
   // The result stays visible above the list once its row has gone, such as after Delete.
   const lastResult = actions.lastResult;
@@ -774,6 +845,7 @@ export function App() {
               forceOffers,
               offers: [],
               onAction,
+              onFork: () => undefined,
             },
             key,
           ).includes(action);
@@ -808,9 +880,23 @@ export function App() {
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.title} tabIndex={-1}>
-        Claude Code sessions
-      </h1>
+      <div className={styles.header}>
+        <h1 className={styles.title} tabIndex={-1}>
+          Claude Code sessions
+        </h1>
+        <Button
+          ref={newButton}
+          className={styles.notifyButton}
+          isDisabled={!signedIn}
+          onPress={() => {
+            opener.current = newButton.current;
+            setNewOpen(true);
+          }}
+        >
+          New session…
+        </Button>
+      </div>
+      <ViewTabs view={view} />
       <div role="status" data-announcer className={styles.visuallyHidden}>
         {announcement}
       </div>
@@ -831,43 +917,74 @@ export function App() {
           {lastResultGone.reply.message}
         </p>
       )}
-      {snapshot !== null && snapshot.sessions.length > 0 && (
-        <UsageSummary sessions={snapshot.sessions} />
+      {view === "history" && (
+        <HistoryView announce={announce} onFork={onFork} now={now} />
       )}
-      {connected && <StaleNotice freshness={freshness} />}
-      {signedIn && snapshot === null && <p>Loading sessions…</p>}
-      {snapshot?.sessions.length === 0 &&
-        unlisted.length === 0 &&
-        snapshot.notLoadedYet !== true && <p>No sessions to show.</p>}
-      <Group
-        title="Needs you"
-        sessions={groups.needsYou}
-        now={now}
-        flagged
-        highlighted={highlighted}
-        actionProps={actionProps}
-      />
-      <Group
-        title="Active"
-        sessions={groups.active}
-        now={now}
-        highlighted={highlighted}
-        actionProps={actionProps}
-      />
-      <StaleGroup
-        sessions={groups.stale}
-        now={now}
-        highlighted={highlighted}
-        actionProps={actionProps}
-      />
-      <Group
-        title="Finished"
-        sessions={groups.finished}
-        unlisted={unlisted}
-        now={now}
-        highlighted={highlighted}
-        actionProps={actionProps}
-      />
+      {view === "search" && (
+        <SearchView announce={announce} onFork={onFork} now={now} />
+      )}
+      {view === "sessions" && (
+        <>
+          {snapshot !== null && snapshot.sessions.length > 0 && (
+            <UsageSummary sessions={snapshot.sessions} />
+          )}
+          {connected && <StaleNotice freshness={freshness} />}
+          {signedIn && snapshot === null && <p>Loading sessions…</p>}
+          {snapshot?.sessions.length === 0 &&
+            unlisted.length === 0 &&
+            snapshot.notLoadedYet !== true && <p>No sessions to show.</p>}
+          <Group
+            title="Needs you"
+            sessions={groups.needsYou}
+            now={now}
+            flagged
+            highlighted={highlighted}
+            actionProps={actionProps}
+          />
+          <Group
+            title="Active"
+            sessions={groups.active}
+            now={now}
+            highlighted={highlighted}
+            actionProps={actionProps}
+          />
+          <StaleGroup
+            sessions={groups.stale}
+            now={now}
+            highlighted={highlighted}
+            actionProps={actionProps}
+          />
+          <Group
+            title="Finished"
+            sessions={groups.finished}
+            unlisted={unlisted}
+            now={now}
+            highlighted={highlighted}
+            actionProps={actionProps}
+          />
+        </>
+      )}
+      {newOpen && (
+        <NewSessionDialog
+          isOpen
+          onClose={closeForm}
+          onStarted={(reply) => {
+            announce(`New session: ${reply.message}`);
+            closeForm();
+          }}
+        />
+      )}
+      {forkTarget !== null && (
+        <ForkDialog
+          key={forkTarget.key}
+          target={forkTarget}
+          onClose={closeForm}
+          onStarted={(reply) => {
+            announce(`Fork, ${forkTarget.label}: ${reply.message}`);
+            closeForm();
+          }}
+        />
+      )}
       <ConfirmDialog
         confirming={confirming}
         programs={dialogPrograms}

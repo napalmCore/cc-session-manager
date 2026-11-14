@@ -49,3 +49,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0023](decisions/0023-iteration-4-plan.md)              | Close iteration 3, and iteration 4 scope            | Accepted                                  |
 | [0024](decisions/0024-iteration-4-requirements.md)      | Iteration 4 requirements choices                    | Accepted                                  |
 | [0025](decisions/0025-iteration-4-design.md)            | Iteration 4 design choices                          | Accepted                                  |
+| [0026](decisions/0026-iteration-4-page.md)              | How the iteration 4 page works                      | Accepted                                  |

@@ -27,6 +27,17 @@ export interface SearchHit {
   sessionId: string;
   count: number;
   snippets: string[];
+  /** From History, for the sessions with snippets: where and when, and whether it's listed. */
+  folder?: string | null;
+  lastActivityAt?: number | null;
+  inList?: boolean;
+}
+
+/** What History knows about a session, shown beside its matches. */
+export interface SearchDetails {
+  folder: string | null;
+  lastActivityAt: number | null;
+  inList: boolean;
 }
 
 export type SearchStatus =
@@ -181,6 +192,8 @@ export interface SearchOptions {
   timeMs?: number;
   /** For tests: how long unfetched results are kept. */
   keptMs?: number;
+  /** History's details for these sessions, read once a search is done. */
+  describe?: (sessionIds: string[]) => Promise<Map<string, SearchDetails>>;
 }
 
 /**
@@ -314,6 +327,28 @@ export function createSearch(options: SearchOptions) {
         run.stopped = true;
         break;
       }
+    }
+    // The sessions shown with snippets get History's details, so results can be used (FR-36).
+    if (options.describe !== undefined && run.withSnippets > 0) {
+      const shown = [...run.hits.values()].filter(
+        (hit) => hit.snippets.length > 0,
+      );
+      try {
+        const details = await options.describe(
+          shown.map((hit) => hit.sessionId),
+        );
+        if (run.cancelled) return;
+        for (const hit of shown) {
+          const found = details.get(hit.sessionId);
+          if (found === undefined) continue;
+          hit.folder = found.folder;
+          hit.lastActivityAt = found.lastActivityAt;
+          hit.inList = found.inList;
+        }
+      } catch {
+        // Results still show, without their details.
+      }
+      if (run.cancelled) return;
     }
     run.done = true;
     // Unfetched results are dropped after a minute, whether or not anything asks again (C-16).

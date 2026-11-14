@@ -95,6 +95,17 @@ export function availableActions(
   return actions;
 }
 
+/**
+ * Fork is offered on any row with a session ID, the protected one included (0024), unless its
+ * folder has gone, since a fork runs there (FR-33).
+ */
+export function canFork(session: SessionView, context: ActionContext): boolean {
+  if (session.sessionId === undefined) return false;
+  return !sessionKeys(session).some(
+    (key) => context.missingFolderKeys?.has(key) === true,
+  );
+}
+
 /** Names the session in a dialog: by name, or by folder, kind, and start time (FR-19). */
 export function sessionLabel(
   session: SessionView,

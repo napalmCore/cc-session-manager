@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { toSessionView } from "../server/rules.js";
-import type { LeftoverOffer, Session } from "./protocol.js";
+import type { LeftoverOffer, Session, SessionView } from "./protocol.js";
 import {
+  canFork,
   actionContext,
   actionKey,
   availableActions,
@@ -230,5 +231,35 @@ describe("leftover programs (FR-27)", () => {
         protectedKeys: new Set([SESSION_ID]),
       }),
     ).toBe(false);
+  });
+});
+
+describe("Fork on the list (FR-33)", () => {
+  const view = (fields: Partial<SessionView>): SessionView => ({
+    needsAttention: false,
+    attentionReason: null,
+    finished: false,
+    statusLabel: "busy",
+    ...fields,
+  });
+  const ID = "11111111-1111-4111-8111-111111111111";
+
+  it("needs a session ID, works on protected sessions, and not where the folder has gone", () => {
+    const context = actionContext({
+      sessions: [],
+      error: null,
+      warnings: [],
+      protectedSessions: [ID],
+      actionsBlocked: "Actions are turned off.",
+    });
+    expect(canFork(view({ sessionId: ID }), context)).toBe(true);
+    expect(canFork(view({ id: "abcd1234" }), context)).toBe(false);
+    const gone = actionContext({
+      sessions: [],
+      error: null,
+      warnings: [],
+      missingFolders: [ID],
+    });
+    expect(canFork(view({ sessionId: ID, finished: true }), gone)).toBe(false);
   });
 });
