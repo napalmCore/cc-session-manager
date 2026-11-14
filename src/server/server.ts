@@ -6,7 +6,7 @@ import { extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdaptorServer } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import type { WSContext } from "hono/ws";
@@ -23,6 +23,7 @@ import type {
 } from "../shared/protocol.js";
 import { handoverProof, proofMatches } from "./instance.js";
 import { type Identity, identitySchema, toIdentity } from "./protect.js";
+import type { Search } from "./search.js";
 
 const LOOPBACK = "127.0.0.1";
 const PORT_ATTEMPTS = 20;
@@ -45,6 +46,9 @@ const handoverRequestSchema = z
     identity: identitySchema,
   })
   .strict();
+
+const searchRequestSchema = z.object({ query: z.string().max(1000) }).strict();
+const SEARCH_ID = /^[0-9a-f]{32}$/;
 
 const actionRequestSchema = z.union([
   z.object({ action: z.enum(ACTION_NAMES), key: z.string().max(64) }).strict(),
@@ -94,6 +98,8 @@ export interface ServerOptions {
   webDir?: string;
   /** Runs a session action. Without it, actions are reported as unavailable. */
   onAction?: (request: ActionRequest) => Promise<ActionResult>;
+  /** Search inside conversations (FR-36). */
+  search?: Search;
   /** Lets a second start of the tool hand over to this one (U-15). */
   handover?: { secret: string; onHandover: (identity: Identity) => void };
   now?: () => number;
@@ -420,6 +426,71 @@ export async function startServer(
       return c.json(await options.onAction(request.data), 200);
     },
   );
+
+  // Search routes (FR-36, C-16): the same guards as actions, all POSTs so the browser sends its
+  // Origin, and nothing cached. Results go only to whoever has the search's random id.
+  const searchGuard = (c: Context): Response | null => {
+    if (c.req.header("origin") !== `http://${expectedHost()}`) {
+      return c.json({ message: "Forbidden" }, 403);
+    }
+    if (!hasPageKey(c.req.header(PAGE_KEY_HEADER))) {
+      return c.json({ message: "Forbidden" }, 403);
+    }
+    if (options.search === undefined) {
+      return c.json({ message: "Search isn't available." }, 503);
+    }
+    return null;
+  };
+  const noStore = (c: Context) => {
+    c.header("Cache-Control", "no-store");
+  };
+  app.post(
+    "/api/search",
+    bodyLimit({
+      maxSize: MAX_ACTION_BODY,
+      onError: (c) => c.json({ message: "Request too large" }, 413),
+    }),
+    async (c) => {
+      noStore(c);
+      const refused = searchGuard(c);
+      if (refused !== null) return refused;
+      const contentType = c.req.header("content-type") ?? "";
+      if (
+        contentType.split(";")[0]?.trim().toLowerCase() !== "application/json"
+      ) {
+        return c.json({ message: "Expected JSON" }, 415);
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await c.req.text());
+      } catch {
+        return c.json({ message: "Invalid request" }, 400);
+      }
+      const request = searchRequestSchema.safeParse(parsed);
+      if (!request.success) return c.json({ message: "Invalid request" }, 400);
+      const id = options.search?.start(request.data.query) ?? null;
+      if (id === null) {
+        return c.json({ message: "Search for 2 to 200 characters." }, 400);
+      }
+      return c.json({ id }, 200);
+    },
+  );
+  app.post("/api/search/:id", (c) => {
+    noStore(c);
+    const refused = searchGuard(c);
+    if (refused !== null) return refused;
+    const id = c.req.param("id");
+    if (!SEARCH_ID.test(id)) return c.json({ message: "Not found" }, 404);
+    return c.json(options.search?.poll(id) ?? { status: "gone" }, 200);
+  });
+  app.post("/api/search/:id/cancel", (c) => {
+    noStore(c);
+    const refused = searchGuard(c);
+    if (refused !== null) return refused;
+    const id = c.req.param("id");
+    if (!SEARCH_ID.test(id)) return c.json({ message: "Not found" }, 404);
+    return c.json({ cancelled: options.search?.cancel(id) ?? false }, 200);
+  });
 
   app.get("*", (c) => {
     const path = c.req.path === "/" ? "/index.html" : c.req.path;

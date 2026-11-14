@@ -37,6 +37,7 @@ import {
   powershellLocalDrives,
 } from "./folder-picker.js";
 import { createHistory } from "./history.js";
+import { createSearch } from "./search.js";
 import {
   cachedDriveType,
   checkLocalFolder,
@@ -149,8 +150,16 @@ const actionsRef: { current?: ReturnType<typeof createActionTracker> } = {};
 const leftoversRef: { current?: ReturnType<typeof createLeftoverTracker> } = {};
 const serverRef: { current?: Awaited<ReturnType<typeof startServer>> } = {};
 const handoverSecret = newHandoverSecret();
+// History reads with a reader of its own, so live sessions keep their budget (NFR-15).
+const historyReader = createTranscriptReader();
+const history = createHistory({
+  read: (sessions) => historyReader.enrich(sessions),
+});
+// Search reads History's list of transcripts, only while a search runs (FR-36, C-16).
+const search = createSearch({ files: () => history.files() });
 const server = await startServer({
   preferredPort: DEFAULT_PORT,
+  search,
   onAction: (request) =>
     actionsRef.current === undefined
       ? Promise.resolve({ outcome: "unavailable", message: "Not ready yet." })
@@ -264,11 +273,6 @@ const endExecutors = createEndExecutors({
     }
   },
 });
-// History reads with a reader of its own, so live sessions keep their budget (NFR-15).
-const historyReader = createTranscriptReader();
-const history = createHistory({
-  read: (sessions) => historyReader.enrich(sessions),
-});
 // One drive-type cache for Start, Fork, and Browse.
 const driveType = cachedDriveType(powershellDriveType(programs.powershell));
 const launcher = createLauncher({
@@ -304,7 +308,9 @@ actionsRef.current = createActionTracker({
     const entry = await history.find(sessionId);
     if (entry?.folder === null || entry?.folder === undefined) return null;
     const checked = await checkLocalFolder(entry.folder, driveType);
-    return checked.ok ? checked.folder : null;
+    // The recorded folder, once its resolved path passes the checks, so Resume runs where the
+    // session was saved.
+    return checked.ok ? entry.folder : null;
   },
   transcriptExists: (sessionId) => transcriptExists(sessionId),
   leftovers: {

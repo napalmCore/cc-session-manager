@@ -312,7 +312,9 @@ export function createLauncher(options: StartOptions) {
         target.sessionId,
       );
       if (!Array.isArray(args)) return args;
-      return launch(request.kind, args, folder.folder, "fork");
+      // Checked through its resolved path, but run in the folder the session recorded, so Claude
+      // Code finds the conversation where it saved it.
+      return launch(request.kind, args, target.folder, "fork");
     },
   };
 }

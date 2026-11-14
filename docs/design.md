@@ -622,7 +622,7 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
 | Launch arguments | Builds `claude` argument lists for Start and Fork, with every option before `--`, and the Windows Terminal escaping for an interactive name.     |
 | Start and Fork   | Two new actions on the existing route, with their own validation, the one-Start lock, and the 10-second watch for a late failure.                |
 | History index    | Lists main transcripts on disk, and reads each one's folder, branch, model, times, and usage through the reader's allow-list.                    |
-| Search           | Scans prompts and replies on demand in a worker thread, returns matches and snippets, and keeps nothing.                                         |
+| Search           | Scans prompts and replies on demand in the server's own thread, returns matches and snippets, and keeps nothing.                                 |
 | Folder picker    | Lists folders under a chosen local folder, through the server, for the New session form.                                                         |
 | Folder checks    | Decides whether a folder is local: refuses network shares, device paths, and mapped, `subst`, or linked folders that lead to a network location. |
 | Action routes    | One request schema per action, and a larger body limit for Start and Fork.                                                                       |
@@ -669,7 +669,7 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
 
 ### Resume from History (FR-35, FR-14, C-9)
 
-- Resume on a History row that Claude Code no longer lists isn't refused for being unlisted. The server finds the session in the History index by session ID, checks its folder with the folder checks, and takes a fresh listing first (C-9): if the session is listed again, the request goes through today's Resume rules for listed sessions instead, and Resume is refused if it's running.
+- Resume on a History row that Claude Code no longer lists isn't refused for being unlisted. The server finds the session in the History index by session ID, checks its folder with the folder checks, and takes a fresh listing first (C-9). If Claude Code lists the session again, Resume from History is refused, and the page offers it from the session list instead. It runs in the folder the session recorded, after that folder's resolved path passes the checks.
 - It then runs today's Resume launch (`claude --resume <ID>`) in the session's folder, with its result rules (FR-14, FR-18).
 - A listed session's Resume is unchanged.
 
@@ -694,11 +694,11 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
 - **Routes:** `POST /api/search` starts a search, with `{ query }` in the body, so the text is never in the address. It returns a random 128-bit search id. `POST /api/search/<id>` returns progress and, when done, the results. `POST /api/search/<id>/cancel` cancels. They're all POSTs because browsers send an `Origin` header with a POST but not with a same-origin GET, and NFR-6 checks it. All three need the dashboard's origin, the page key, and the cookie (NFR-6), and every response is `Cache-Control: no-store`.
 - **Who sees results:** results go only in the response to `POST /api/search/<id>`, to whoever has that id, which only the page that started the search knows. Nothing about a search goes over the WebSocket, because every tab shares it.
 - **Limits:** one search at a time; a new one cancels the old. The query must be 2 to 200 characters after trimming.
-- **Scanning:** a worker thread streams each main transcript, newest first, parsing only lines containing `"user"` or `"assistant"`. It keeps prompt and reply text by U-22's allow-list, and also drops `isSidechain` lines, synthetic replies (`message.model: "<synthetic>"` or `isApiErrorMessage`), and, as a safeguard, any line with `isMeta`, `isCompactSummary`, or `toolUseResult`. It matches case-insensitively, as plain text, with no regular expressions. Lines without `origin` or `promptSource` are skipped, and counted toward the format warning.
+- **Scanning:** in the server's own thread, reading each main transcript newest first in 64 KB pieces and pausing after each piece so polls and requests run on time (implementation step 6; scanning 147 MB measured 1.5 s of CPU, so a worker thread wasn't needed). It parses only lines containing `"user"` or `"assistant"`. It keeps prompt and reply text by U-22's allow-list, and also drops `isSidechain` lines, synthetic replies (`message.model: "<synthetic>"` or `isApiErrorMessage`), and, as a safeguard, any line with `isMeta`, `isCompactSummary`, or `toolUseResult`. It matches case-insensitively, as plain text, with no regular expressions, and maps each match back to the original text, since lowercasing can change a character's length (as with "İ"). It decodes each file as a stream, so a character split between two pieces stays whole, and snippets are never cut through an emoji. A single line longer than 8 MB of text is skipped. User lines without a human `origin` or `promptSource` are skipped; search raises no format warning.
 - **Results:** per session, the match count and up to three snippets of at most 160 characters, with the match centred. The search stops collecting snippets after 100 matching sessions, but goes on counting. The page shows snippets as text, never as HTML.
 - **Progress:** files done out of total, in the `POST /api/search/<id>` response, which the page asks for every second.
 - **Stopping:** the page can cancel. The scan stops at 30 seconds with what it has, and says so.
-- **Not kept:** results are kept in memory for at most 60 seconds after they're ready, or until they're fetched or cancelled, then dropped, and the worker exits. The query and snippets are never logged.
+- **Not kept:** results are kept in memory for at most 60 seconds after they're ready, or until they're fetched, cancelled, or replaced by a new search, then dropped. A timer drops them even if nothing asks again. The query and snippets are never logged.
 
 ### Folder picker (FR-32, NFR-15)
 
@@ -714,7 +714,7 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
 
 ### Other choices
 
-- **CPU (NFR-11):** History reading and search run only when you open History or search, so they don't count toward NFR-11's steady-state figure. Search's worker keeps polling on time.
+- **CPU (NFR-11):** History reading and search run only when you open History or search, so they don't count toward NFR-11's steady-state figure. Search pauses after each piece, so polling stays on time.
 - **Release notes:** they must say search reads message text while it runs and keeps none (C-16), that `%` isn't allowed in names, and that interactive Start and Fork may wait at Claude Code's trust prompt.
 
 ### Requirements coverage
@@ -742,7 +742,7 @@ Each step is a separate pull request, approved by an independent agent before me
 | 3    | Folder picker                                                                                                       | FR-32, NFR-15          |
 | 4    | History index and its route                                                                                         | FR-35, NFR-15          |
 | 5    | Fork, and Resume from History                                                                                       | FR-33, FR-35, C-9      |
-| 6    | Search worker and its routes                                                                                        | FR-36, C-16, NFR-15    |
+| 6    | Search and its routes                                                                                               | FR-36, C-16, NFR-15    |
 | 7    | Page: New session and Fork forms, History, and Search                                                               | FR-32 to FR-36, NFR-16 |
 
 ### Testing approach
