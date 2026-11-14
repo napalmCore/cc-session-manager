@@ -784,25 +784,27 @@ An agent ran `claude --bg --resume <session ID> -- <message>` the way Start runs
 ### Send (FR-37, C-19, NFR-17)
 
 - **Offered:** on a background row Claude Code lists, in state `stopped`, `done`, or `failed`, with a short ID, a session ID, no process ID, a usable folder, and not protected. A row with a process offers Open, as now.
-- **Request:** `{ action: "send", key, message }` with its own strict schema and the 32 KB body limit. The message has a starting prompt's checks (`checkStartText`'s background rules).
+- **Request:** `{ action: "send", key, message }` with its own strict schema. The route's 32 KB body limit, which now covers only `start` and `fork`, is extended to `send`. The message has a starting prompt's checks (`checkStartText`'s background rules).
 - **Lock:** the per-session lock that Open, Resume, Stop, Delete, and End use, so only one action runs on a session at a time. Fork stays outside it, because it never changes the original.
-- **Check:** refused if the listing is out of date (C-9). Then a fresh listing must show the same short ID and session ID, in one of those states, with no process ID. Anything else is refused, and a failed fresh listing gives an unknown result.
+- **Check:** refused if the session is protected, or if the tool can't tell which session started it, through `isProtected` as Stop, Delete, and End use it, which covers FR-37's "none at all" rule. Refused if the listing is out of date (C-9). Then a fresh listing must show the same short ID and session ID, in one of those states, with no process ID, and still not protected. Anything else is refused, and a failed fresh listing gives an unknown result.
 - **Command:** `execFile(claude, ["--bg", "--resume", sessionId, "--", message], { cwd: folder })`, with no shell, `sessionLaunchEnv`, and a 30-second limit, after the folder checks.
-- **Result:** the short ID on standard output decides it.
-  - The same ID: delivered, followed by Start's 10-second failure watch. If the session had a name and the note line is missing, the result adds that its saved options may not have been restored (0029).
-  - Another ID: "Claude Code started a new session, `<ID>`, with your message, because this one was running." Its row is highlighted. It's left running.
-  - No match, or a non-zero exit: Start's refusal mapping, in the tool's own words. Standard error is matched, never shown or logged (C-21).
-- **Notifications:** the session's own events are held for 30 seconds, as after Stop. A copy isn't held, so its events notify as any new session's do.
+- **Result:** Claude Code's answer decides it, as Start's does.
+  - Exit 0 with the same short ID: delivered, followed by Start's 10-second failure watch. For a session that was already `failed`, a failure counts only after it has shown another state or a process. If the "woke session … with its saved options" note is missing, the result adds "Claude Code didn't say it restored the session's saved options." (0029).
+  - Exit 0 with another short ID: "Claude Code started a new session, `<ID>`, with your message, because this one was running." The result carries the new short ID, and the page highlights that row once it's listed. It's left running.
+  - Exit 0 with no `backgrounded · <ID>` line, or the 30-second limit reached: unknown, because the message may have been delivered. Never retried.
+  - A non-zero exit: Start's refusal mapping, in the tool's own words. An error running Claude Code at all: failed.
+  - Standard error is matched, never shown or logged (C-21).
+- **Notifications:** Send records the user's own action for the session, as Stop does, so its events are held for 30 seconds. A copy isn't held, so its events notify as any new session's do.
 
 ### Waiting sessions (FR-38)
 
-- **Labels:** `permission prompt` reads "Waiting on a permission prompt", and `input needed` reads "Waiting on your answer". Any other value, an unknown one, or `blocked` with no `waitingFor` reads "Needs you in Claude Code".
+- **Labels:** `permission prompt` reads "Waiting on a permission prompt", and `input needed` reads "Waiting on your answer". Any other value, an unknown one, or `blocked` with no `waitingFor` reads "Needs you in Claude Code". The server keeps Claude Code's own value in `attentionReason`, so notifications compare it as now and a wording change alone never notifies. The page and the notification text map it to the plain label through one shared function (0029).
 - **Note:** the row adds "Answer it in Claude Code.", with Open where FR-14 offers it, and the folder and process ID where FR-20 applies.
 - **Send:** never offered on a waiting row, which always has a process.
 
 ### Page
 
-- **Send:** a "Send…" button on qualifying rows opens a dialog like Fork's, naming the session, with a message box. A refusal stays in the dialog; a send closes it, announces the result, and returns focus to the button. The field turns off autofill and spell check.
+- **Send:** a "Send…" button on qualifying rows, hidden while actions are turned off or the row is protected, opens a dialog like Fork's, naming the session, with a message box. A refusal stays in the dialog; a send closes it, announces the result, and returns focus to the button. The field turns off autofill and spell check.
 
 ### Project upkeep (PU-1 to PU-4)
 
@@ -841,7 +843,7 @@ An agent re-checks each bug live on its own throwaway sessions, with the same ru
 
 ### Testing approach
 
-- **Unit tests:** Send's arguments, eligibility for every state with and without a process, the fresh check, the lock with Open and Stop, the three output cases, hostile messages, and nothing logged.
+- **Unit tests:** Send's arguments; eligibility for every state with and without a process; protected and unknown-starter refusals; the fresh check; the lock with Open and Stop; the four result cases and the timeout; the note-line warning; the watch for an already `failed` session; the own-action hold; the body limit; hostile messages; nothing logged; and the shared label function, including that a wording change doesn't notify.
 - **Browser tests:** the Send dialog, its refusal and success, focus, the waiting labels, and axe in both themes.
-- **Live checks:** Send to a `done` session with no process; to one that gains a process in the meantime, giving a copy; the refusal for a session with a process; and the waiting labels if a waiting session can be seen without answering it.
+- **Live checks:** Send to a `done` session and to a `failed` one, each with no process; to one that gains a process in the meantime, giving a copy; the refusal for a session with a process; and the waiting labels if a waiting session can be seen without answering it.
 - **Security review (NFR-9):** Send and its route, before release.
