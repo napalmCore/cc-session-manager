@@ -15,7 +15,7 @@ cc-session-manager is an independent, open-source tool. It isn't made, endorsed,
 ## Install and run
 
 ```
-git clone --branch v0.2.0 https://github.com/napalmCore/cc-session-manager.git
+git clone --branch v0.3.0 https://github.com/napalmCore/cc-session-manager.git
 cd cc-session-manager
 pnpm install
 pnpm build
@@ -33,12 +33,16 @@ To use Stop, Delete, and End on every session, start it from a normal terminal, 
 - Opens or resumes a session in a new terminal, and stops, deletes, or ends one after you confirm.
 - Shows each session's token use and an estimated cost at API list prices, with totals for the listed sessions.
 - After it stops, deletes, or ends a session, lists any programs that session left running, and can end them after you confirm.
+- Starts a new session, in the background with a prompt or in a new terminal, in any local folder, with an optional name.
+- Forks a session into a new one that starts from its conversation so far, leaving the original unchanged.
+- Shows a History of past sessions whose transcripts are still on this computer, with Resume and Fork.
+- Searches your prompts and Claude's replies when you ask, and keeps nothing afterwards.
 
 See the [release notes](docs/release-notes.md) for details, the safety rules for actions, privacy, and known limits.
 
 ## Privacy
 
-The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open and Resume start Claude Code, which works as it normally does. It reads session transcripts for token counts, model, branch, and times, never keeping message text, and saves finished sessions with their token counts, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager`. A damaged saved file is set aside with names removed, or deleted if it isn't JSON.
+The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open, Resume, New session, and Fork start Claude Code, which works as it normally does. It reads session transcripts for token counts, model, branch, folder, and times, never keeping message text. Only Search reads message text, when you search, and it keeps only its results, in memory, until the page fetches them or for at most 60 seconds. It saves finished sessions with their token counts, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager`. A damaged saved file is set aside with names removed, or deleted if it isn't JSON.
 
 ## Development
 
