@@ -371,6 +371,14 @@ export function createHistory(options: HistoryOptions) {
       });
     },
 
+    /** Every main transcript, newest changed first, for search (FR-36). */
+    async files(): Promise<{ sessionId: string; file: string }[]> {
+      const files = await listFiles();
+      return [...files]
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)
+        .map(({ sessionId, file }) => ({ sessionId, file }));
+    },
+
     /** Finds a past session's folder by its ID, for Resume and Fork from History. */
     find(sessionId: string): Promise<HistoryEntry | null> {
       return inTurn(async () => {
