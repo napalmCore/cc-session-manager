@@ -411,6 +411,17 @@ describe("text checks (NFR-14)", () => {
     expect(hasControl("Café 日本 – work")).toBe(false);
   });
 
+  it("lets a prompt keep formatting marks pasted from a web page, but not control characters", () => {
+    expect(
+      checkStartText(
+        "background",
+        undefined,
+        "soft\u00ADhyphen\u2028line \u202Etext",
+      ),
+    ).toBeNull();
+    expect(checkStartText("background", undefined, "a\u0085b")).not.toBeNull();
+  });
+
   it("checks sign-in before a missing folder", () => {
     expect(
       refusalMessage("Not logged in · Please run /login (file not found)"),

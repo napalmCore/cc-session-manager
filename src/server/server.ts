@@ -60,6 +60,12 @@ const actionRequestSchema = z.union([
     .strict(),
   z
     .object({
+      action: z.literal("history"),
+      page: z.number().int().min(0).max(100_000).optional(),
+    })
+    .strict(),
+  z
+    .object({
       action: z.literal("listFolders"),
       folder: z.string().max(4096).optional(),
     })

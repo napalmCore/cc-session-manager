@@ -22,6 +22,20 @@ function isUnsafe(code: number): boolean {
   );
 }
 
+/**
+ * Whether text has a C0 or C1 control character or delete, other than any in `allowed`. For a
+ * prompt, which goes straight to Claude Code and is never shown, so formatting marks pasted
+ * from a web page are fine.
+ */
+export function hasRawControl(text: string, allowed = ""): boolean {
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    const control = code < 0x20 || (code >= 0x7f && code <= 0x9f);
+    if (control && !allowed.includes(ch)) return true;
+  }
+  return false;
+}
+
 /** Whether text has an unsafe character, other than any in `allowed`. */
 export function hasControl(text: string, allowed = ""): boolean {
   for (const ch of text) {

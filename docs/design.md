@@ -685,8 +685,8 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
   No message text is read (C-4, C-12).
 
 - **Cache:** results are kept in memory per file, by size and modified time. A changed file is read again from where it stopped. `cwd` and `sessionId` stay in memory and never go into the store. Like `gitBranch` and `timestamp`, they're metadata, not message text, so C-12 still holds.
-- **Budget:** History reading starts when History opens and stops when it closes. Live sessions keep first claim on the reader's per-poll budget.
-- **Order and paging:** 50 a page, newest first. The first page is sorted by each file's modified time, from directory listings, and shows within 5 seconds. As the 256 KB reads give each session's last activity, the order is refined to newest last activity first. Usage for the page then fills in within the reader's per-poll budget.
+- **Budget:** History reads only when a page is asked for, so nothing is read while it's closed. It has a transcript reader of its own, with its own per-request budget, so while History is open a poll's reading can be up to twice one budget; live sessions' own reading is never slowed by it. Requests take turns, because the reader serves one caller at a time. A session found in two project folders shows once, from its newer file, and listing never follows links.
+- **Order and paging:** 50 a page, newest last activity first across all pages (owner, after review). Each transcript's last 256 KB is read once for its last timestamp, cached by size and modified time, and the whole list is sorted by it before paging; ties go to the file changed most recently. The first page showed in 351 ms on 82 local transcripts.
 - **No names:** History doesn't show names (C-7). Sessions with no messages are left out. A session in the main list is marked "In the list".
 
 ### Search (FR-36, C-16, NFR-15)

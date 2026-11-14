@@ -36,6 +36,7 @@ import {
   createFolderPicker,
   powershellLocalDrives,
 } from "./folder-picker.js";
+import { createHistory } from "./history.js";
 import { cachedDriveType, powershellDriveType } from "./local-folder.js";
 import { createOpenExecutors, launchDetached } from "./open.js";
 import { createStartExecutor, FAILURE_WATCH_MS } from "./start.js";
@@ -259,6 +260,11 @@ const endExecutors = createEndExecutors({
     }
   },
 });
+// History reads with a reader of its own, so live sessions keep their budget (NFR-15).
+const historyReader = createTranscriptReader();
+const history = createHistory({
+  read: (sessions) => historyReader.enrich(sessions),
+});
 // One drive-type cache for Start and Browse.
 const driveType = cachedDriveType(powershellDriveType(programs.powershell));
 actionsRef.current = createActionTracker({
@@ -276,6 +282,7 @@ actionsRef.current = createActionTracker({
     forceEnd: (session, record) => endExecutors.forceEnd(session, record),
   },
   isProtected: (session) => protection.isProtected(session),
+  history: (page, listing) => history.page(page, listing),
   listFolders: createFolderPicker({
     driveType,
     localDrives: cachedLocalDrives(powershellLocalDrives(programs.powershell)),
