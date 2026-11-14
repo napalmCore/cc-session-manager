@@ -15,6 +15,7 @@ import {
   HEAD_BYTES,
   HISTORY_PAGE_SIZE,
   readHead,
+  readLastTimestamp,
   startTime,
   type UsageReader,
 } from "./history.js";
@@ -101,7 +102,8 @@ describe("History pages (FR-35)", () => {
     writeFileSync(join(root, "b", "not-a-session.jsonl"), "{}\n");
     const history = createHistory({ root, read: noUsage });
     const page = await history.page(0, []);
-    expect(page.total).toBe(3);
+    // The transcript with no messages isn't counted.
+    expect(page.total).toBe(2);
     expect(page.sessions.map((entry) => entry.sessionId)).toEqual([
       id(2),
       id(1),
@@ -143,7 +145,6 @@ describe("History pages (FR-35)", () => {
           ...session,
           gitBranch: "feature",
           model: "claude-opus-5-5",
-          lastActivityAt: T0 + 9000,
           usage: { groups: [], counting: true, cost: 0, unpriced: [] },
         })),
         warnings: [],
@@ -153,7 +154,6 @@ describe("History pages (FR-35)", () => {
     expect(page.sessions[0]).toMatchObject({
       gitBranch: "feature",
       model: "claude-opus-5-5",
-      lastActivityAt: T0 + 9000,
       usage: { counting: true },
     });
     const broken = createHistory({
@@ -206,5 +206,88 @@ describe("History pages (FR-35)", () => {
     expect((await history.find(id(7)))?.folder).toBe("C:\\work\\gamma");
     expect(await history.find(id(8))).toBeNull();
     expect(await history.find("../../etc")).toBeNull();
+  });
+});
+
+describe("History order and turns (FR-35, review of #61)", () => {
+  it("orders every page by last activity, not by when a file was last changed", async () => {
+    // Twelve sessions; the files changed most recently hold the oldest activity.
+    for (let i = 0; i < HISTORY_PAGE_SIZE + 10; i += 1) {
+      transcript(
+        "p",
+        id(i),
+        [user(T0 + i * 1000)],
+        T0 + (HISTORY_PAGE_SIZE + 10 - i) * 60_000,
+      );
+    }
+    const history = createHistory({ root, read: noUsage });
+    const first = await history.page(0, []);
+    const second = await history.page(1, []);
+    const times = [...first.sessions, ...second.sessions].map(
+      (entry) => entry.lastActivityAt ?? 0,
+    );
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    expect(first.sessions[0]?.sessionId).toBe(id(HISTORY_PAGE_SIZE + 9));
+  });
+
+  it("reads the last timestamp from the end of a transcript only", async () => {
+    const file = transcript("p", id(1), [
+      user(T0),
+      user(T0 + 7000),
+      { type: "summary" },
+    ]);
+    expect(
+      await readLastTimestamp(
+        file,
+        (await import("node:fs")).statSync(file).size,
+      ),
+    ).toBe(T0 + 7000);
+  });
+
+  it("makes requests take turns, so the reader never serves two at once", async () => {
+    for (let i = 0; i < 3; i += 1) transcript("p", id(i), [user(T0 + i)]);
+    let active = 0;
+    let most = 0;
+    const read: UsageReader = async (sessions) => {
+      active += 1;
+      most = Math.max(most, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return { sessions, warnings: [] };
+    };
+    const history = createHistory({ root, read });
+    await Promise.all([
+      history.page(0, []),
+      history.page(0, []),
+      history.find(id(1)),
+    ]);
+    expect(most).toBe(1);
+  });
+
+  it("keeps going after a request fails", async () => {
+    transcript("p", id(1), [user(T0)]);
+    let fail = true;
+    const read: UsageReader = (sessions) => {
+      if (fail) {
+        fail = false;
+        return Promise.reject(new Error("x"));
+      }
+      return Promise.resolve({ sessions, warnings: [] });
+    };
+    const history = createHistory({ root, read });
+    expect((await history.page(0, [])).sessions).toHaveLength(1);
+    expect((await history.page(0, [])).sessions).toHaveLength(1);
+  });
+
+  it("shows a session found in two project folders once, from its newer file", async () => {
+    transcript("old", id(1), [user(T0, "C:\\older")], T0);
+    transcript("new", id(1), [user(T0, "C:\\newer")], T0 + 60_000);
+    const page = await createHistory({ root, read: noUsage }).page(0, []);
+    expect(page.sessions).toHaveLength(1);
+    expect(page.sessions[0]?.folder).toBe("C:\\newer");
+  });
+
+  it("never starts a fork after its last activity", () => {
+    expect(startTime(T0, T0 + FORK_COPY_MS * 10, T0 + 5000)).toBe(T0 + 5000);
   });
 });
