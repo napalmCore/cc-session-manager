@@ -365,3 +365,21 @@ describe("text that's easy to get wrong (review of #63)", () => {
     expect(result.status === "done" ? result.sessions[0]?.count : 0).toBe(1);
   }, 20_000);
 });
+
+describe("query and text fold the same way (re-review of #63)", () => {
+  it("finds an uppercase Greek word ending in sigma by its own text", async () => {
+    const search = createSearch({
+      files: () => Promise.resolve([transcript(3, [typed("ΟΔΟΣ ΚΑΙ ΑΛΛΑ")])]),
+    });
+    const result = await finish(search, search.start("ΟΔΟΣ") ?? "");
+    expect(result.status === "done" ? result.sessions[0]?.count : 0).toBe(1);
+  });
+
+  it("gives the same matches on the plain-ASCII path as on the mapped one", () => {
+    expect(findMatches("Find the NEEDLE, needle", "needle")).toEqual([
+      { at: 9, length: 6 },
+      { at: 17, length: 6 },
+    ]);
+    expect(findMatches("é NEEDLE", "needle")).toEqual([{ at: 2, length: 6 }]);
+  });
+});

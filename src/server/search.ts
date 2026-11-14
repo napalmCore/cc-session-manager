@@ -88,6 +88,14 @@ export function visibleText(fields: Fields): string[] {
 }
 
 /**
+ * Lowercases one character at a time, the same way findMatches folds the text. Lowercasing a
+ * whole string turns a word-final "Σ" into "ς", which the text's "σ" wouldn't match.
+ */
+export function foldCase(text: string): string {
+  return Array.from(text, (ch) => ch.toLowerCase()).join("");
+}
+
+/**
  * Every place the needle appears in the text, case-insensitively, as positions and lengths in
  * the original text. Lowercasing one character can change its length, as "İ" does, so matching
  * runs on a lowercased copy that keeps where each of its characters came from.
@@ -96,6 +104,17 @@ export function findMatches(
   text: string,
   needle: string,
 ): { at: number; length: number }[] {
+  // Plain ASCII text lowercases one for one, so positions need no map.
+  if (!/[^\t\n\r\x20-\x7e]/.test(text)) {
+    const plain = text.toLowerCase();
+    const found: { at: number; length: number }[] = [];
+    let at = plain.indexOf(needle);
+    while (at !== -1) {
+      found.push({ at, length: needle.length });
+      at = plain.indexOf(needle, at + Math.max(1, needle.length));
+    }
+    return found;
+  }
   let lower = "";
   const from: number[] = [];
   let index = 0;
@@ -322,7 +341,7 @@ export function createSearch(options: SearchOptions) {
         cancelled: false,
       };
       current = run;
-      void scan(run, trimmed.toLowerCase());
+      void scan(run, foldCase(trimmed));
       return run.id;
     },
 
