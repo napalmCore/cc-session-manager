@@ -95,6 +95,42 @@ Ctrl+C on the real `cli.js` exited with code 0 in under 2 seconds, including wit
 4. Press `Tab` to reach the Stale section and press `Enter`. Check that its expanded state is announced. If no Stale section is shown, record this step as not run.
 5. With the page open, make a session hit a permission prompt. Check that NVDA says the session needs you, with its reason, without you moving focus.
 
+## Iteration 4
+
+- **Status:** in Testing from 2026-11-14. Implementation steps 1 to 7 are merged (#58 to #64), with main at `f71f920`.
+- **Exit criteria:** the same as iteration 3: every check below done or recorded as not run, no Critical or High bug open, and NFR-9's security review passed, now covering Start, Fork, History, and Search.
+- **How:** a runner agent runs the live checks and a verifier agent audits the evidence and repeats some (decision 0011). The owner chose that agents run them all, terminal windows included (2026-11-14). Agents use only throwaway folders under `~\source`, which inherit Claude Code's trust, start and end only their own sessions, and run their own server on a free port from the repository's modules. They never run the tool's own command, which would hand over to the owner's dashboard on port 4780 (U-15). On real transcripts they print only counts and timings.
+
+### Requirements coverage
+
+| ID     | Automated                                                                       | Live or manual check | Status  |
+| ------ | ------------------------------------------------------------------------------- | -------------------- | ------- |
+| FR-32  | `launch`, `start`, `local-folder`, `folder-picker` tests; `page` e2e            | L18, L19, L22        | Planned |
+| FR-33  | `start`, `actions` tests; `page` and `actions` e2e                              | L20, L21             | Planned |
+| FR-34  | `launch`, `start` tests                                                         | L18, L19, L20        | Planned |
+| FR-35  | `history` tests; `page` e2e                                                     | L21, L23             | Planned |
+| FR-36  | `search`, `search-route` tests; `page` e2e                                      | L24                  | Planned |
+| C-15   | `launch` tests: the exact arguments                                             | L18 to L20, security | Planned |
+| C-16   | `search` tests: the allow-list, nothing kept, results dropped after 60 s        | L24, security review | Planned |
+| C-17   | Code review                                                                     | Security review      | Planned |
+| C-18   | `start` tests: nothing stored or logged                                         | Security review      | Planned |
+| NFR-14 | `server`, `search-route` tests: origin, page key, cookie, one schema per action | Security review      | Planned |
+| NFR-15 | `history` and `search` time tests                                               | L23, L24             | Planned |
+| NFR-16 | `page` e2e: focus, labels, announcements, axe in both themes                    | L25                  | Planned |
+
+### Live checks
+
+| ID  | Check                                                                                    | Expected                                                                                                          |
+| --- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| L18 | Background Start, with a name and a prompt containing `"`, `;`, `&`, and a line break    | Started; listed within one poll with that name; the prompt arrives byte for byte                                  |
+| L19 | Interactive Start, with and without a name                                               | A new Windows Terminal tab or window in the folder; listed with the name; the answer comes within about 15 s      |
+| L20 | Fork of a running background session and a running interactive one, each kind            | A new session ID; the original's transcript unchanged up to its own new turns; `-n` names the fork                |
+| L21 | Fork and Resume of a finished session from History                                       | Both run in the recorded folder; Resume is refused once the session is listed again                               |
+| L22 | Refusals: a share path, a missing folder, `%` in a name, a prompt for a terminal session | Refused in the tool's own words, before Claude Code runs and without touching the share                           |
+| L23 | History on the owner's real transcripts                                                  | First page within 5 s (FR-35); polls stay within FR-9 while History reads; counts and timings only                |
+| L24 | Search on the owner's real transcripts with a nonsense query and a common word           | Done within 30 s; the server's loop never pauses for long; Cancel stops it; unfetched results are gone after 60 s |
+| L25 | The page in a real browser against the runner's own server                               | Each form, History, and Search usable by keyboard alone, with focus visible and results announced                 |
+
 ## Performance
 
 One `claude agents --json --all` run used about 353 ms of CPU, averaged over 12 runs on an 8-core Windows PC on 2026-11-06. This excludes the shell wrapper and transcript reads. At the 3-second interval, that is about 10.5% of one core, or about 1.3% of the whole PC.
