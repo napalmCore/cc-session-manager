@@ -524,3 +524,31 @@ describe("an interactive start logs no name either (C-18)", () => {
     expect(written.join("\n")).not.toContain("SECRET");
   });
 });
+
+describe("drive types read at once (review of #64)", () => {
+  it("reads a drive once for many checks at the same time, and again after a failed read", async () => {
+    let reads = 0;
+    let answer: string | null = "Fixed";
+    const reader = cachedDriveType(async () => {
+      reads += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return answer;
+    });
+    const types = await Promise.all(
+      Array.from({ length: 50 }, () => reader("c")),
+    );
+    expect(reads).toBe(1);
+    expect(new Set(types)).toEqual(new Set(["Fixed"]));
+
+    answer = null;
+    const other = cachedDriveType(async () => {
+      reads += 1;
+      await Promise.resolve();
+      return answer;
+    });
+    await Promise.all([other("d"), other("d")]);
+    expect(reads).toBe(2);
+    await other("d");
+    expect(reads).toBe(3);
+  });
+});

@@ -98,6 +98,7 @@ export function readHistoryPage(data: unknown): HistoryPageView | null {
           ? { usage: entry.usage as unknown as SessionUsage }
           : {}),
         inList: entry.inList === true,
+        // Unknown counts as usable: the server still checks the folder and refuses if it's gone.
         folderUsable: entry.folderUsable !== false,
       },
     ];

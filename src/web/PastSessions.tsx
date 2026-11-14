@@ -152,6 +152,7 @@ export function HistoryView(props: PastActionProps & { now: number }) {
   const turned = useRef(false);
   // Only the latest request's reply is shown, so a late refresh can't replace a newer page.
   const latest = useRef(0);
+  const shown = useRef<number | null>(null);
 
   const load = useCallback(async (at: number) => {
     latest.current += 1;
@@ -166,9 +167,12 @@ export function HistoryView(props: PastActionProps & { now: number }) {
     setLoading(false);
     if (read === null) {
       setError(reply.message);
+      // A page that couldn't be read leaves the shown page and its number as they were.
+      if (shown.current !== null) setPage(shown.current);
       return;
     }
     setError(null);
+    shown.current = read.page;
     setData(read);
   }, []);
 

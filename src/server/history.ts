@@ -360,9 +360,15 @@ export function createHistory(options: HistoryOptions) {
             .filter((id) => id !== undefined),
         );
         const entries = slice.map((file) => entryOf(file, listedIds));
+        // Each distinct folder is checked once a page.
+        const checks = new Map<string | null, Promise<boolean | undefined>>();
+        for (const entry of entries) {
+          if (!checks.has(entry.folder))
+            checks.set(entry.folder, usableFolder(entry.folder));
+        }
         await Promise.all(
           entries.map(async (entry) => {
-            const usable = await usableFolder(entry.folder);
+            const usable = await checks.get(entry.folder);
             if (usable !== undefined) entry.folderUsable = usable;
           }),
         );
