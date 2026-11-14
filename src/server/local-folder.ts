@@ -11,7 +11,8 @@ const realpathNative = promisify(realpath.native);
 const DRIVE_PATH = /^[A-Za-z]:\\/;
 /** How long a drive's type is remembered, so a folder picker stays quick. */
 export const DRIVE_TYPE_CACHE_MS = 30_000;
-const DRIVE_TYPE_TIMEOUT_MS = 5_000;
+/** A cold Windows PowerShell can take several seconds to start, as on CI. */
+export const DRIVE_TYPE_TIMEOUT_MS = 15_000;
 
 /** Reads a drive letter's type, such as "Fixed" or "Network", or null if it can't be read. */
 export type DriveTypeReader = (letter: string) => Promise<string | null>;
@@ -83,12 +84,28 @@ const NOT_LOCAL =
 async function isLocalDrive(
   path: string,
   driveType: DriveTypeReader,
-): Promise<boolean> {
+): Promise<"local" | "not-local" | "unknown"> {
   const letter = path[0];
-  if (letter === undefined) return false;
+  if (letter === undefined) return "not-local";
   const type = await driveType(letter);
-  // A drive whose type can't be read is refused, as is a network drive.
-  return type !== null && type !== "Network" && type !== "NoRootDirectory";
+  // A drive whose type can't be read is refused too, with its own message.
+  if (type === null) return "unknown";
+  return type !== "Network" && type !== "NoRootDirectory"
+    ? "local"
+    : "not-local";
+}
+
+const UNKNOWN_DRIVE =
+  "Couldn't check that folder's drive, so it can't be used right now. Try again.";
+
+function driveRefusal(
+  kind: "local" | "not-local" | "unknown",
+): FolderCheck | null {
+  if (kind === "local") return null;
+  return {
+    ok: false,
+    message: kind === "unknown" ? UNKNOWN_DRIVE : NOT_LOCAL,
+  };
 }
 
 /**
@@ -110,21 +127,17 @@ export async function checkLocalFolder(
       message: "Use a full folder path on a local drive, such as C:\\work.",
     };
   }
-  if (!(await isLocalDrive(folder, driveType))) {
-    return { ok: false, message: NOT_LOCAL };
-  }
+  const before = driveRefusal(await isLocalDrive(folder, driveType));
+  if (before !== null) return before;
   let resolved: string;
   try {
     resolved = await realpathNative(folder);
   } catch {
     return { ok: false, message: "That folder doesn't exist." };
   }
-  if (
-    !DRIVE_PATH.test(resolved) ||
-    !(await isLocalDrive(resolved, driveType))
-  ) {
-    return { ok: false, message: NOT_LOCAL };
-  }
+  if (!DRIVE_PATH.test(resolved)) return { ok: false, message: NOT_LOCAL };
+  const after = driveRefusal(await isLocalDrive(resolved, driveType));
+  if (after !== null) return after;
   try {
     if (!(await stat(resolved)).isDirectory()) {
       return { ok: false, message: "That path isn't a folder." };

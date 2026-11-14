@@ -68,6 +68,7 @@ function SessionOptions({
   prompt,
   setPrompt,
   disabled,
+  focusKind = false,
 }: {
   kind: SessionKind;
   setKind: (kind: SessionKind) => void;
@@ -76,6 +77,8 @@ function SessionOptions({
   prompt: string;
   setPrompt: (prompt: string) => void;
   disabled: boolean;
+  /** Fork has no folder field, so the kind takes focus when it opens. */
+  focusKind?: boolean;
 }) {
   return (
     <>
@@ -89,7 +92,11 @@ function SessionOptions({
       >
         <Label>Kind</Label>
         <div className={styles.radios}>
-          <Radio value="background" className={styles.radio}>
+          <Radio
+            value="background"
+            className={styles.radio}
+            autoFocus={focusKind}
+          >
             Background, with a prompt
           </Radio>
           <Radio value="interactive" className={styles.radio}>
@@ -508,6 +515,7 @@ export function ForkDialog({
             prompt={prompt}
             setPrompt={setPrompt}
             disabled={pending}
+            focusKind
           />
           {error !== null && (
             <p id={errorId} role="alert" className={styles.formError}>

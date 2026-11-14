@@ -305,6 +305,10 @@ test.describe("Fork (FR-33)", () => {
 
     await editor.getByRole("button", { name: "Fork…" }).click();
     const dialog = page.getByRole("dialog", { name: "Fork session" });
+    // Its first field takes focus, so the ring shows where the keyboard is (NFR-16).
+    await expect(
+      dialog.getByRole("radio", { name: "Background, with a prompt" }),
+    ).toBeFocused();
     await expect(dialog).toContainText("Folder: C:\\repos\\sample");
     await expect(dialog.getByLabel("Folder")).toHaveCount(0);
     await dialog.getByText("In a new terminal").click();
@@ -340,7 +344,16 @@ test.describe("History (FR-35)", () => {
     await expect(page.getByText("Resume: Done.")).toBeVisible();
     expect(requests.at(-1)).toEqual({ action: "resume", key: PAST_ID });
 
-    await page.getByRole("button", { name: "Older" }).click();
+    // By keyboard, focus stays on the button while the page loads, then moves to the heading.
+    await page.route("**/api/actions", async (route) => {
+      if (route.request().postDataJSON()?.page === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      await route.continue();
+    });
+    await page.getByRole("button", { name: "Older" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Older" })).toBeFocused();
     await expect(page.getByText("Page 2 of 2")).toBeVisible();
     expect(requests.at(-1)).toEqual({ action: "history", page: 1 });
     await expect(

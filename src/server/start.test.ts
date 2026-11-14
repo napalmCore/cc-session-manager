@@ -67,9 +67,10 @@ describe("folder checks (NFR-14, 0025)", () => {
     );
     expect(network).toMatchObject({ ok: false });
     expect(network.ok ? "" : network.message).toMatch(/isn't a local folder/);
-    expect((await checkLocalFolder(root, () => Promise.resolve(null))).ok).toBe(
-      false,
-    );
+    const unread = await checkLocalFolder(root, () => Promise.resolve(null));
+    expect(unread).toMatchObject({ ok: false });
+    // A drive that couldn't be checked, as when PowerShell is slow, isn't called a network one.
+    expect(unread.ok ? "" : unread.message).toMatch(/Couldn't check/);
   });
 
   it("refuses a missing folder and a file", async () => {
