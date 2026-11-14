@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 5, Phase 2: Requirements.** 0.1.0, 0.2.0, and 0.3.0 are released ([0017](decisions/0017-first-release.md)), and the repository is public. Iteration 4 is closed ([0027](decisions/0027-iteration-5-plan.md)). Iteration 5, for 0.4.0, covers upkeep for the public repository, the open bugs, and answering prompts and sending messages through Claude Code's own supported ways only. Iteration 6, for 0.5.0, covers macOS and Linux, tested on CI only until a machine is available ([0027](decisions/0027-iteration-5-plan.md)).
+**Iteration 5, Phase 3: Design.** 0.1.0, 0.2.0, and 0.3.0 are released ([0017](decisions/0017-first-release.md)), and the repository is public. Iteration 4 is closed ([0027](decisions/0027-iteration-5-plan.md)). Iteration 5, for 0.4.0, covers upkeep for the public repository, the open bugs, and answering prompts and sending messages through Claude Code's own supported ways only. Iteration 6, for 0.5.0, covers macOS and Linux, tested on CI only until a machine is available ([0027](decisions/0027-iteration-5-plan.md)).
 
 ## How these docs work
 
@@ -52,3 +52,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0026](decisions/0026-iteration-4-page.md)              | How the iteration 4 page works                      | Accepted                                  |
 | [0027](decisions/0027-iteration-5-plan.md)              | Close iteration 4, and iterations 5 and 6 scope     | Accepted                                  |
 | [0028](decisions/0028-iteration-5-requirements.md)      | Iteration 5 requirements choices                    | Accepted                                  |
+| [0029](decisions/0029-iteration-5-design.md)            | Iteration 5 design choices                          | Accepted                                  |
