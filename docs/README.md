@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 4, Phase 6: Release, done.** 0.1.0, 0.2.0, and 0.3.0 are released ([0017](decisions/0017-first-release.md)). Iteration 4, for 0.3.0, covers starting sessions, forking, a history of past sessions, and search inside conversations, with names set only when a session starts ([0023](decisions/0023-iteration-4-plan.md)). Requirements, design, and the page are signed off ([0024](decisions/0024-iteration-4-requirements.md), [0025](decisions/0025-iteration-4-design.md), [0026](decisions/0026-iteration-4-page.md)). Implementation steps 1 to 7 are merged, and Testing is closed by the owner: see the [test plan](test-plan.md#iteration-4). 0.3.0 was released as 0.2.0 was: the annotated tag `v0.3.0` and a [GitHub release](https://github.com/napalmCore/cc-session-manager/releases/tag/v0.3.0), with the repository kept private and nothing on npm.
+**Iteration 5, Phase 2: Requirements.** 0.1.0, 0.2.0, and 0.3.0 are released ([0017](decisions/0017-first-release.md)), and the repository is public. Iteration 4 is closed ([0027](decisions/0027-iteration-5-plan.md)). Iteration 5, for 0.4.0, covers upkeep for the public repository, the open bugs, and answering prompts and sending messages through Claude Code's own supported ways only. Iteration 6, for 0.5.0, covers macOS and Linux, tested on CI only until a machine is available ([0027](decisions/0027-iteration-5-plan.md)).
 
 ## How these docs work
 
@@ -50,3 +50,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0024](decisions/0024-iteration-4-requirements.md)      | Iteration 4 requirements choices                    | Accepted                                  |
 | [0025](decisions/0025-iteration-4-design.md)            | Iteration 4 design choices                          | Accepted                                  |
 | [0026](decisions/0026-iteration-4-page.md)              | How the iteration 4 page works                      | Accepted                                  |
+| [0027](decisions/0027-iteration-5-plan.md)              | Close iteration 4, and iterations 5 and 6 scope     | Accepted                                  |
