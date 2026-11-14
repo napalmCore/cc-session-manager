@@ -203,7 +203,10 @@ export function HistoryView(props: PastActionProps & { now: number }) {
   }, [counting, data, page, load]);
 
   const turn = (to: number) => {
+    // Presses while a page loads are ignored, rather than disabling the button, so it keeps focus.
+    if (loading) return;
     turned.current = true;
+    setLoading(true);
     setPage(to);
   };
 
@@ -284,7 +287,7 @@ export function HistoryView(props: PastActionProps & { now: number }) {
         <nav aria-label="History pages" className={styles.pager}>
           <Button
             className={styles.button}
-            isDisabled={page === 0 || loading}
+            isDisabled={data.page === 0}
             onPress={() => {
               turn(page - 1);
             }}
@@ -292,11 +295,11 @@ export function HistoryView(props: PastActionProps & { now: number }) {
             Newer
           </Button>
           <span>
-            Page {page + 1} of {data.pages}
+            Page {data.page + 1} of {data.pages}
           </span>
           <Button
             className={styles.button}
-            isDisabled={page >= data.pages - 1 || loading}
+            isDisabled={data.page >= data.pages - 1}
             onPress={() => {
               turn(page + 1);
             }}
