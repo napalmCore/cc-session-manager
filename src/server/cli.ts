@@ -37,9 +37,13 @@ import {
   powershellLocalDrives,
 } from "./folder-picker.js";
 import { createHistory } from "./history.js";
-import { cachedDriveType, powershellDriveType } from "./local-folder.js";
+import {
+  cachedDriveType,
+  checkLocalFolder,
+  powershellDriveType,
+} from "./local-folder.js";
 import { createOpenExecutors, launchDetached } from "./open.js";
-import { createStartExecutor, FAILURE_WATCH_MS } from "./start.js";
+import { createLauncher, FAILURE_WATCH_MS } from "./start.js";
 import {
   createStopDeleteExecutors,
   runClaude,
@@ -265,8 +269,14 @@ const historyReader = createTranscriptReader();
 const history = createHistory({
   read: (sessions) => historyReader.enrich(sessions),
 });
-// One drive-type cache for Start and Browse.
+// One drive-type cache for Start, Fork, and Browse.
 const driveType = cachedDriveType(powershellDriveType(programs.powershell));
+const launcher = createLauncher({
+  programs,
+  driveType,
+  launch: launchDetached,
+  watch: watchPoller(() => poller.state(), FAILURE_WATCH_MS),
+});
 actionsRef.current = createActionTracker({
   listing: () => poller.state(),
   freshListing: async () =>
@@ -287,12 +297,16 @@ actionsRef.current = createActionTracker({
     driveType,
     localDrives: cachedLocalDrives(powershellLocalDrives(programs.powershell)),
   }),
-  start: createStartExecutor({
-    programs,
-    driveType,
-    launch: launchDetached,
-    watch: watchPoller(() => poller.state(), FAILURE_WATCH_MS),
-  }),
+  start: (request) => launcher.start(request),
+  fork: (request, target) => launcher.fork(request, target),
+  // A past session's folder, only if it's still a local folder that can be used (FR-33, FR-35).
+  historyFolder: async (sessionId) => {
+    const entry = await history.find(sessionId);
+    if (entry?.folder === null || entry?.folder === undefined) return null;
+    const checked = await checkLocalFolder(entry.folder, driveType);
+    return checked.ok ? checked.folder : null;
+  },
+  transcriptExists: (sessionId) => transcriptExists(sessionId),
   leftovers: {
     // Stop and Delete record the session's programs first, with the same ownership check End
     // uses. A session with no process, such as a stopped one, has nothing new to record.

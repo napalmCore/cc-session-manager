@@ -134,49 +134,47 @@ export interface StartOptions {
   environment?: NodeJS.ProcessEnv;
 }
 
+/** A Fork request (FR-33): the page names only a session; the server finds its folder. */
+export interface ForkRequest {
+  action: "fork";
+  key: string;
+  kind: "background" | "interactive";
+  name?: string | undefined;
+  prompt?: string | undefined;
+}
+
+/** Where a fork runs: the session's own ID and folder, from the server's own data. */
+export interface ForkTarget {
+  sessionId: string;
+  folder: string;
+}
+
 /**
- * Starts a session the user asked for (FR-32). The folder, name, and prompt are checked here, on
- * the server (NFR-14), and are never logged or kept (C-18).
+ * Starts and forks sessions the user asked for (FR-32, FR-33). The folder, name, and prompt are
+ * checked here, on the server (NFR-14), and are never logged or kept (C-18).
  */
-export function createStartExecutor(options: StartOptions) {
+export function createLauncher(options: StartOptions) {
   const run = options.run ?? runBackground;
-  return async (request: StartRequest): Promise<ActionResult> => {
-    const { programs } = options;
-    if (programs.claude === null) {
-      return {
-        outcome: "unavailable",
-        message: "Claude Code's program wasn't found.",
-      };
-    }
-    const problem = checkStartText(request.kind, request.name, request.prompt);
-    if (problem !== null) return refused(problem);
-    const folder = await checkLocalFolder(request.folder, options.driveType);
-    if (!folder.ok) return refused(folder.message);
+  const { programs } = options;
 
-    let args: string[];
-    try {
-      args = claudeArguments({
-        kind: request.kind,
-        ...(request.name ? { name: request.name } : {}),
-        ...(request.kind === "background"
-          ? { prompt: request.prompt ?? "" }
-          : {}),
-      });
-    } catch {
-      return refused("That session can't be started.");
-    }
-
-    if (request.kind === "interactive") {
+  /** Runs `claude` with these arguments, in a new terminal or in the background. */
+  const launch = async (
+    kind: StartRequest["kind"],
+    args: string[],
+    folder: string,
+    what: "session" | "fork",
+  ): Promise<ActionResult> => {
+    if (kind === "interactive") {
       let plan: LaunchPlan;
       try {
-        plan = planTerminal(programs, args, folder.folder);
+        plan = planTerminal(programs, args, folder);
       } catch (error) {
         if (
           error instanceof Error &&
           error.message === "A name needs Windows Terminal"
         ) {
           return refused(
-            "A name needs Windows Terminal, which isn't installed. Start the session without a name.",
+            `A name needs Windows Terminal, which isn't installed. Start the ${what} without a name.`,
           );
         }
         return {
@@ -203,7 +201,7 @@ export function createStartExecutor(options: StartOptions) {
     }
 
     const result = await run(
-      planBackground(programs, args, folder.folder),
+      planBackground(programs, args, folder),
       options.environment ?? process.env,
     );
     if (result.kind === "timeout") {
@@ -237,6 +235,90 @@ export function createStartExecutor(options: StartOptions) {
           "Claude Code started the session, but it failed straight away.",
       };
     }
-    return { outcome: "succeeded", message: "Started in the background." };
+    return {
+      outcome: "succeeded",
+      message:
+        what === "fork"
+          ? "Forked in the background."
+          : "Started in the background.",
+    };
   };
+
+  /** The checked arguments, or a refusal. */
+  const prepare = (
+    kind: StartRequest["kind"],
+    name: string | undefined,
+    prompt: string | undefined,
+    forkOf?: string,
+  ): string[] | ActionResult => {
+    const problem = checkStartText(kind, name, prompt);
+    if (problem !== null) return refused(problem);
+    try {
+      return claudeArguments({
+        kind,
+        ...(forkOf !== undefined ? { forkOf } : {}),
+        ...(name ? { name } : {}),
+        ...(kind === "background" ? { prompt: prompt ?? "" } : {}),
+      });
+    } catch {
+      return refused("That session can't be started.");
+    }
+  };
+
+  const unavailable: ActionResult = {
+    outcome: "unavailable",
+    message: "Claude Code's program wasn't found.",
+  };
+
+  return {
+    async start(request: StartRequest): Promise<ActionResult> {
+      if (programs.claude === null) return unavailable;
+      const problem = checkStartText(
+        request.kind,
+        request.name,
+        request.prompt,
+      );
+      if (problem !== null) return refused(problem);
+      const folder = await checkLocalFolder(request.folder, options.driveType);
+      if (!folder.ok) return refused(folder.message);
+      const args = prepare(request.kind, request.name, request.prompt);
+      if (!Array.isArray(args)) return args;
+      return launch(request.kind, args, folder.folder, "session");
+    },
+
+    /**
+     * Forks a session into a new one (FR-33). `--fork-session` is always passed, so the original
+     * is never continued or changed. The target comes from the server's own data.
+     */
+    async fork(
+      request: ForkRequest,
+      target: ForkTarget,
+    ): Promise<ActionResult> {
+      if (programs.claude === null) return unavailable;
+      const problem = checkStartText(
+        request.kind,
+        request.name,
+        request.prompt,
+      );
+      if (problem !== null) return refused(problem);
+      const folder = await checkLocalFolder(target.folder, options.driveType);
+      if (!folder.ok) {
+        return refused(`The session's folder can't be used: ${folder.message}`);
+      }
+      const args = prepare(
+        request.kind,
+        request.name,
+        request.prompt,
+        target.sessionId,
+      );
+      if (!Array.isArray(args)) return args;
+      return launch(request.kind, args, folder.folder, "fork");
+    },
+  };
+}
+
+/** Starts a session the user asked for (FR-32). */
+export function createStartExecutor(options: StartOptions) {
+  const launcher = createLauncher(options);
+  return (request: StartRequest) => launcher.start(request);
 }

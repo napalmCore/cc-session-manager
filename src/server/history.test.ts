@@ -211,7 +211,7 @@ describe("History pages (FR-35)", () => {
 
 describe("History order and turns (FR-35, review of #61)", () => {
   it("orders every page by last activity, not by when a file was last changed", async () => {
-    // Twelve sessions; the files changed most recently hold the oldest activity.
+    // Sixty sessions; the files changed most recently hold the oldest activity.
     for (let i = 0; i < HISTORY_PAGE_SIZE + 10; i += 1) {
       transcript(
         "p",
@@ -289,5 +289,26 @@ describe("History order and turns (FR-35, review of #61)", () => {
 
   it("never starts a fork after its last activity", () => {
     expect(startTime(T0, T0 + FORK_COPY_MS * 10, T0 + 5000)).toBe(T0 + 5000);
+  });
+});
+
+describe("reading the last timestamp quickly", () => {
+  it("finds it in the short tail, and falls back to 256 KB when the end is one long line", async () => {
+    const plain = transcript("p", id(1), [user(T0), user(T0 + 4000)]);
+    const { statSync } = await import("node:fs");
+    expect(
+      await readLastTimestamp(plain, statSync(plain).size, 16 * 1024),
+    ).toBe(T0 + 4000);
+    const padded = transcript("p", id(2), [
+      user(T0 + 9000),
+      { type: "x", pad: "z".repeat(40 * 1024) },
+    ]);
+    expect(
+      await readLastTimestamp(padded, statSync(padded).size, 16 * 1024),
+    ).toBeNull();
+    const page = await createHistory({ root, read: noUsage }).page(0, []);
+    expect(
+      page.sessions.find((entry) => entry.sessionId === id(2))?.lastActivityAt,
+    ).toBe(T0 + 9000);
   });
 });

@@ -2,7 +2,7 @@ import type { SessionView } from "../shared/protocol.js";
 import type { LeftoverRecord } from "./leftovers-helper.js";
 import type { FolderListing } from "./folder-picker.js";
 import type { HistoryPage } from "./history.js";
-import type { StartRequest } from "./start.js";
+import type { ForkRequest, ForkTarget, StartRequest } from "./start.js";
 import { PROTECTED_MESSAGE as PROTECTED } from "./protect.js";
 import { isValidSessionId } from "./transcripts.js";
 
@@ -44,7 +44,11 @@ export interface HistoryRequest {
 
 /** Every request the action route takes, one shape per action (NFR-14). */
 export type ActionRequest =
-  SessionActionRequest | StartRequest | ListFoldersRequest | HistoryRequest;
+  | SessionActionRequest
+  | StartRequest
+  | ForkRequest
+  | ListFoldersRequest
+  | HistoryRequest;
 
 export type ActionOutcome =
   | "started"
@@ -136,6 +140,15 @@ export interface ActionTrackerOptions {
   listFolders?: (folder: string | undefined) => Promise<FolderListing>;
   /** Reads a page of History (FR-35). */
   history?: (page: number, listing: SessionView[]) => Promise<HistoryPage>;
+  /** Forks a session into a new one (FR-33). */
+  fork?: (request: ForkRequest, target: ForkTarget) => Promise<ActionResult>;
+  /**
+   * A past session's folder from History, for Fork and Resume of a session Claude Code no longer
+   * lists. Null if it's not on disk or its folder can't be used.
+   */
+  historyFolder?: (sessionId: string) => Promise<string | null>;
+  /** Whether a session's saved conversation is on disk, checked before a fork (FR-33). */
+  transcriptExists?: (sessionId: string) => Promise<boolean>;
   now?: () => number;
 }
 
@@ -295,8 +308,98 @@ export function createActionTracker(options: ActionTrackerOptions) {
     }
   };
 
+  /**
+   * Forks a session (FR-33). The page names only the session; its ID and folder come from the
+   * listing or History. One Fork runs per session at a time, locked on its session ID.
+   */
+  const forkSession = async (request: ForkRequest): Promise<ActionResult> => {
+    const { fork } = options;
+    if (fork === undefined) {
+      return { outcome: "unavailable", message: "Not available yet." };
+    }
+    const { key } = request;
+    if (!SHORT_ID.test(key) && !isValidSessionId(key)) {
+      return refused("Unknown session.");
+    }
+    const listed = findSession(options.listing().sessions, key);
+    let target: ForkTarget | null = null;
+    if (listed !== undefined) {
+      if (listed.sessionId !== undefined && listed.cwd !== undefined) {
+        target = { sessionId: listed.sessionId, folder: listed.cwd };
+      }
+    } else if (isValidSessionId(key) && options.historyFolder !== undefined) {
+      const folder = await options.historyFolder(key);
+      if (folder !== null) target = { sessionId: key, folder };
+    }
+    if (target === null) {
+      return refused("That session can't be forked from here.");
+    }
+    if (
+      options.transcriptExists !== undefined &&
+      !(await options.transcriptExists(target.sessionId))
+    ) {
+      return refused("That session has no saved conversation to fork.");
+    }
+    const lockKey = `fork:${target.sessionId}`;
+    if (locks.has(lockKey)) {
+      return refused("This session is already being forked.");
+    }
+    locks.add(lockKey);
+    try {
+      return await fork(request, target);
+    } finally {
+      locks.delete(lockKey);
+    }
+  };
+
+  /**
+   * Resume of a session Claude Code no longer lists, found in History (FR-35, FR-14). A fresh
+   * listing comes first (C-9): a session listed again isn't resumed from here.
+   */
+  const resumeFromHistory = async (key: string): Promise<ActionResult> => {
+    const executor = options.executors.resume;
+    if (executor === undefined || options.historyFolder === undefined) {
+      return refused("That session isn't listed.");
+    }
+    if (isStale(options.listing())) return refused(STALE);
+    const folder = await options.historyFolder(key);
+    if (folder === null) return refused("That session isn't listed.");
+    if (locks.has(key)) {
+      return refused("Another action on this session is still running.");
+    }
+    locks.add(key);
+    try {
+      let fresh: SessionView[];
+      try {
+        fresh = await options.freshListing();
+      } catch {
+        return {
+          outcome: "unknown",
+          message: "Couldn't check the session's current state.",
+        };
+      }
+      if (fresh.some((other) => other.sessionId === key)) {
+        return refused(
+          "That session is listed again. Use it from the session list.",
+        );
+      }
+      return await executor({
+        sessionId: key,
+        cwd: folder,
+        kind: "interactive",
+        finished: true,
+        needsAttention: false,
+        attentionReason: null,
+        statusLabel: "finished",
+      });
+    } finally {
+      locks.delete(key);
+    }
+  };
+
   const run = async (request: ActionRequest): Promise<ActionResult> => {
     if (request.action === "start") return startSession(request);
+    if (request.action === "fork") return forkSession(request);
     if (request.action === "history") {
       if (options.history === undefined) {
         return { outcome: "unavailable", message: "Not available yet." };
@@ -330,7 +433,12 @@ export function createActionTracker(options: ActionTrackerOptions) {
 
     const state = options.listing();
     const session = findSession(state.sessions, key);
-    if (session === undefined) return refused("That session isn't listed.");
+    if (session === undefined) {
+      if (action === "resume" && isValidSessionId(key)) {
+        return resumeFromHistory(key);
+      }
+      return refused("That session isn't listed.");
+    }
     if (!permits(action, session))
       return refused("That action isn't available for this session.");
     if (DESTRUCTIVE.has(action)) {

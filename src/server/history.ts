@@ -14,6 +14,8 @@ export const HISTORY_PAGE_SIZE = 50;
 export const HEAD_BYTES = 64 * 1024;
 /** A first timestamp this far before the file was created is a fork's copied history (U-23). */
 export const FORK_COPY_MS = 60_000;
+/** The first tail read for the last timestamp; 256 KB only if it isn't there (review of #61). */
+export const SHORT_TAIL_BYTES = 16 * 1024;
 /** How long the list of transcript files is reused before it's read again. */
 const LIST_CACHE_MS = 5_000;
 
@@ -134,12 +136,13 @@ export async function readHead(file: string): Promise<{
   }
 }
 
-/** The last timestamp in a transcript's last 256 KB, and nothing else (C-12). */
+/** The last timestamp in a transcript's last bytes, and nothing else (C-12). */
 export async function readLastTimestamp(
   file: string,
   size: number,
+  tail: number = TAIL_BYTES,
 ): Promise<number | null> {
-  const length = Math.min(size, TAIL_BYTES);
+  const length = Math.min(size, tail);
   const handle = await open(file, "r");
   try {
     const buffer = Buffer.alloc(length);
@@ -240,6 +243,9 @@ export function createHistory(options: HistoryOptions) {
       }
     }
     const files = [...bySession.values()];
+    // What's known about deleted transcripts is dropped.
+    const present = new Set(files.map((file) => file.file));
+    for (const file of known.keys()) if (!present.has(file)) known.delete(file);
     listed = { at: now(), files };
     return files;
   };
@@ -258,7 +264,14 @@ export function createHistory(options: HistoryOptions) {
       const lastTimestamp =
         head.firstTimestamp === null
           ? null
-          : await readLastTimestamp(entry.file, entry.size);
+          : ((await readLastTimestamp(
+              entry.file,
+              entry.size,
+              SHORT_TAIL_BYTES,
+            )) ??
+            (entry.size > SHORT_TAIL_BYTES
+              ? await readLastTimestamp(entry.file, entry.size)
+              : null));
       const fresh = {
         size: entry.size,
         mtimeMs: entry.mtimeMs,
