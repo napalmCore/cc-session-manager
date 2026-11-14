@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -97,7 +97,8 @@ describe("Fork (FR-33)", () => {
       "--",
       "carry on",
     ]);
-    expect(plan?.cwd.toLowerCase()).toBe(root.toLowerCase());
+    // The folder checks resolve short 8.3 names, as on CI's temp folder.
+    expect(plan?.cwd).toBe(realpathSync.native(root));
   });
 
   it("forks interactively in a new terminal, with the folder only as its working folder", async () => {
