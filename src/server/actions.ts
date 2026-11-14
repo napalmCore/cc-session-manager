@@ -10,6 +10,8 @@ import { isValidSessionId } from "./transcripts.js";
 export const FRESHNESS_MS = 10_000;
 /** Force end is accepted only within this time of a normal close of the same process (NFR-10). */
 export const FORCE_END_WINDOW_MS = 2 * 60_000;
+/** Resume from History waits this long after a session's last activity (C-9). */
+export const RECENT_ACTIVITY_MS = 60_000;
 /** How long the user's own action suppresses notifications for that session. */
 export const OWN_ACTION_MS = 30_000;
 
@@ -149,6 +151,8 @@ export interface ActionTrackerOptions {
   historyFolder?: (sessionId: string) => Promise<string | null>;
   /** Whether a session's saved conversation is on disk, checked before a fork (FR-33). */
   transcriptExists?: (sessionId: string) => Promise<boolean>;
+  /** When a past session's transcript last had a timestamped line, for Resume from History. */
+  lastActivity?: (sessionId: string) => Promise<number | null>;
   now?: () => number;
 }
 
@@ -381,6 +385,30 @@ export function createActionTracker(options: ActionTrackerOptions) {
       if (fresh.some((other) => other.sessionId === key)) {
         return refused(
           "That session is listed again. Use it from the session list.",
+        );
+      }
+      // A background row's session ID can appear a poll after the row does, so a session
+      // listed in the same folder without one, or a transcript still being written, may be this
+      // one, still running (C-9).
+      const sameFolder = (cwd: string | undefined) =>
+        cwd !== undefined && cwd.toLowerCase() === folder.toLowerCase();
+      if (
+        fresh.some(
+          (other) => other.sessionId === undefined && sameFolder(other.cwd),
+        )
+      ) {
+        return refused(
+          "A session in that folder is still starting. Try again in a moment.",
+        );
+      }
+      const lastActive = await options.lastActivity?.(key);
+      if (
+        lastActive !== undefined &&
+        lastActive !== null &&
+        now() - lastActive < RECENT_ACTIVITY_MS
+      ) {
+        return refused(
+          "That session was active in the last minute, so it may still be running. Try again in a moment.",
         );
       }
       return await executor({

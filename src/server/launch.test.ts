@@ -34,13 +34,13 @@ describe("claude arguments (C-15)", () => {
         name: "--fork-session",
         prompt: "-p",
       }),
-    ).toEqual(["--bg", "-n", "--fork-session", "--", "-p"]);
+    ).toEqual(["--bg", "--name=--fork-session", "--", "-p"]);
   });
 
   it("starts an interactive session with only a name", () => {
     expect(
       claudeArguments({ kind: "interactive", name: HOSTILE_NAME }),
-    ).toEqual(["-n", HOSTILE_NAME, "--"]);
+    ).toEqual([`--name=${HOSTILE_NAME}`, "--"]);
     expect(claudeArguments({ kind: "interactive" })).toEqual(["--"]);
   });
 
@@ -61,7 +61,7 @@ describe("claude arguments (C-15)", () => {
     ]);
     expect(
       claudeArguments({ kind: "interactive", forkOf: SESSION_ID, name: "b" }),
-    ).toEqual(["--resume", SESSION_ID, "--fork-session", "-n", "b", "--"]);
+    ).toEqual(["--resume", SESSION_ID, "--fork-session", "--name=b", "--"]);
   });
 
   it("passes only the four allowed options, always before --", () => {
@@ -76,12 +76,12 @@ describe("claude arguments (C-15)", () => {
     ];
     for (const args of all) {
       const options = args.slice(0, args.indexOf("--"));
-      const flags = options.filter(
-        (arg, index) => arg.startsWith("-") && options[index - 1] !== "-n",
-      );
+      const flags = options.filter((arg) => arg.startsWith("-"));
       expect(
-        flags.every((flag) =>
-          ["--bg", "-n", "--resume", "--fork-session"].includes(flag),
+        flags.every(
+          (flag) =>
+            ["--bg", "--resume", "--fork-session"].includes(flag) ||
+            flag.startsWith("--name="),
         ),
       ).toBe(true);
     }
@@ -137,8 +137,7 @@ describe("terminal plans", () => {
       ".",
       "--",
       programs.claude,
-      "-n",
-      "a\\;b c",
+      "--name=a\\;b c",
       "--",
     ]);
     expect(plan.cwd).toBe(folder);

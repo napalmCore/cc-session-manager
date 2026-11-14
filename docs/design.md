@@ -634,7 +634,7 @@ From experiments on throwaway sessions with Claude Code 2.1.325 on 2026-11-13, r
   - **Name:** at most 100 characters, with no control characters and no `%` (0025).
   - **Prompt:** required for a background start. At most 8,000 characters. Line breaks and tabs are allowed; other control characters are refused.
 - **Background:**
-  - **Command:** `execFile(claude, ["--bg", "-n", name, "--", prompt], { cwd: folder })`, with no shell and `sessionLaunchEnv`. `-n` is left out when there's no name. The timeout is 30 s.
+  - **Command:** `execFile(claude, ["--bg", "--name=<name>", "--", prompt], { cwd: folder })`, with no shell and `sessionLaunchEnv`. The name goes in the same argument as its option, so it can't be read as another option however it looks (security review of iteration 4, I-3). It's left out when there's no name. The timeout is 30 s.
   - **Started:** exit 0 and a first line of `backgrounded · <ID>`.
   - **Refused:** a non-zero exit. The tool shows its own words only (FR-18, 0025). Known reasons map to messages: an untrusted folder ("Claude Code doesn't trust this folder yet. Run `claude` there once and accept its prompt."), a folder that's gone, Claude Code not signed in, and its background service being out of date. Anything else is "Claude Code refused to start the session." Claude Code's own text is never shown, logged, or kept.
   - **Unknown:** a timeout, or exit 0 without a `backgrounded · <ID>` line, is reported as unknown (FR-18), and the page says to check the list.

@@ -105,7 +105,7 @@ function SessionOptions({
         isDisabled={disabled}
       >
         <Label>Name (optional)</Label>
-        <Input className={styles.input} />
+        <Input className={styles.input} autoComplete="off" spellCheck={false} />
         <Text slot="description" className={styles.fieldHelp}>
           Up to {MAX_NAME} characters, without %. A terminal session can only be
           named when Windows Terminal is installed.
@@ -121,7 +121,12 @@ function SessionOptions({
           isDisabled={disabled}
         >
           <Label>Prompt</Label>
-          <TextArea className={styles.input} rows={4} />
+          <TextArea
+            className={styles.input}
+            rows={4}
+            autoComplete="off"
+            spellCheck={false}
+          />
           <Text slot="description" className={styles.fieldHelp}>
             What the session should do, up to {MAX_PROMPT} characters.
           </Text>
@@ -381,7 +386,12 @@ export function NewSessionDialog({
           autoFocus
         >
           <Label>Folder</Label>
-          <Input ref={folderInput} className={styles.input} />
+          <Input
+            ref={folderInput}
+            className={styles.input}
+            autoComplete="off"
+            spellCheck={false}
+          />
           <Text slot="description" className={styles.fieldHelp}>
             A local folder. Network folders aren&apos;t allowed.
           </Text>

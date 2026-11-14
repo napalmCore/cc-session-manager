@@ -6,6 +6,7 @@ import {
   createSearch,
   MAX_QUERY,
   findMatches,
+  matchText,
   MAX_LINE_CHARS,
   SNIPPET_LENGTH,
   type SearchFile,
@@ -429,5 +430,38 @@ describe("details within the time limit (NFR-15)", () => {
     expect(
       result.status === "done" ? result.sessions[0]?.folder : "x",
     ).toBeUndefined();
+  });
+});
+
+describe("work per message stays bounded (security review L-1)", () => {
+  it("counts every match but keeps positions only for those it needs", () => {
+    const text = "é needle ".repeat(10_000);
+    const { count, matches } = matchText(text, "needle", 3);
+    expect(count).toBe(10_000);
+    expect(matches).toHaveLength(3);
+    expect(text.slice(matches[1]?.at ?? 0, (matches[1]?.at ?? 0) + 6)).toBe(
+      "needle",
+    );
+  });
+
+  it("maps positions only where lowercasing changes a character's length", () => {
+    const text = "\u0130x needle";
+    expect(matchText(text, "needle", 1).matches).toEqual([
+      { at: 3, length: 6 },
+    ]);
+    expect(matchText("Ünïcode NEEDLE", "needle", 1).matches).toEqual([
+      { at: 8, length: 6 },
+    ]);
+  });
+
+  it("still gives each session at most three snippets and the full count", async () => {
+    const search = createSearch({
+      files: () =>
+        Promise.resolve([transcript(7, [typed("needle ".repeat(50))])]),
+    });
+    const result = await finish(search, search.start("needle") ?? "");
+    const hit = result.status === "done" ? result.sessions[0] : undefined;
+    expect(hit?.count).toBe(50);
+    expect(hit?.snippets).toHaveLength(3);
   });
 });
