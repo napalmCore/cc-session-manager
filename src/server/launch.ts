@@ -13,8 +13,9 @@ export interface ClaudeLaunch {
 
 /**
  * The arguments for `claude`, with every option before `--`, so a prompt or name that starts
- * with `-` is never read as an option (C-15). Only `--bg`, `-n`, `--resume`, and
- * `--fork-session` are ever passed, and a fork always has `--fork-session`.
+ * with `-` is never read as an option (C-15). Only `--bg`, `--name`, `--resume`, and
+ * `--fork-session` are ever passed, and a fork always has `--fork-session`. A name goes in the
+ * same argument as its option, so it can't be read as another option however it looks.
  */
 export function claudeArguments(launch: ClaudeLaunch): string[] {
   const args: string[] = [];
@@ -24,7 +25,7 @@ export function claudeArguments(launch: ClaudeLaunch): string[] {
   }
   if (launch.kind === "background") args.push("--bg");
   if (launch.name !== undefined && launch.name !== "") {
-    args.push("-n", launch.name);
+    args.push(`--name=${launch.name}`);
   }
   args.push("--");
   if (launch.kind === "background") {
@@ -82,7 +83,10 @@ const CONSOLE_SAFE = /^[A-Za-z0-9-]+$/;
 /** Whether these arguments can be passed without Windows Terminal. */
 export function consoleSafe(args: string[]): boolean {
   // Any name, however plain, needs Windows Terminal (0025).
-  return !args.includes("-n") && args.every((arg) => CONSOLE_SAFE.test(arg));
+  return (
+    !args.some((arg) => arg.startsWith("--name=")) &&
+    args.every((arg) => CONSOLE_SAFE.test(arg))
+  );
 }
 
 /**

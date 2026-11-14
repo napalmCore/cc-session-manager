@@ -442,7 +442,12 @@ export function SearchView(props: PastActionProps & { now: number }) {
           maxLength={200}
         >
           <Label>Search your prompts and Claude&apos;s replies</Label>
-          <Input ref={box} className={styles.input} />
+          <Input
+            ref={box}
+            className={styles.input}
+            autoComplete="off"
+            spellCheck={false}
+          />
         </SearchField>
         <div className={styles.actions}>
           <Button type="submit" className={styles.button} isPending={running}>

@@ -92,8 +92,7 @@ describe("Fork (FR-33)", () => {
       SESSION_ID,
       "--fork-session",
       "--bg",
-      "-n",
-      "copy",
+      "--name=copy",
       "--",
       "carry on",
     ]);
@@ -164,6 +163,7 @@ function tracker(options: {
   fresh?: SessionView[];
   historyFolder?: (id: string) => Promise<string | null>;
   transcriptExists?: (id: string) => Promise<boolean>;
+  lastActivity?: (id: string) => Promise<number | null>;
   stale?: boolean;
   fork?: (
     request: ForkRequest,
@@ -197,6 +197,7 @@ function tracker(options: {
     fork,
     historyFolder: options.historyFolder ?? (() => Promise.resolve(null)),
     transcriptExists: options.transcriptExists ?? (() => Promise.resolve(true)),
+    lastActivity: options.lastActivity ?? (() => Promise.resolve(0)),
   });
   return { t, fork, resume };
 }
@@ -326,6 +327,31 @@ describe("Resume from History (FR-35, FR-14, C-9)", () => {
       "refused",
     );
     expect(resume).not.toHaveBeenCalled();
+  });
+
+  it("refuses while a session in its folder has no ID yet, or it was active in the last minute (C-9)", async () => {
+    const starting = toSessionView({
+      id: "abcd1234",
+      kind: "background",
+      state: "working",
+      cwd: "c:\\WORK\\past",
+    });
+    const early = tracker({
+      historyFolder: () => Promise.resolve("C:\\work\\past"),
+      fresh: [starting],
+    });
+    expect(
+      (await early.t.handle({ action: "resume", key: PAST_ID })).message,
+    ).toMatch(/still starting/);
+    const recent = tracker({
+      historyFolder: () => Promise.resolve("C:\\work\\past"),
+      lastActivity: () => Promise.resolve(Date.now() - 5_000),
+    });
+    expect(
+      (await recent.t.handle({ action: "resume", key: PAST_ID })).message,
+    ).toMatch(/active in the last minute/);
+    expect(early.resume).not.toHaveBeenCalled();
+    expect(recent.resume).not.toHaveBeenCalled();
   });
 
   it("refuses when History doesn't know it, or the listing is out of date", async () => {

@@ -14,7 +14,7 @@ export const SEARCH_TIME_MS = 30_000;
 /** Results are kept this long after they're ready, unless fetched or cancelled sooner (C-16). */
 export const RESULTS_KEPT_MS = 60_000;
 /** A single transcript line longer than this is skipped, so memory and work stay bounded. */
-export const MAX_LINE_CHARS = 8 * 1024 * 1024;
+export const MAX_LINE_CHARS = 1024 * 1024;
 const CHUNK_BYTES = 64 * 1024;
 
 /** A main transcript to search, newest first. */
@@ -117,36 +117,63 @@ export function findMatches(
   text: string,
   needle: string,
 ): { at: number; length: number }[] {
-  // Plain ASCII text lowercases one for one, so positions need no map.
+  return matchText(text, needle, Number.POSITIVE_INFINITY).matches;
+}
+
+/**
+ * How many times the needle appears, and the positions of the first `keep` of them. Only those
+ * positions are kept, and a position map is built only when lowercasing changes a character's
+ * length, so a long message costs little more than its lowercased copy.
+ */
+export function matchText(
+  text: string,
+  needle: string,
+  keep: number,
+): { count: number; matches: { at: number; length: number }[] } {
+  let lower: string;
+  let from: Int32Array | null = null;
+  // Plain ASCII text lowercases one for one.
   if (!/[^\t\n\r\x20-\x7e]/.test(text)) {
-    const plain = text.toLowerCase();
-    const found: { at: number; length: number }[] = [];
-    let at = plain.indexOf(needle);
-    while (at !== -1) {
-      found.push({ at, length: needle.length });
-      at = plain.indexOf(needle, at + Math.max(1, needle.length));
+    lower = text.toLowerCase();
+  } else {
+    lower = "";
+    let sameLength = true;
+    for (const ch of text) {
+      const folded = ch.toLowerCase();
+      if (folded.length !== ch.length) sameLength = false;
+      lower += folded;
     }
-    return found;
+    if (!sameLength) {
+      // Where each character of the lowercased copy came from in the original.
+      from = new Int32Array(lower.length + 1);
+      let index = 0;
+      let at = 0;
+      for (const ch of text) {
+        const folded = ch.toLowerCase();
+        for (let i = 0; i < folded.length; i += 1) from[at + i] = index;
+        at += folded.length;
+        index += ch.length;
+      }
+      from[lower.length] = text.length;
+    }
   }
-  let lower = "";
-  const from: number[] = [];
-  let index = 0;
-  for (const ch of text) {
-    const folded = ch.toLowerCase();
-    lower += folded;
-    for (let i = 0; i < folded.length; i += 1) from.push(index);
-    index += ch.length;
-  }
-  from.push(text.length);
   const matches: { at: number; length: number }[] = [];
+  let count = 0;
   let at = lower.indexOf(needle);
   while (at !== -1) {
-    const start = from[at] ?? 0;
-    const end = from[at + needle.length] ?? text.length;
-    matches.push({ at: start, length: Math.max(1, end - start) });
+    count += 1;
+    if (matches.length < keep) {
+      if (from === null) {
+        matches.push({ at, length: needle.length });
+      } else {
+        const start = from[at] ?? 0;
+        const end = from[at + needle.length] ?? text.length;
+        matches.push({ at: start, length: Math.max(1, end - start) });
+      }
+    }
     at = lower.indexOf(needle, at + Math.max(1, needle.length));
   }
-  return matches;
+  return { count, matches };
 }
 
 /** Moves a cut point off the second half of a surrogate pair, so an emoji is never split. */
@@ -229,20 +256,22 @@ export function createSearch(options: SearchOptions) {
     text: string,
     needle: string,
   ) => {
-    for (const match of findMatches(text, needle)) {
-      let hit = run.hits.get(sessionId);
-      if (hit === undefined) {
-        hit = { sessionId, count: 0, snippets: [] };
-        run.hits.set(sessionId, hit);
-      }
-      hit.count += 1;
-      const roomForSession = hit.snippets.length < SNIPPETS_PER_SESSION;
-      const roomForSessions =
-        hit.snippets.length > 0 || run.withSnippets < SESSIONS_WITH_SNIPPETS;
-      if (roomForSession && roomForSessions) {
-        if (hit.snippets.length === 0) run.withSnippets += 1;
-        hit.snippets.push(snippetAround(text, match.at, match.length));
-      }
+    const existing = run.hits.get(sessionId);
+    const have = existing?.snippets.length ?? 0;
+    const roomForSessions =
+      have > 0 || run.withSnippets < SESSIONS_WITH_SNIPPETS;
+    const room = roomForSessions ? SNIPPETS_PER_SESSION - have : 0;
+    const { count, matches } = matchText(text, needle, room);
+    if (count === 0) return;
+    let hit = existing;
+    if (hit === undefined) {
+      hit = { sessionId, count: 0, snippets: [] };
+      run.hits.set(sessionId, hit);
+    }
+    hit.count += count;
+    for (const match of matches) {
+      if (hit.snippets.length === 0) run.withSnippets += 1;
+      hit.snippets.push(snippetAround(text, match.at, match.length));
     }
   };
 

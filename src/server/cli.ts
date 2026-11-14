@@ -318,6 +318,8 @@ actionsRef.current = createActionTracker({
     return checked.ok ? entry.folder : null;
   },
   transcriptExists: (sessionId) => transcriptExists(sessionId),
+  lastActivity: async (sessionId) =>
+    (await history.find(sessionId))?.lastActivityAt ?? null,
   leftovers: {
     // Stop and Delete record the session's programs first, with the same ownership check End
     // uses. A session with no process, such as a stopped one, has nothing new to record.

@@ -239,7 +239,7 @@ describe("Start (FR-32)", () => {
     });
     const plan = run.mock.calls[0]?.[0];
     expect(plan?.file).toBe(programs.claude);
-    expect(plan?.args).toEqual(["--bg", "-n", "-n x", "--", HOSTILE]);
+    expect(plan?.args).toEqual(["--bg", "--name=-n x", "--", HOSTILE]);
     expect(watch).toHaveBeenCalledTimes(1);
     // The prompt is never in the result (C-18).
     expect(JSON.stringify(result)).not.toContain("PATH");
@@ -307,7 +307,7 @@ describe("Start (FR-32)", () => {
     expect(result.outcome).toBe("started");
     const [plan, env] = launch.mock.calls[0] ?? [];
     expect(plan?.file).toBe(programs.wt);
-    expect(plan?.args.slice(-3)).toEqual(["-n", "a\\;b c", "--"]);
+    expect(plan?.args.slice(-2)).toEqual(["--name=a\\;b c", "--"]);
     expect(plan?.args.join(" ")).not.toContain(root);
     // The new session doesn't inherit the tool's own session identity.
     expect(env?.CLAUDECODE).toBeUndefined();
