@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 4, Phase 3: Design.** 0.1.0 and 0.2.0 are released ([0017](decisions/0017-first-release.md)). Iteration 3 is closed ([0023](decisions/0023-iteration-4-plan.md)). Iteration 4, for 0.3.0, covers starting sessions, forking, a history of past sessions, and search inside conversations, with names set only when a session starts ([0023](decisions/0023-iteration-4-plan.md)).
+**Iteration 4, Phase 6: Release.** 0.1.0 and 0.2.0 are released ([0017](decisions/0017-first-release.md)). Iteration 4, for 0.3.0, covers starting sessions, forking, a history of past sessions, and search inside conversations, with names set only when a session starts ([0023](decisions/0023-iteration-4-plan.md)). Requirements, design, and the page are signed off ([0024](decisions/0024-iteration-4-requirements.md), [0025](decisions/0025-iteration-4-design.md), [0026](decisions/0026-iteration-4-page.md)). Implementation steps 1 to 7 are merged, and Testing is closed by the owner: see the [test plan](test-plan.md#iteration-4). 0.3.0 is being released as 0.2.0 was: a `v0.3.0` tag and a GitHub release, with the repository kept private.
 
 ## How these docs work
 

@@ -1,6 +1,6 @@
 {
   "name": "cc-session-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Manage and monitor Claude Code sessions",
   "license": "MIT",

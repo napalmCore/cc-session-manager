@@ -97,7 +97,7 @@ Ctrl+C on the real `cli.js` exited with code 0 in under 2 seconds, including wit
 
 ## Iteration 4
 
-- **Status:** every check below is done, waiting for the owner to close Testing. Implementation steps 1 to 7 are merged (#58 to #64), with the Testing fixes in #66 and #67, and main at `619c3e3`. No Critical or High bug is open, and the NFR-9 security review passed.
+- **Status:** exit criteria met on 2026-11-14, and Testing closed by the owner. Every check below is done. Implementation steps 1 to 7 are merged (#58 to #64), with the Testing fixes in #66 and #67, and main at `619c3e3`. No Critical or High bug is open, and the NFR-9 security review passed.
 - **Exit criteria:** the same as iteration 3: every check below done or recorded as not run, no Critical or High bug open, and NFR-9's security review passed, now covering Start, Fork, History, and Search.
 - **How:** a runner agent ran the live checks on `f71f920` with Claude Code 2.1.325, and a verifier agent audited the evidence and repeated L18, L20, L22, L23, and L24 on `5b73346`, after the security fixes (decision 0011). The owner chose that agents run them all, terminal windows included (2026-11-14). Agents used only throwaway folders under `~\source`, which inherit Claude Code's trust, started and ended only their own sessions, and ran their own server on a free port from the repository's modules, never the tool's own command. On real transcripts they printed only counts and timings.
 - **Not repeated on the final code:** L19, L21, and L25 ran on `f71f920` only. The verifier stubbed interactive launches rather than open terminals. L21's Resume came 48 s after the session's last activity, which #66's guard would now refuse until a minute has passed.
