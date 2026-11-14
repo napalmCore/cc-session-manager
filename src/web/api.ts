@@ -65,6 +65,8 @@ export interface HistoryEntryView {
   model?: string;
   usage?: SessionUsage;
   inList: boolean;
+  /** False when the folder is gone or not local, so Resume and Fork aren't offered. */
+  folderUsable: boolean;
 }
 
 export interface HistoryPageView {
@@ -96,6 +98,7 @@ export function readHistoryPage(data: unknown): HistoryPageView | null {
           ? { usage: entry.usage as unknown as SessionUsage }
           : {}),
         inList: entry.inList === true,
+        folderUsable: entry.folderUsable !== false,
       },
     ];
   });
@@ -133,6 +136,7 @@ export interface SearchHitView {
   lastActivityAt: number | null;
   /** Unknown when History had no details for it. */
   inList: boolean | null;
+  folderUsable: boolean;
 }
 
 export type SearchStatusView =
@@ -170,6 +174,7 @@ export function readSearchStatus(data: unknown): SearchStatusView {
         folder: stringOrNull(hit.folder),
         lastActivityAt: numberOrNull(hit.lastActivityAt),
         inList: typeof hit.inList === "boolean" ? hit.inList : null,
+        folderUsable: hit.folderUsable !== false,
       },
     ];
   });

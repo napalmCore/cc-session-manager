@@ -157,13 +157,17 @@ function FolderBrowser({
   const [loading, setLoading] = useState(false);
   const current = useRef<HTMLParagraphElement>(null);
   const moved = useRef(false);
+  const latest = useRef(0);
 
   const load = async (folder: string | undefined) => {
+    latest.current += 1;
+    const ticket = latest.current;
     setLoading(true);
     const { reply, data } = await postAction({
       action: "listFolders",
       ...(folder === undefined || folder === "" ? {} : { folder }),
     });
+    if (ticket !== latest.current) return;
     setLoading(false);
     if (reply.outcome !== "succeeded") {
       setError(reply.message);
@@ -207,6 +211,7 @@ function FolderBrowser({
             {parent !== null && (
               <Button
                 className={styles.button}
+                isDisabled={loading}
                 onPress={() => {
                   open(parent);
                 }}
@@ -231,6 +236,7 @@ function FolderBrowser({
                 <li key={drive}>
                   <Button
                     className={styles.button}
+                    isDisabled={loading}
                     onPress={() => {
                       open(drive);
                     }}
@@ -251,6 +257,7 @@ function FolderBrowser({
                 <li key={name}>
                   <Button
                     className={styles.button}
+                    isDisabled={loading}
                     onPress={() => {
                       open(joinFolder(folder, name));
                     }}
@@ -297,11 +304,14 @@ function DialogShell({
   isOpen,
   onClose,
   title,
+  pending,
   children,
 }: {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  /** While a start is pending, the dialog stays open for its result. */
+  pending: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -309,8 +319,9 @@ function DialogShell({
       className={styles.overlay}
       isOpen={isOpen}
       isDismissable={false}
+      isKeyboardDismissDisabled={pending}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !pending) onClose();
       }}
     >
       <Modal className={styles.modal}>
@@ -354,7 +365,12 @@ export function NewSessionDialog({
   };
 
   return (
-    <DialogShell isOpen={isOpen} onClose={onClose} title="New session">
+    <DialogShell
+      isOpen={isOpen}
+      onClose={onClose}
+      title="New session"
+      pending={pending}
+    >
       <form onSubmit={onSubmit} aria-describedby={error ? errorId : undefined}>
         <TextField
           className={styles.field}
@@ -407,7 +423,11 @@ export function NewSessionDialog({
           </p>
         )}
         <div className={styles.dialogButtons}>
-          <Button className={styles.button} onPress={onClose}>
+          <Button
+            className={styles.button}
+            isDisabled={pending}
+            onPress={onClose}
+          >
             Cancel
           </Button>
           <Button type="submit" className={styles.button} isPending={pending}>
@@ -457,6 +477,7 @@ export function ForkDialog({
       isOpen={target !== null}
       onClose={onClose}
       title="Fork session"
+      pending={pending}
     >
       {target !== null && (
         <form
@@ -484,7 +505,11 @@ export function ForkDialog({
             </p>
           )}
           <div className={styles.dialogButtons}>
-            <Button className={styles.button} onPress={onClose}>
+            <Button
+              className={styles.button}
+              isDisabled={pending}
+              onPress={onClose}
+            >
               Cancel
             </Button>
             <Button type="submit" className={styles.button} isPending={pending}>

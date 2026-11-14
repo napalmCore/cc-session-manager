@@ -154,6 +154,8 @@ const handoverSecret = newHandoverSecret();
 const historyReader = createTranscriptReader();
 const history = createHistory({
   read: (sessions) => historyReader.enrich(sessions),
+  // The drive type is checked before the folder is touched, so network folders never are.
+  canUse: async (folder) => (await checkLocalFolder(folder, driveType)).ok,
 });
 // Search reads History's list of transcripts, only while a search runs (FR-36, C-16).
 const search = createSearch({

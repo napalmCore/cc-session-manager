@@ -405,6 +405,98 @@ test.describe("Search (FR-36)", () => {
   });
 });
 
+test.describe("races and edges (review of #64)", () => {
+  test("a search cancelled while it's starting is stopped on the server, and never polled", async ({
+    page,
+  }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/search", async (route) => {
+      await held;
+      await route.continue();
+    });
+    await open(page);
+    await views(page).getByRole("link", { name: "Search" }).click();
+    await page.getByRole("searchbox").fill("needle");
+    await page.getByRole("searchbox").press("Enter");
+    await page.getByRole("button", { name: "Cancel search" }).click();
+    await expect(page.getByRole("searchbox")).toBeFocused();
+    release();
+    await expect.poll(() => cancels).toBe(1);
+    // Two polls were waiting; neither was taken.
+    await page.waitForTimeout(1200);
+    expect(polls).toHaveLength(2);
+  });
+
+  test("says when results have gone", async ({ page }) => {
+    polls = [{ status: "gone" }];
+    await open(page);
+    await views(page).getByRole("link", { name: "Search" }).click();
+    await page.getByRole("searchbox").fill("needle");
+    await page.getByRole("searchbox").press("Enter");
+    await expect(page.getByRole("alert")).toHaveText(
+      "The search's results are no longer available. Search again.",
+    );
+  });
+
+  test("offers no Resume or Fork in History where the folder can't be used", async ({
+    page,
+  }) => {
+    const base = historyReply(0, 1);
+    reply = (request) =>
+      request.action === "history" && base.history !== undefined
+        ? {
+            ...base,
+            history: {
+              ...base.history,
+              sessions: base.history.sessions.map((entry, index) =>
+                index === 0 ? { ...entry, folderUsable: false } : entry,
+              ),
+            },
+          }
+        : { outcome: "succeeded", message: "Done." };
+    await open(page);
+    await views(page).getByRole("link", { name: "History" }).click();
+    await expect(
+      page.getByText("Its folder is gone or isn't on a local drive"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("group", { name: /C:\\repos\\old/ }),
+    ).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("group", { name: /C:\\repos\\sample/ })
+        .getByRole("button"),
+    ).toHaveText(["Fork…"]);
+  });
+
+  test("a form can't be closed while its start is pending", async ({
+    page,
+  }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/actions", async (route) => {
+      if (route.request().postDataJSON()?.action === "start") await held;
+      await route.continue();
+    });
+    await open(page);
+    await page.getByRole("button", { name: "New session…" }).click();
+    const dialog = page.getByRole("dialog", { name: "New session" });
+    await dialog.getByLabel("Folder").fill("C:\\repos\\sample");
+    await dialog.getByLabel("Prompt", { exact: true }).fill("Go");
+    await dialog.getByRole("button", { name: "Start session" }).click();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    release();
+    await expect(dialog).toHaveCount(0);
+  });
+});
+
 test.describe("accessibility (NFR-16)", () => {
   const check = async (page: Page) => {
     const { violations } = await new AxeBuilder({ page })

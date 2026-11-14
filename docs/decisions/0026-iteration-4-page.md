@@ -29,4 +29,5 @@ The owner chose the first option each time:
 - Search results get History's details for the sessions shown with snippets, read once a search is done. The folder is already shown in History, so nothing new reaches the page. A search still keeps nothing once its results are fetched.
 - Fork is offered on every row with a session ID, the protected one and rows with actions turned off included, since forking changes nothing. It isn't offered where Claude Code reports the folder gone, because a fork runs there.
 - A History entry still in Claude Code's list offers only Fork; Resume is left to the session list.
-- The view links come before the page's other controls, so Tab reaches them first.
+- The header comes first in Tab order: the page heading, New session, then the view links.
+- History and search results offer Resume and Fork only when the session's folder can be used. The drive type is checked before the folder is touched, so a network, mapped, or `subst` folder is never touched and counts as unusable (the owner chose this in review of #64).

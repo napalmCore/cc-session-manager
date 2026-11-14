@@ -69,17 +69,27 @@ function PastActions({
   label,
   folder,
   inList,
+  folderUsable,
   props,
 }: {
   sessionId: string;
   label: string;
   folder: string | null;
   inList: boolean | null;
+  folderUsable: boolean;
   props: PastActionProps;
 }) {
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<ActionReply | null>(null);
   const forkButton = useRef<HTMLButtonElement>(null);
+  if (!folderUsable) {
+    return (
+      <p className={styles.note}>
+        Its folder is gone or isn&apos;t on a local drive, so it can&apos;t be
+        resumed or forked from here.
+      </p>
+    );
+  }
   return (
     <>
       <div
@@ -140,12 +150,17 @@ export function HistoryView(props: PastActionProps & { now: number }) {
   const [loading, setLoading] = useState(true);
   const heading = useRef<HTMLHeadingElement>(null);
   const turned = useRef(false);
+  // Only the latest request's reply is shown, so a late refresh can't replace a newer page.
+  const latest = useRef(0);
 
   const load = useCallback(async (at: number) => {
+    latest.current += 1;
+    const ticket = latest.current;
     const { reply, data: body } = await postAction({
       action: "history",
       page: at,
     });
+    if (ticket !== latest.current) return;
     const read =
       reply.outcome === "succeeded" ? readHistoryPage(body.history) : null;
     setLoading(false);
@@ -253,6 +268,7 @@ export function HistoryView(props: PastActionProps & { now: number }) {
                   label={label}
                   folder={entry.folder}
                   inList={entry.inList}
+                  folderUsable={entry.folderUsable}
                   props={props}
                 />
               </li>
@@ -264,21 +280,21 @@ export function HistoryView(props: PastActionProps & { now: number }) {
         <nav aria-label="History pages" className={styles.pager}>
           <Button
             className={styles.button}
-            isDisabled={data.page === 0 || loading}
+            isDisabled={page === 0 || loading}
             onPress={() => {
-              turn(data.page - 1);
+              turn(page - 1);
             }}
           >
             Newer
           </Button>
           <span>
-            Page {data.page + 1} of {data.pages}
+            Page {page + 1} of {data.pages}
           </span>
           <Button
             className={styles.button}
-            isDisabled={data.page >= data.pages - 1 || loading}
+            isDisabled={page >= data.pages - 1 || loading}
             onPress={() => {
-              turn(data.page + 1);
+              turn(page + 1);
             }}
           >
             Older
@@ -319,7 +335,8 @@ export function SearchView(props: PastActionProps & { now: number }) {
   const [error, setError] = useState<string | null>(null);
   const searchId = useRef<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
-  const summary = useRef<HTMLParagraphElement>(null);
+  const generation = useRef(0);
+  const box = useRef<HTMLInputElement>(null);
 
   const stopPolling = () => {
     window.clearTimeout(timer.current);
@@ -328,6 +345,7 @@ export function SearchView(props: PastActionProps & { now: number }) {
 
   const cancel = useCallback(() => {
     stopPolling();
+    generation.current += 1;
     const id = searchId.current;
     searchId.current = null;
     if (id !== null) void postJson(`/api/search/${id}/cancel`);
@@ -336,17 +354,17 @@ export function SearchView(props: PastActionProps & { now: number }) {
   // Leaving the view stops the search, so nothing is read for no one.
   useEffect(() => cancel, [cancel]);
 
-  const poll = (id: string) => {
+  const poll = (id: string, ticket: number) => {
     timer.current = window.setTimeout(() => {
       void postJson(`/api/search/${id}`).then((answer) => {
-        if (searchId.current !== id) return;
+        if (generation.current !== ticket || searchId.current !== id) return;
         const next =
           answer === null
             ? ({ status: "gone" } as const)
             : readSearchStatus(answer.data);
         if (next.status === "running") {
           setStatus(next);
-          poll(id);
+          poll(id, ticket);
           return;
         }
         searchId.current = null;
@@ -368,8 +386,16 @@ export function SearchView(props: PastActionProps & { now: number }) {
     cancel();
     setError(null);
     setStatus({ status: "running", filesDone: 0, filesTotal: 0 });
+    const ticket = generation.current;
     const answer = await postJson("/api/search", { query });
     const data = answer?.data as { id?: unknown; message?: unknown } | null;
+    // Cancelled, left, or replaced while it was starting: it's stopped on the server too.
+    if (generation.current !== ticket) {
+      if (typeof data?.id === "string") {
+        void postJson(`/api/search/${data.id}/cancel`);
+      }
+      return;
+    }
     if (
       answer === null ||
       answer.status !== 200 ||
@@ -384,7 +410,7 @@ export function SearchView(props: PastActionProps & { now: number }) {
       return;
     }
     searchId.current = data.id;
-    poll(data.id);
+    poll(data.id, ticket);
   };
 
   const running = status?.status === "running";
@@ -412,7 +438,7 @@ export function SearchView(props: PastActionProps & { now: number }) {
           maxLength={200}
         >
           <Label>Search your prompts and Claude&apos;s replies</Label>
-          <Input className={styles.input} />
+          <Input ref={box} className={styles.input} />
         </SearchField>
         <div className={styles.actions}>
           <Button type="submit" className={styles.button} isPending={running}>
@@ -425,6 +451,8 @@ export function SearchView(props: PastActionProps & { now: number }) {
                 cancel();
                 setStatus(null);
                 props.announce("Search cancelled.");
+                // The button goes away, so focus goes back to the search box.
+                box.current?.focus();
               }}
             >
               Cancel search
@@ -447,9 +475,7 @@ export function SearchView(props: PastActionProps & { now: number }) {
       )}
       {done !== null && (
         <>
-          <p ref={summary} className={styles.status}>
-            {resultsText(done)}
-          </p>
+          <p className={styles.status}>{resultsText(done)}</p>
           {done.sessions.length > 0 && (
             <ul className={styles.list} aria-label="Matching conversations">
               {done.sessions.map((hit) => (
@@ -507,6 +533,7 @@ function SearchHitRow({
         label={label}
         folder={hit.folder}
         inList={hit.inList}
+        folderUsable={hit.folderUsable}
         props={props}
       />
     </li>

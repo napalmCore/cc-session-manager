@@ -31,6 +31,7 @@ export interface SearchHit {
   folder?: string | null;
   lastActivityAt?: number | null;
   inList?: boolean;
+  folderUsable?: boolean;
 }
 
 /** What History knows about a session, shown beside its matches. */
@@ -38,6 +39,7 @@ export interface SearchDetails {
   folder: string | null;
   lastActivityAt: number | null;
   inList: boolean;
+  folderUsable?: boolean;
 }
 
 export type SearchStatus =
@@ -333,10 +335,20 @@ export function createSearch(options: SearchOptions) {
       const shown = [...run.hits.values()].filter(
         (hit) => hit.snippets.length > 0,
       );
+      // Held to the search's own time limit, so a busy History can't hold up the results.
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const details = await options.describe(
-          shown.map((hit) => hit.sessionId),
-        );
+        const details = await Promise.race([
+          options.describe(shown.map((hit) => hit.sessionId)),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => {
+                reject(new Error("timed out"));
+              },
+              Math.max(0, deadline - now()),
+            );
+          }),
+        ]);
         if (run.cancelled) return;
         for (const hit of shown) {
           const found = details.get(hit.sessionId);
@@ -344,9 +356,13 @@ export function createSearch(options: SearchOptions) {
           hit.folder = found.folder;
           hit.lastActivityAt = found.lastActivityAt;
           hit.inList = found.inList;
+          if (found.folderUsable !== undefined)
+            hit.folderUsable = found.folderUsable;
         }
       } catch {
         // Results still show, without their details.
+      } finally {
+        clearTimeout(timer);
       }
       if (run.cancelled) return;
     }

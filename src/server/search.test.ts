@@ -416,3 +416,18 @@ describe("details beside the results (FR-36)", () => {
     expect(plain.status === "done" ? plain.sessions[0]?.count : 0).toBe(1);
   });
 });
+
+describe("details within the time limit (NFR-15)", () => {
+  it("answers without details when History takes longer than the search may", async () => {
+    const search = createSearch({
+      files: () => Promise.resolve([transcript(6, [typed("needle")])]),
+      timeMs: 200,
+      describe: () => new Promise(() => undefined),
+    });
+    const result = await finish(search, search.start("needle") ?? "");
+    expect(result.status === "done" ? result.sessions[0]?.count : 0).toBe(1);
+    expect(
+      result.status === "done" ? result.sessions[0]?.folder : "x",
+    ).toBeUndefined();
+  });
+});

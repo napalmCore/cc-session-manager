@@ -340,3 +340,31 @@ describe("details for search results (FR-36)", () => {
     });
   });
 });
+
+describe("whether a past session's folder can be used (FR-33)", () => {
+  it("asks for each entry on a page and in search details, and leaves it out if the check fails", async () => {
+    transcript("a", id(1), [header, user(T0)], T0 + 1000);
+    transcript("b", id(2), [header, user(T0, "C:\\work\\gone")], T0 + 2000);
+    const canUse = vi.fn((folder: string) =>
+      folder.endsWith("gone") ? Promise.resolve(false) : Promise.resolve(true),
+    );
+    const history = createHistory({ root, read: noUsage, canUse });
+    const page = await history.page(0, []);
+    expect(
+      page.sessions.map((entry) => [entry.sessionId, entry.folderUsable]),
+    ).toEqual([
+      [id(2), false],
+      [id(1), true],
+    ]);
+    const found = await history.describe([id(2)], []);
+    expect(found.get(id(2))?.folderUsable).toBe(false);
+
+    const broken = createHistory({
+      root,
+      read: noUsage,
+      canUse: () => Promise.reject(new Error("no")),
+    });
+    const unknown = await broken.page(0, []);
+    expect(unknown.sessions[0]?.folderUsable).toBeUndefined();
+  });
+});
