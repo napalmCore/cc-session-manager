@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
 import type { SessionView } from "../shared/protocol.js";
 import type { ActionResult } from "./actions.js";
-import { claudeArguments, planBackground, planTerminal } from "./launch.js";
+import {
+  claudeArguments,
+  planBackground,
+  planTerminal,
+  sendArguments,
+} from "./launch.js";
 import { checkLocalFolder, type DriveTypeReader } from "./local-folder.js";
 import { hasControl, hasRawControl } from "./text-checks.js";
 import {
@@ -101,7 +106,10 @@ export function runBackground(
  * Claude Code's refusal, in the tool's own words (FR-18, 0025). Its text is only matched here,
  * never shown, logged, or kept.
  */
-export function refusalMessage(stderr: string): string {
+export function refusalMessage(
+  stderr: string,
+  fallback = "Claude Code refused to start the session.",
+): string {
   if (/workspace not trusted/i.test(stderr)) {
     return "Claude Code doesn't trust this folder yet. Run `claude` there once and accept its prompt.";
   }
@@ -116,7 +124,19 @@ export function refusalMessage(stderr: string): string {
   if (/outdated|update|restart/i.test(stderr)) {
     return "Claude Code's background service needs updating. Restart Claude Code and try again.";
   }
-  return "Claude Code refused to start the session.";
+  return fallback;
+}
+
+/** A message's own checks, in a message's words: a starting prompt's limits (NFR-17). */
+export function checkMessageText(message: string): string | null {
+  if (message.trim() === "") return "Type a message to send.";
+  if (message.length > MAX_PROMPT) {
+    return `A message can be at most ${String(MAX_PROMPT)} characters.`;
+  }
+  if (hasRawControl(message, "\n\r\t")) {
+    return "A message can't contain control characters other than line breaks and tabs.";
+  }
+  return null;
 }
 
 const BACKGROUNDED = /^backgrounded\s+·\s+([0-9a-f]{8})\b/;
@@ -142,6 +162,26 @@ export interface ForkRequest {
   name?: string | undefined;
   prompt?: string | undefined;
 }
+
+/** A Send request (FR-37): the page names only the session. */
+export interface SendRequest {
+  action: "send";
+  key: string;
+  message: string;
+}
+
+/** The session a message goes to, from a fresh listing on the server. */
+export interface SendTarget {
+  shortId: string;
+  sessionId: string;
+  folder: string;
+  /** Its state before the send, so an old failure isn't taken for a new one. */
+  state: string;
+}
+
+/** Claude Code says this when it brought a session back with its saved options. */
+const woke = (shortId: string) =>
+  `note: woke session ${shortId} with its saved options`;
 
 /** Where a fork runs: the session's own ID and folder, from the server's own data. */
 export interface ForkTarget {
@@ -271,6 +311,89 @@ export function createLauncher(options: StartOptions) {
   };
 
   return {
+    /**
+     * Sends a message to a background session that isn't running (FR-37), as its next turn.
+     * The message is never logged, kept, or repeated in the result (C-21).
+     */
+    async send(
+      request: SendRequest,
+      target: SendTarget,
+    ): Promise<ActionResult> {
+      if (programs.claude === null) return unavailable;
+      const problem = checkMessageText(request.message);
+      if (problem !== null) return refused(problem);
+      const folder = await checkLocalFolder(target.folder, options.driveType);
+      if (!folder.ok) {
+        return refused(`The session's folder can't be used: ${folder.message}`);
+      }
+      let args: string[];
+      try {
+        args = sendArguments(target.sessionId, request.message);
+      } catch {
+        return refused("That session can't take a message.");
+      }
+      const result = await run(
+        planBackground(programs, args, target.folder),
+        options.environment ?? process.env,
+      );
+      if (result.kind === "timeout") {
+        return {
+          outcome: "unknown",
+          message:
+            "Claude Code didn't answer in time, so the message may have been sent. Check the session.",
+        };
+      }
+      if (result.kind === "error") {
+        return { outcome: "failed", message: "Claude Code couldn't be run." };
+      }
+      if (result.code !== 0) {
+        return refused(
+          refusalMessage(result.stderr, "Claude Code refused the message."),
+        );
+      }
+      const id = BACKGROUNDED.exec(result.stdout.trimStart())?.[1];
+      if (id === undefined) {
+        return {
+          outcome: "unknown",
+          message: "Couldn't confirm the message was sent. Check the session.",
+        };
+      }
+      if (id !== target.shortId) {
+        // The session began running in the meantime, so Claude Code started a copy (0028).
+        return {
+          outcome: "started",
+          message: `Claude Code started a new session, ${id}, with your message, because this one was running.`,
+          newSessionId: id,
+        };
+      }
+      // A session that was already failed counts as failing again only after it has run.
+      let ran = target.state !== "failed";
+      const watched = await options.watch((sessions: SessionView[]) =>
+        sessions.some((session) => {
+          if (session.id !== id) return false;
+          if (session.pid !== undefined || session.state !== "failed") {
+            ran = true;
+            return false;
+          }
+          return ran;
+        }),
+      );
+      if (watched.met) {
+        return {
+          outcome: "failed",
+          message:
+            "Claude Code took the message, but the session failed straight away.",
+        };
+      }
+      const restored = result.stderr.includes(woke(target.shortId));
+      return {
+        outcome: "succeeded",
+        message: restored
+          ? "Message sent. The session is running again."
+          : "Message sent. The session is running again. Claude Code didn't say it restored the session's saved options.",
+      };
+    },
+
     async start(request: StartRequest): Promise<ActionResult> {
       if (programs.claude === null) return unavailable;
       const problem = checkStartText(

@@ -372,6 +372,41 @@ describe("POST /api/actions", () => {
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
+  it("takes a Send naming only a session and a message, never a folder or options, with the larger limit (NFR-17)", async () => {
+    const cookie = await login();
+    const headers = {
+      cookie,
+      "x-ccsm-key": pageKey,
+      origin: origin(),
+      "content-type": "application/json",
+    };
+    const ok = await send(
+      "POST",
+      "/api/actions",
+      headers,
+      JSON.stringify({
+        action: "send",
+        key: "abcd1234",
+        message: "x".repeat(8000),
+      }),
+    );
+    expect(ok.status).toBe(200);
+    for (const body of [
+      { action: "send", key: "abcd1234", message: "hi", folder: "C:/x" },
+      { action: "send", key: "abcd1234", message: "hi", sessionId: "x" },
+      { action: "send", key: "abcd1234", message: "hi", args: ["--x"] },
+      { action: "send", key: "abcd1234" },
+      { action: "send", message: "hi" },
+      { action: "send", key: "abcd1234", message: "x".repeat(20_001) },
+    ]) {
+      expect(
+        (await send("POST", "/api/actions", headers, JSON.stringify(body)))
+          .status,
+      ).toBe(400);
+    }
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
   it("can't be triggered by a read", async () => {
     const cookie = await login();
     await send("GET", "/api/actions?action=stop&key=abcd1234", {
