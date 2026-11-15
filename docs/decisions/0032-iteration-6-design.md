@@ -1,0 +1,26 @@
+# 0032: Iteration 6 design choices
+
+- **Status:** Accepted
+- **Date:** 2026-11-15
+- **Amends:** C-22 and FR-44 in [0031](0031-iteration-6-requirements.md)'s requirements, and the name rules of FR-34
+
+## Context
+
+Design research for iteration 6 read Claude Code's documentation and the systems' manuals, and ran throwaway probes on GitHub's macOS and Ubuntu runners, as the owner chose. It found that Konsole expands `$` variables in its arguments, that reading the macOS mount table needs `/sbin/mount`, that `realpath` and `statfs` hang on a dead network mount while the mount tables don't, and that `fish` and `tcsh` break single-quoted `\` and `!`. The details are in the design's Iteration 6 section.
+
+## Options considered
+
+- **`$` in names:** refuse it on every system, as `%` is; or skip Konsole for a name with `$`.
+- **Removable-disk filesystems:** allow FAT, exFAT, NTFS (`ntfs3`), and msdos as local; or refuse them.
+- **A Linux terminal that exits with code 0 within about 2 seconds:** report failed and stop; or try the next terminal.
+- **A macOS folder with `\` or `!`:** show the command for it; or open Terminal anyway.
+
+## Decision
+
+The owner chose the first option each time.
+
+## Consequences
+
+- C-22 adds `/sbin/mount` on macOS, and FR-44 names the removable-disk types. A name can't contain `$` or `%` anywhere.
+- U-30 to U-33 are resolved in the requirements. Process names, the first Automation prompt, and real network mounts need a live check once a machine is available.
+- Implementation starts with CI on all three systems.

@@ -847,3 +847,94 @@ An agent re-checks each bug live on its own throwaway sessions, with the same ru
 - **Browser tests:** the Send dialog, its refusal and success, focus, the waiting labels, and axe in both themes.
 - **Live checks:** Send to a `done` session and to a `failed` one, each with no process; to one that gains a process in the meantime, giving a copy; the refusal for a session with a process; and the waiting labels if a waiting session can be seen without answering it.
 - **Security review (NFR-9):** Send and its route, before release.
+
+## Iteration 6
+
+Requirements: the Iteration 6 section of [requirements.md](requirements.md). Decisions: [0030](decisions/0030-iteration-6-plan.md), [0031](decisions/0031-iteration-6-requirements.md), and [0032](decisions/0032-iteration-6-design.md).
+
+### Research (U-30 to U-33)
+
+An agent read Claude Code's documentation and the systems' manuals, and ran throwaway probe workflows on GitHub's macOS 26 and Ubuntu 26.04 runners, with Node 24, no secrets, and nothing merged. Nothing was tried with a real Claude Code session, so process names and the first macOS Automation prompt need a live check.
+
+- **macOS Terminal:** `osascript` passes its arguments through unchanged, and `--` must come first or a leading `-` is read as an option. Quoting with single quotes survived 25 hostile folder names in `sh`, `bash`, and `zsh`, but `fish` breaks on `\` and `tcsh` on `!`. `do script` types the text into the shell, so a control character would run part of it early. With no one to allow Automation, `osascript` waited until it timed out.
+- **Mount tables:** `/proc/self/mountinfo` on Linux and `/sbin/mount` on macOS answered in milliseconds while an NFS mount was hung, but `stat`, `realpath`, and `statfs` on it hung, and a time limit in Node can't free the thread they block. Mount points use octal escapes on Linux. Stacked mounts list the top one last. macOS marks local volumes with a `local` flag; `/home` there is autofs.
+- **Claude Code:** the documentation gives the same `claude agents --json` fields, commands, and variables on every system. npm now installs the native program, not a Node script. On macOS, background sessions can run from `~/.local/share/claude/ClaudeCode.app`.
+- **Linux terminals:** `gnome-terminal --wait --working-directory=<folder> -- <program> <args>`, `konsole --workdir <folder> -e <program> <args>`, `xterm -e <program> <args>`, and `x-terminal-emulator -e <program> <args>` passed every hostile argument through unchanged, except that Konsole, and `x-terminal-emulator` when it's Konsole, expand set `$` variables. A bad folder falls back to the home folder silently. Without `--wait`, `gnome-terminal` always exits 0.
+- **`ps`:** `ps -ww -o ppid=,lstart=,comm=,args= -p <pid>`, with `LC_ALL=C` and `TZ=UTC0`, gives the parent, a start time to the second, and the program. A walk takes under 60 ms. On Linux, Node shows as `MainThread`.
+
+### Platforms (FR-40, C-22)
+
+- **One module per concern:** `platform.ts` decides the system once and holds the programs, data folder, browser, terminal, folder-check, and protection code for each. Windows keeps today's code paths unchanged.
+- **Programs:** found on a cleaned `PATH`, with empty, relative, and `.` entries removed, and run with no shell. `ps`, `/sbin/mount`, and `osascript` are run by absolute path. `sessionLaunchEnv` cleans the launched program's `PATH` the same way.
+- **Names:** `$` is refused in names on every system, as `%` is (0032).
+
+### Data folder (FR-41)
+
+The folder is created with mode 0700 and its files with 0600. At start, the tool checks the folder and its files, sets them back to those modes if others could read or write them, and stops with a message if it can't.
+
+### Browser (FR-42)
+
+`open <link>` on macOS and `xdg-open <link>` on Linux, unless neither `DISPLAY` nor `WAYLAND_DISPLAY` is set. One shared check for a display serves both FR-42 and FR-43.
+
+### Terminals (FR-43)
+
+- **macOS:** a fixed AppleScript, passed as `-e` lines to `/usr/bin/osascript`, takes one argument after `--`: the command `cd '<folder>' && '<claude>' attach <ID>`, or `--resume <UUID>`, each part quoted with single quotes. It runs it with `do script` in Terminal. A folder or Claude Code path with `\`, `!`, or a control character shows the command instead (0032). The tool waits up to 120 seconds: exit 0 is started; a refusal to send Apple events or a timeout is failed, with a hint to allow Automation for the terminal the tool runs in, in System Settings, Privacy and Security.
+- **Linux:** in order, `x-terminal-emulator`, `gnome-terminal` (with `--wait`), `konsole`, and `xterm`, each with the program and its arguments as separate words, at least two of them, the folder as an option where one exists and always as the working folder, and the folder checked again just before. The tool waits about 2 seconds:
+  - The program couldn't run, or it exited with an error or a signal: try the next terminal.
+  - Still running: started.
+  - Exited with code 0 that quickly: Claude Code probably failed at once, so the result is failed, with the command shown, and no further terminal is tried (0032).
+- **The command shown:** each part quoted for `sh`, with the folder first, as `cd '<folder>' && '<claude>' …`.
+
+### Folder checks (FR-44)
+
+- **The table:** `/proc/self/mountinfo` on Linux, read with a 2-second limit and its `\ooo` escapes decoded; on macOS, `/sbin/mount` with `LC_ALL=C` and a 5-second limit, each line parsed as `<source> on <path> (<type>, <flags>)`.
+- **Resolving without touching a network folder:** the folder is resolved one part at a time. Before each `lstat` or `readlink`, the path so far is matched to its mount by the longest prefix, the last listed winning on a tie, and refused unless its type is allowed. Links are followed up to 40 times, restarting from `/` for an absolute target. `realpath`, `stat`, and `statfs` are never called on a folder that hasn't passed.
+- **Allowed types:** on Linux, `ext2`, `ext3`, `ext4`, `xfs`, `btrfs`, `zfs`, `f2fs`, `bcachefs`, `jfs`, `reiserfs`, `tmpfs`, `ramfs`, `overlay`, `vfat`, `exfat`, and `ntfs3`; on macOS, `apfs`, `hfs`, `exfat`, and `msdos` with the `local` flag (0032). Everything else is refused, including `fuse.*`, `fuseblk`, network types, `9p`, `virtiofs`, `autofs`, and the virtual ones.
+- **Browse:** the home folder, `/`, and the mounted volumes under `/Volumes`, `/media/$USER`, `/run/media/$USER`, and `/mnt`, each listed only if it passes.
+- **Case:** paths are compared exactly on Linux. On macOS they're compared as the volume does, which is without case on the usual boot volume (C-24).
+
+### Self-protection (FR-45)
+
+- **Variables:** `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, and `CLAUDE_PID`, as on Windows.
+- **The walk:** from the tool's parent up to process 1 with `ps`. A process is Claude Code's when the first word of its arguments has the base name `claude`, or it's `node` running a path that ends in `@anthropic-ai/claude-code/cli.js`, or, on Linux, its program file matches `/claude/versions/<version>`. The first one found is matched to the listing by process ID and start time, allowing a second for `ps`'s precision.
+- **Can't tell:** `ps` fails, a variable names a session the listing doesn't show, or the walk finds a Claude Code process that isn't listed. Stop, Delete, and Send are then turned off. A second start does the same and hands over what it finds.
+
+### Page (FR-46)
+
+On macOS and Linux, End, Force end, and End leftover programs aren't offered, and the page says once that they're Windows-only for now. Stop and Delete don't record leftover programs, and their result says nothing about them.
+
+### CI (NFR-19)
+
+One job per system, on every pull request and push to `main`, with `fail-fast: false` and time limits of 15 minutes on Windows and macOS and 10 on Linux. Linux installs Playwright's browser with its system packages. Windows-only tests are skipped elsewhere, and `main` requires all three jobs.
+
+### Requirements coverage
+
+| Requirement  | Design                                                                    |
+| ------------ | ------------------------------------------------------------------------- |
+| FR-40, C-22  | Platforms                                                                 |
+| FR-41        | Data folder                                                               |
+| FR-42        | Browser                                                                   |
+| FR-43        | Terminals                                                                 |
+| FR-44, C-24  | Folder checks                                                             |
+| FR-45        | Self-protection                                                           |
+| FR-46        | Page                                                                      |
+| NFR-19       | CI                                                                        |
+| NFR-20, C-23 | Every step keeps the existing guards and tests, with POSIX hostile inputs |
+
+### Build plan
+
+| Step | Change                                                                               | Covers             |
+| ---- | ------------------------------------------------------------------------------------ | ------------------ |
+| 1    | CI on all three systems, with Windows-only tests skipped elsewhere                   | NFR-19             |
+| 2    | The platform module, programs on a cleaned `PATH`, `$` in names, and the data folder | FR-40, FR-41, C-22 |
+| 3    | Folder checks from the mount table, and Browse's roots                               | FR-44, C-24        |
+| 4    | Self-protection by the walk, and the hand-over                                       | FR-45              |
+| 5    | Browser and terminals on macOS and Linux                                             | FR-42, FR-43       |
+| 6    | The page: End hidden with its note, and Stop and Delete without leftover recording   | FR-46              |
+
+### Testing approach
+
+- **Unit tests:** each platform's code with stand-ins for `ps`, the mount table, and the terminals, run on every system; the mount-table parsers on real samples from the probes; the step-by-step resolver against links, `..`, and stacked mounts; the AppleScript and `sh` quoting against the probes' hostile names; planted `claude`, `node`, and terminal programs in the session's folder that must never run; and the data folder's modes.
+- **Browser tests:** the page on each system in CI, with End hidden and its note on macOS and Linux.
+- **Live checks:** recorded as not run on macOS and Linux until a machine is available. When one is: a real session's process names, the first Automation prompt, Terminal opening in the folder, each Linux terminal, and an NFS or SMB folder being refused.
+- **Security review (NFR-9):** the new launches, the folder checks, and the walk, before release.
