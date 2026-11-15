@@ -3,6 +3,7 @@ import { toSessionView } from "../server/rules.js";
 import type { LeftoverOffer, Session, SessionView } from "./protocol.js";
 import {
   canFork,
+  canSend,
   actionContext,
   actionKey,
   availableActions,
@@ -261,5 +262,31 @@ describe("Fork on the list (FR-33)", () => {
       missingFolders: [ID],
     });
     expect(canFork(view({ sessionId: ID, finished: true }), gone)).toBe(false);
+  });
+});
+
+describe("Send on the list (FR-37)", () => {
+  const ID = "11111111-1111-4111-8111-111111111111";
+  const parked = (fields: Partial<Session> = {}) =>
+    toSessionView({
+      id: "cafe0001",
+      sessionId: ID,
+      kind: "background",
+      state: "done",
+      cwd: "C:\\work",
+      ...fields,
+    });
+  const context = (fields: Partial<Parameters<typeof actionContext>[0]> = {}) =>
+    actionContext({ sessions: [], error: null, warnings: [], ...fields });
+
+  it("is offered on a background session with no process, unless actions are off, it's protected, or its folder has gone", () => {
+    expect(canSend(parked(), context())).toBe(true);
+    expect(canSend(parked({ state: "failed" }), context())).toBe(true);
+    expect(canSend(parked({ pid: 3 }), context())).toBe(false);
+    expect(
+      canSend(parked(), context({ actionsBlocked: "Actions are turned off." })),
+    ).toBe(false);
+    expect(canSend(parked(), context({ protectedSessions: [ID] }))).toBe(false);
+    expect(canSend(parked(), context({ missingFolders: [ID] }))).toBe(false);
   });
 });

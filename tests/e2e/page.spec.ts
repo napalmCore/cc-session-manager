@@ -635,6 +635,85 @@ test.describe("Send (FR-37)", () => {
     ).toBeVisible();
   });
 
+  test("keeps focus on the row when Send… goes away as the session runs (NFR-8)", async ({
+    page,
+  }) => {
+    await open(page);
+    await sendButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Send a message" });
+    await dialog.getByLabel("Message", { exact: true }).fill("hi");
+    await dialog.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(sendButton(page)).toBeFocused();
+    const now = Date.now();
+    server.publish(
+      snapshot({
+        sessions: [
+          ...sessions(now),
+          {
+            ...parked(now),
+            state: "working",
+            statusLabel: "working",
+            finished: false,
+            pid: 77,
+          },
+        ],
+      }),
+    );
+    await expect(sendButton(page)).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.activeElement
+              ?.closest("[data-session-key]")
+              ?.getAttribute("data-session-key") ??
+            document.activeElement?.tagName,
+        ),
+      )
+      .toBe("cafe0001");
+  });
+
+  test("closes on a failed result too, since the message may have gone", async ({
+    page,
+  }) => {
+    reply = () => ({
+      outcome: "failed",
+      message:
+        "Claude Code took the message, but the session failed straight away.",
+    });
+    await open(page);
+    await sendButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Send a message" });
+    await dialog.getByLabel("Message", { exact: true }).fill("hi");
+    await dialog.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator("[data-announcer]")).toContainText(
+      "failed straight away",
+    );
+  });
+
+  test("isn't offered on a finished background session that still has a process, which keeps Open", async ({
+    page,
+  }) => {
+    const now = Date.now();
+    await open(
+      page,
+      snapshot({
+        sessions: [...sessions(now), { ...parked(now), pid: 55 }],
+      }),
+    );
+    const actions = page.getByRole("group", { name: /"parked"/ });
+    await expect(actions.getByRole("button", { name: "Open" })).toBeVisible();
+    await expect(sendButton(page)).toHaveCount(0);
+  });
+
+  test("isn't offered where the folder has gone", async ({ page }) => {
+    await open(page, snapshot({ missingFolders: [PARKED_ID] }));
+    await expect(page.getByText("parked").first()).toBeVisible();
+    await expect(sendButton(page)).toHaveCount(0);
+  });
+
   test("isn't offered while actions are turned off", async ({ page }) => {
     await open(page, snapshot({ actionsBlocked: "Actions are turned off." }));
     await expect(page.getByText("parked").first()).toBeVisible();

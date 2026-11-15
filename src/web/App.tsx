@@ -373,7 +373,7 @@ function SessionList({
                 key === undefined || !canSend(session, actionProps.context)
                   ? undefined
                   : (from) => {
-                      actionProps.onSend({ key, label }, from);
+                      actionProps.onSend({ key, label, groupId }, from);
                     }
               }
               onFork={
@@ -707,7 +707,11 @@ export function App() {
   const actions = useSessionActions(announce);
   const { run, lastTarget } = actions;
   const [confirming, setConfirming] = useState<
-    (Confirming & { session: SessionView; target: FocusTarget }) | null
+    | (Confirming & {
+        session: SessionView;
+        target: FocusTarget & { action: SessionAction };
+      })
+    | null
   >(null);
   const onAction = useCallback(
     (
@@ -1019,6 +1023,13 @@ export function App() {
           onSent={(reply, data) => {
             announce(`Send, ${sendTarget.label}: ${reply.message}`);
             closeForm();
+            // Send… goes away once the session runs, so focus follows the row as for other
+            // row actions, but only if it's lost (NFR-8).
+            lastTarget.current = {
+              key: sendTarget.key,
+              action: "send",
+              groupId: sendTarget.groupId,
+            };
             // A new session Claude Code started instead is highlighted once it's listed (FR-37).
             const started = data.newSessionId;
             if (typeof started === "string" && /^[0-9a-f]{8}$/.test(started)) {

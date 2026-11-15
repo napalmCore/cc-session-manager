@@ -551,9 +551,13 @@ export function ForkDialog({
 export interface SendTargetView {
   key: string;
   label: string;
+  /** The row's group, where focus goes if the row has gone. */
+  groupId: string;
 }
 
-const SEND_CLOSES_ON = ["started", "succeeded", "unknown"] as const;
+// Every outcome but a refusal or "unavailable" may mean the message went, so the form
+// closes rather than invite sending it again.
+const SEND_CLOSES_ON = ["started", "succeeded", "unknown", "failed"] as const;
 
 /** Send (FR-37): a message to a background session that isn't running. The form is the confirmation. */
 export function SendDialog({

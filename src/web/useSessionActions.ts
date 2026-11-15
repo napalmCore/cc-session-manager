@@ -21,7 +21,8 @@ export interface ActionResultView {
 /** Where focus goes once an action or its dialog is done (NFR-8). */
 export interface FocusTarget {
   key: string;
-  action: SessionAction;
+  /** The button to return to; Send and Fork are row buttons too. */
+  action: SessionAction | "send" | "fork";
   groupId: string;
 }
 
