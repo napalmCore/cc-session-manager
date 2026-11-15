@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Keeps CI's pinned actions current, through pull requests that CI checks (PU-4).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -48,6 +48,10 @@ The tool itself sends nothing off your computer. It runs `claude agents --json -
 
 `pnpm check` runs type checks, lint, formatting, and unit tests. `pnpm test:e2e` builds and runs the browser tests. The project's requirements, design, test plan, and decisions are in [`docs/`](docs/README.md).
 
+## Security
+
+Report a vulnerability privately, as [SECURITY.md](SECURITY.md) explains.
+
 ## License
 
 [MIT](LICENSE)

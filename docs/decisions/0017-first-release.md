@@ -47,5 +47,5 @@ Iteration 1 passed Testing but wasn't released. The owner chose to build iterati
 
 - Users need Git, Node 24, and pnpm to install it, and must build it themselves.
 - Searches for the name will also find the other projects.
-- The release is a tag and a GitHub release while the repository is private. It reaches anyone only once the owner makes the repository public.
+- The release is a tag and a GitHub release while the repository is private. It reaches anyone only once the owner makes the repository public. The owner made it public on 2026-11-14 (decision 0027).
 - Later releases follow the same steps, with 0.2.0 and up for later iterations.
