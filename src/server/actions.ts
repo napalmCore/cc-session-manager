@@ -427,11 +427,14 @@ export function createActionTracker(options: ActionTrackerOptions) {
       const sessionKey = match.sessionId ?? match.id ?? key;
       // The user's own action, so the session's changes don't notify for a while (FR-12).
       ownActions.set(sessionKey, now());
-      try {
-        return await send(request, target);
-      } finally {
+      const result = await send(request, target);
+      // Refused before Claude Code changed anything, so the session's events notify as usual.
+      if (result.outcome === "refused" || result.outcome === "unavailable") {
+        ownActions.delete(sessionKey);
+      } else {
         ownActions.set(sessionKey, now());
       }
+      return result;
     } finally {
       locks.delete(lockKey);
     }

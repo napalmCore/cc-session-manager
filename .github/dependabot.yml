@@ -5,3 +5,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Keeps the project's own dependencies current, through pull requests that CI checks.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly

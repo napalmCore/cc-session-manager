@@ -799,7 +799,8 @@ export function App() {
     [],
   );
   // Focus goes back to the button that opened a form, once it's closed.
-  const closeForm = useCallback(() => {
+  // Closes a form, returning focus to its button, or else to `row` when one is given.
+  const closeFormTo = useCallback((row: FocusTarget | null) => {
     setNewOpen(false);
     setForkTarget(null);
     setSendTarget(null);
@@ -807,9 +808,15 @@ export function App() {
     opener.current = null;
     window.setTimeout(() => {
       if (back?.isConnected === true) back.focus();
+      // The button that opened the form went away, as Send… does once the session runs, so
+      // focus goes to its row, as for other row actions (NFR-8, BUG-34).
+      else if (row !== null) restoreFocus(row);
       else document.querySelector<HTMLElement>("h1")?.focus();
     }, 0);
   }, []);
+  const closeForm = useCallback(() => {
+    closeFormTo(null);
+  }, [closeFormTo]);
 
   const groups = groupSessions(snapshot?.sessions ?? [], now);
   const offers = snapshot?.leftovers ?? [];
@@ -1022,14 +1029,15 @@ export function App() {
           onClose={closeForm}
           onSent={(reply, data) => {
             announce(`Send, ${sendTarget.label}: ${reply.message}`);
-            closeForm();
             // Send… goes away once the session runs, so focus follows the row as for other
-            // row actions, but only if it's lost (NFR-8).
-            lastTarget.current = {
+            // row actions, now and on the next update, but only if it's lost (NFR-8).
+            const row: FocusTarget = {
               key: sendTarget.key,
               action: "send",
               groupId: sendTarget.groupId,
             };
+            lastTarget.current = row;
+            closeFormTo(row);
             // A new session Claude Code started instead is highlighted once it's listed (FR-37).
             const started = data.newSessionId;
             if (typeof started === "string" && /^[0-9a-f]{8}$/.test(started)) {
