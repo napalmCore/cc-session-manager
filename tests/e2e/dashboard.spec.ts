@@ -221,8 +221,14 @@ test.describe("session groups", () => {
 
     const needsYou = section(page, /needs you/i);
     await expect(needsYou.getByText("prompting")).toBeVisible();
-    await expect(needsYou.getByText("permission prompt")).toBeVisible();
-    await expect(needsYou.getByText("needs input")).toBeVisible();
+    await expect(
+      needsYou.getByText("Waiting on a permission prompt"),
+    ).toBeVisible();
+    await expect(needsYou.getByText("Needs you in Claude Code")).toBeVisible();
+    // The dashboard never answers a prompt, so each waiting row says where to (FR-38).
+    await expect(needsYou.getByText("Answer it in Claude Code.")).toHaveCount(
+      2,
+    );
     await expect(
       section(page, /active/i).getByText("running", { exact: true }),
     ).toBeVisible();
@@ -457,7 +463,7 @@ test.describe("desktop notifications", () => {
       .toEqual([
         {
           title: "Claude Code session",
-          body: "alpha: permission prompt",
+          body: "alpha: Waiting on a permission prompt",
           tag: "cc-session-manager-2",
         },
       ]);
@@ -593,7 +599,7 @@ test.describe("screen reader announcements", () => {
     );
 
     await expect(
-      announcement(page, "newly-blocked needs you: permission prompt."),
+      announcement(page, "newly-blocked: Waiting on a permission prompt."),
     ).toBeAttached();
     await expect(page).toHaveTitle("(1) Claude Code sessions");
   });
@@ -683,7 +689,7 @@ test.describe("screen reader announcements", () => {
       .poll(async () => (await announcements(page)).join(" "), {
         timeout: 5000,
       })
-      .toMatch(/first-one needs you.*second-one needs you/);
+      .toMatch(/first-one: .*second-one: /);
   });
 
   test("keeps an announcement for a second before the next replaces it (BUG-16)", async ({
@@ -691,21 +697,21 @@ test.describe("screen reader announcements", () => {
   }) => {
     await open(page, snapshot({ sessions: [] }));
     server.publish(snapshot({ sessions: [waiting("a", "first-one")] }));
-    await expect(announcement(page, "first-one needs you")).toBeAttached();
+    await expect(announcement(page, "first-one: ")).toBeAttached();
     server.publish(
       snapshot({
         sessions: [waiting("a", "first-one"), waiting("b", "second-one")],
       }),
     );
     await page.waitForTimeout(600);
-    await expect(announcement(page, "first-one needs you")).toBeAttached();
-    await expect(announcement(page, "second-one needs you")).toBeAttached();
+    await expect(announcement(page, "first-one: ")).toBeAttached();
+    await expect(announcement(page, "second-one: ")).toBeAttached();
   });
 
   test("announces a second session with identical text", async ({ page }) => {
     await open(page, snapshot({ sessions: [] }));
     await recordAnnouncements(page);
-    const text = "same-prompt needs you: permission prompt.";
+    const text = "same-prompt: Waiting on a permission prompt.";
 
     server.publish(snapshot({ sessions: [waiting("a", "same-prompt")] }));
     await expect(announcement(page, text)).toBeAttached();
@@ -725,7 +731,7 @@ test.describe("screen reader announcements", () => {
   test("announces a session again when it comes back", async ({ page }) => {
     await open(page, snapshot({ sessions: [] }));
     await recordAnnouncements(page);
-    const text = "returning needs you: permission prompt.";
+    const text = "returning: Waiting on a permission prompt.";
 
     server.publish(snapshot({ sessions: [waiting("a", "returning")] }));
     await expect(announcement(page, text)).toBeAttached();
@@ -754,7 +760,7 @@ test.describe("screen reader announcements", () => {
         sessions: [at("a", "alpha", now - 2000), at("b", "beta", now - 1000)],
       }),
     );
-    const text = "beta needs you: permission prompt.";
+    const text = "beta: Waiting on a permission prompt.";
     await expect(announcement(page, text)).toBeAttached();
 
     server.publish(

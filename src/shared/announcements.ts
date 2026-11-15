@@ -1,4 +1,5 @@
 import type { SessionView } from "./protocol.js";
+import { waitingLabel } from "./waiting.js";
 
 function attentionKey(session: SessionView): string {
   // With no ID or name, the folder, kind, and start time tell sessions apart (BUG-14).
@@ -29,7 +30,7 @@ export function newAttentionMessage(
     })
     .map(
       (session) =>
-        `${session.name ?? "A session"} needs you: ${session.attentionReason ?? "needs input"}.`,
+        `${session.name ?? "A session"}: ${waitingLabel(session.attentionReason)}.`,
     )
     .join(" ");
 }

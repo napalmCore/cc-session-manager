@@ -26,6 +26,7 @@ import {
   type SessionAction,
 } from "../shared/session-actions.js";
 import { groupSessions, pageTitle } from "../shared/session-groups.js";
+import { ANSWER_IN_CLAUDE_CODE, waitingLabel } from "../shared/waiting.js";
 import {
   ESTIMATE_NOTE,
   isCostLine,
@@ -157,7 +158,7 @@ function UsageSummary({ sessions }: { sessions: SessionView[] }) {
 }
 
 function statusText(session: SessionView): string {
-  if (session.attentionReason) return session.attentionReason;
+  if (session.attentionReason) return waitingLabel(session.attentionReason);
   if (session.finished) {
     return session.finishedAt === undefined
       ? "Finished"
@@ -336,6 +337,9 @@ function SessionList({
                 </li>
               ))}
             </ul>
+            {session.needsAttention && (
+              <p className={styles.note}>{ANSWER_IN_CLAUDE_CODE}</p>
+            )}
             {isProtectedSession(session, actionProps.context) && (
               <p className={styles.note}>
                 The dashboard was started from this session, so it can&apos;t be
