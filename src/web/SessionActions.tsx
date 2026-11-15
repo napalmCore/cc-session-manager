@@ -43,6 +43,7 @@ export function RowActions({
   result,
   onAction,
   onFork,
+  onSend,
 }: {
   actions: SessionAction[];
   label: string;
@@ -51,13 +52,21 @@ export function RowActions({
   onAction: (action: SessionAction) => void;
   /** Offered on rows with a session ID (FR-33). */
   onFork?: ((from: HTMLElement | null) => void) | undefined;
+  /** Offered on a background session that can take a message (FR-37). */
+  onSend?: ((from: HTMLElement | null) => void) | undefined;
 }) {
   const forkButton = useRef<HTMLButtonElement>(null);
-  if (actions.length === 0 && result === undefined && onFork === undefined)
+  const sendButton = useRef<HTMLButtonElement>(null);
+  if (
+    actions.length === 0 &&
+    result === undefined &&
+    onFork === undefined &&
+    onSend === undefined
+  )
     return null;
   return (
     <>
-      {(actions.length > 0 || onFork !== undefined) && (
+      {(actions.length > 0 || onFork !== undefined || onSend !== undefined) && (
         <div
           role="group"
           aria-label={`Actions for ${label}`}
@@ -85,6 +94,19 @@ export function RowActions({
                   : ACTION_LABELS[action]}
             </Button>
           ))}
+          {onSend !== undefined && (
+            <Button
+              ref={sendButton}
+              data-action="send"
+              className={styles.button}
+              isDisabled={pending !== undefined}
+              onPress={() => {
+                onSend(sendButton.current);
+              }}
+            >
+              Send…
+            </Button>
+          )}
           {onFork !== undefined && (
             <Button
               ref={forkButton}

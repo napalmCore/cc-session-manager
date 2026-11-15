@@ -15,6 +15,7 @@ import {
   availableActions,
   canEndLeftovers,
   canFork,
+  canSend,
   isProtectedSession,
   ACTION_LABELS,
   isRisky,
@@ -53,6 +54,8 @@ import { type Freshness, useSnapshot } from "./useSnapshot.js";
 import { HistoryView, SearchView } from "./PastSessions.js";
 import {
   ForkDialog,
+  SendDialog,
+  type SendTargetView,
   NewSessionDialog,
   type ForkTargetView,
 } from "./StartDialog.js";
@@ -192,6 +195,7 @@ interface RowActionProps {
     groupId: string,
   ) => void;
   onFork: (target: ForkTargetView, from: HTMLElement | null) => void;
+  onSend: (target: SendTargetView, from: HTMLElement | null) => void;
 }
 
 function rowActions(
@@ -365,6 +369,13 @@ function SessionList({
               onAction={(action) => {
                 actionProps.onAction(session, action, label, groupId);
               }}
+              onSend={
+                key === undefined || !canSend(session, actionProps.context)
+                  ? undefined
+                  : (from) => {
+                      actionProps.onSend({ key, label, groupId }, from);
+                    }
+              }
               onFork={
                 key === undefined || !canFork(session, actionProps.context)
                   ? undefined
@@ -696,7 +707,11 @@ export function App() {
   const actions = useSessionActions(announce);
   const { run, lastTarget } = actions;
   const [confirming, setConfirming] = useState<
-    (Confirming & { session: SessionView; target: FocusTarget }) | null
+    | (Confirming & {
+        session: SessionView;
+        target: FocusTarget & { action: SessionAction };
+      })
+    | null
   >(null);
   const onAction = useCallback(
     (
@@ -766,6 +781,14 @@ export function App() {
   const view = useView();
   const [newOpen, setNewOpen] = useState(false);
   const [forkTarget, setForkTarget] = useState<ForkTargetView | null>(null);
+  const [sendTarget, setSendTarget] = useState<SendTargetView | null>(null);
+  const onSend = useCallback(
+    (target: SendTargetView, from: HTMLElement | null) => {
+      opener.current = from;
+      setSendTarget(target);
+    },
+    [],
+  );
   const opener = useRef<HTMLElement | null>(null);
   const newButton = useRef<HTMLButtonElement>(null);
   const onFork = useCallback(
@@ -779,6 +802,7 @@ export function App() {
   const closeForm = useCallback(() => {
     setNewOpen(false);
     setForkTarget(null);
+    setSendTarget(null);
     const back = opener.current;
     opener.current = null;
     window.setTimeout(() => {
@@ -799,6 +823,7 @@ export function App() {
     offers,
     onAction,
     onFork,
+    onSend,
   };
   // The result stays visible above the list once its row has gone, such as after Delete.
   const lastResult = actions.lastResult;
@@ -850,6 +875,7 @@ export function App() {
               offers: [],
               onAction,
               onFork: () => undefined,
+              onSend: () => undefined,
             },
             key,
           ).includes(action);
@@ -986,6 +1012,29 @@ export function App() {
           onStarted={(reply) => {
             announce(`Fork, ${forkTarget.label}: ${reply.message}`);
             closeForm();
+          }}
+        />
+      )}
+      {sendTarget !== null && (
+        <SendDialog
+          key={sendTarget.key}
+          target={sendTarget}
+          onClose={closeForm}
+          onSent={(reply, data) => {
+            announce(`Send, ${sendTarget.label}: ${reply.message}`);
+            closeForm();
+            // Send… goes away once the session runs, so focus follows the row as for other
+            // row actions, but only if it's lost (NFR-8).
+            lastTarget.current = {
+              key: sendTarget.key,
+              action: "send",
+              groupId: sendTarget.groupId,
+            };
+            // A new session Claude Code started instead is highlighted once it's listed (FR-37).
+            const started = data.newSessionId;
+            if (typeof started === "string" && /^[0-9a-f]{8}$/.test(started)) {
+              setHighlighted(new Set([started]));
+            }
           }}
         />
       )}

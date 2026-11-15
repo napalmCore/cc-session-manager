@@ -1,3 +1,4 @@
+import { canSendTo } from "./send.js";
 import { folderName, sessionKeys } from "./notifications.js";
 import type { LeftoverOffer, SessionView, Snapshot } from "./protocol.js";
 
@@ -101,6 +102,20 @@ export function availableActions(
  */
 export function canFork(session: SessionView, context: ActionContext): boolean {
   if (session.sessionId === undefined) return false;
+  return !sessionKeys(session).some(
+    (key) => context.missingFolderKeys?.has(key) === true,
+  );
+}
+
+/**
+ * Send is offered on a background session that can take a message (FR-37), unless actions are
+ * turned off, it's the protected session, or its folder has gone.
+ */
+export function canSend(session: SessionView, context: ActionContext): boolean {
+  if (!canSendTo(session)) return false;
+  if (context.blocked !== null || isProtectedSession(session, context)) {
+    return false;
+  }
   return !sessionKeys(session).some(
     (key) => context.missingFolderKeys?.has(key) === true,
   );

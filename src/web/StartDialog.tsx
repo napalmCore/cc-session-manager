@@ -293,18 +293,25 @@ function FolderBrowser({
 }
 
 /** What a form reports once the server has answered. */
-export type OnStarted = (reply: ActionReply) => void;
+export type OnStarted = (
+  reply: ActionReply,
+  data: Record<string, unknown>,
+) => void;
 
-function useSubmit(onStarted: OnStarted) {
+function useSubmit(
+  onStarted: OnStarted,
+  /** Outcomes that close the form. An unknown Send closes it, so it isn't sent twice. */
+  closesOn: readonly string[] = ["started", "succeeded"],
+) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async (body: Record<string, unknown>) => {
     setPending(true);
     setError(null);
-    const { reply } = await postAction(body);
+    const { reply, data } = await postAction(body);
     setPending(false);
-    if (reply.outcome === "started" || reply.outcome === "succeeded") {
-      onStarted(reply);
+    if (closesOn.includes(reply.outcome)) {
+      onStarted(reply, data);
     } else {
       setError(reply.message);
     }
@@ -536,6 +543,92 @@ export function ForkDialog({
           </div>
         </form>
       )}
+    </DialogShell>
+  );
+}
+
+/** The session a message goes to: the key the server finds it by, and its label. */
+export interface SendTargetView {
+  key: string;
+  label: string;
+  /** The row's group, where focus goes if the row has gone. */
+  groupId: string;
+}
+
+// Every outcome but a refusal or "unavailable" may mean the message went, so the form
+// closes rather than invite sending it again.
+const SEND_CLOSES_ON = ["started", "succeeded", "unknown", "failed"] as const;
+
+/** Send (FR-37): a message to a background session that isn't running. The form is the confirmation. */
+export function SendDialog({
+  target,
+  onClose,
+  onSent,
+}: {
+  target: SendTargetView;
+  onClose: () => void;
+  onSent: OnStarted;
+}) {
+  const [message, setMessage] = useState("");
+  const { pending, error, submit } = useSubmit(onSent, SEND_CLOSES_ON);
+  const errorId = useId();
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    void submit({ action: "send", key: target.key, message });
+  };
+
+  return (
+    <DialogShell
+      isOpen
+      onClose={onClose}
+      title="Send a message"
+      pending={pending}
+    >
+      <form onSubmit={onSubmit} aria-describedby={error ? errorId : undefined}>
+        <p className={styles.dialogTarget}>{target.label}</p>
+        <p>
+          The session runs again with your message as its next turn, with its
+          own saved settings.
+        </p>
+        <TextField
+          className={styles.field}
+          value={message}
+          onChange={setMessage}
+          maxLength={MAX_PROMPT}
+          isRequired
+          isDisabled={pending}
+          autoFocus
+        >
+          <Label>Message</Label>
+          <TextArea
+            className={styles.input}
+            rows={4}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <Text slot="description" className={styles.fieldHelp}>
+            Up to {MAX_PROMPT} characters. It isn&apos;t kept by the dashboard.
+          </Text>
+        </TextField>
+        {error !== null && (
+          <p id={errorId} role="alert" className={styles.formError}>
+            {error}
+          </p>
+        )}
+        <div className={styles.dialogButtons}>
+          <Button
+            className={styles.button}
+            isDisabled={pending}
+            onPress={onClose}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" className={styles.button} isPending={pending}>
+            {pending ? "Sending…" : "Send"}
+          </Button>
+        </div>
+      </form>
     </DialogShell>
   );
 }
