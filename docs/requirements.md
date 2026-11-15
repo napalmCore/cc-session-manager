@@ -283,3 +283,48 @@ These come from the repository being public (decision 0027) and aren't part of t
 | U-27 | Which of the five open bugs still happen on the current Claude Code?                                                                                                                                                                        | Implementation |
 | U-28 | Resolved in design: yes, when they have no process ID. Stopping an idle session, or Claude Code's own idle timeout, leaves it `done` with no process. A session with a process gets a copy instead.                                         | Design         |
 | U-29 | Resolved in design, from Claude Code's documentation: `permission prompt`, `input needed`, `sandbox request`, `worker request`, or `dialog open`.                                                                                           | Design         |
+
+## Iteration 6
+
+Decisions are in [0030](decisions/0030-iteration-6-plan.md) and [0031](decisions/0031-iteration-6-requirements.md). Iteration 6 is planned for release as 0.5.0. It brings the tool to macOS and Linux, with End, Force end, and leftover programs staying Windows-only for now. Windows behaves as before.
+
+### Functional requirements
+
+| ID    | Requirement                               | Acceptance criteria                                                                                                                                                                                                                                                                                                                           |
+| ----- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-40 | Run on macOS and Linux                    | On macOS and Linux, the tool lists sessions, notifies, shows usage, History, and Search, and offers Stop, Delete, Send, Open, Resume, New session, and Fork, under the same rules as on Windows. Everything that goes through Claude Code's own commands works the same.                                                                      |
+| FR-41 | Save the list in the system's usual place | The finished-session list is saved in `~/Library/Application Support/cc-session-manager` on macOS, and in `$XDG_STATE_HOME/cc-session-manager`, or `~/.local/state/cc-session-manager` when that's unset, on Linux. Windows keeps `%LOCALAPPDATA%\cc-session-manager`.                                                                        |
+| FR-42 | Open the browser                          | The sign-in link opens in the default browser through `open` on macOS and `xdg-open` on Linux, with no shell. If that fails, the printed link works as FR-29 says.                                                                                                                                                                            |
+| FR-43 | Open terminals                            | Open, Resume, New session, and Fork open a new terminal: Terminal on macOS, and on Linux the first found of `x-terminal-emulator`, `gnome-terminal`, `konsole`, and `xterm` (0030). If none can be started, the action says so and shows the exact command to run instead, without running it. A prompt or name never passes through a shell. |
+| FR-44 | Take only local folders                   | New session and Fork take an existing folder, after resolving links, only if its filesystem is local. A network filesystem, such as NFS, SMB or CIFS, AFP, WebDAV, or sshfs and other network FUSE types, is refused, and so is one whose type can't be read.                                                                                 |
+| FR-45 | Protect the session that started the tool | The tool finds the Claude Code session it was started from by following its parent processes until a `claude` process, and matches it to the listing as on Windows (FR-22). If it can't tell, Stop, Delete, End, and Send are turned off and the page says so.                                                                                |
+| FR-46 | Say where End isn't available             | On macOS and Linux, End, Force end, and End leftover programs aren't shown. One line on the page says they're Windows-only for now. A live interactive session's row still shows its folder and process ID (FR-20).                                                                                                                           |
+
+### Constraints
+
+| ID   | Constraint                                                                                                                                                                                                               |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C-22 | On macOS and Linux, the tool runs only `claude`, the terminal programs FR-43 names, `open` or `xdg-open`, and `ps`, each found on the `PATH` and run with no shell, as C-11 says for Windows. It ends no process itself. |
+| C-23 | Nothing new is stored or logged. The privacy rules of earlier iterations apply on every system.                                                                                                                          |
+
+### Non-functional requirements
+
+| ID     | Requirement                 | Acceptance criteria                                                                                                                                                                 |
+| ------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NFR-19 | Tested on all three systems | CI runs the unit and browser tests on Windows, macOS, and Linux for every pull request. Live checks on macOS and Linux are recorded as not run until a machine is available (0027). |
+| NFR-20 | Same guards on every system | NFR-6, NFR-7, NFR-14, and NFR-17 hold on macOS and Linux, and the page meets NFR-8 there.                                                                                           |
+
+### Out of scope for iteration 6
+
+- End, Force end, and leftover programs on macOS and Linux (decision 0030).
+- A setting to choose the terminal program (decision 0030).
+- Live checks on macOS and Linux, until a machine is available (decision 0027).
+
+### Known unknowns
+
+| ID   | Question                                                                                                                        | Resolve in |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| U-30 | How can Terminal on macOS run `claude` with its arguments, in a folder, without a shell taking any of the text?                 | Design     |
+| U-31 | Which filesystem types does Node's `statfs` report for network folders on macOS and Linux, and can it be read for every folder? | Design     |
+| U-32 | Does `claude agents --json` give the same fields on macOS and Linux, and where are transcripts kept there?                      | Design     |
+| U-33 | Which arguments does each Linux terminal take to run a program with its arguments in a folder?                                  | Design     |
