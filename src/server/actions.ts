@@ -2,7 +2,14 @@ import type { SessionView } from "../shared/protocol.js";
 import type { LeftoverRecord } from "./leftovers-helper.js";
 import type { FolderListing } from "./folder-picker.js";
 import type { HistoryPage } from "./history.js";
-import type { ForkRequest, ForkTarget, StartRequest } from "./start.js";
+import type {
+  ForkRequest,
+  ForkTarget,
+  SendRequest,
+  SendTarget,
+  StartRequest,
+} from "./start.js";
+import { canSendTo } from "../shared/send.js";
 import { PROTECTED_MESSAGE as PROTECTED } from "./protect.js";
 import { isValidSessionId } from "./transcripts.js";
 
@@ -49,6 +56,7 @@ export type ActionRequest =
   | SessionActionRequest
   | StartRequest
   | ForkRequest
+  | SendRequest
   | ListFoldersRequest
   | HistoryRequest;
 
@@ -85,6 +93,8 @@ export interface ActionResult {
   drives?: string[];
   /** A page of History, for history only. */
   history?: HistoryPage;
+  /** For Send: the short ID of a new session Claude Code started instead (FR-37). */
+  newSessionId?: string;
 }
 
 /** Recording and ending the programs a session leaves running (FR-27). */
@@ -143,6 +153,8 @@ export interface ActionTrackerOptions {
   /** Reads a page of History (FR-35). */
   history?: (page: number, listing: SessionView[]) => Promise<HistoryPage>;
   /** Forks a session into a new one (FR-33). */
+  /** Sends a message to a session that isn't running (FR-37). */
+  send?: (request: SendRequest, target: SendTarget) => Promise<ActionResult>;
   fork?: (request: ForkRequest, target: ForkTarget) => Promise<ActionResult>;
   /**
    * A past session's folder from History, for Fork and Resume of a session Claude Code no longer
@@ -360,6 +372,75 @@ export function createActionTracker(options: ActionTrackerOptions) {
    * Resume of a session Claude Code no longer lists, found in History (FR-35, FR-14). A fresh
    * listing comes first (C-9): a session listed again isn't resumed from here.
    */
+  /**
+   * Sends a message to a background session that isn't running (FR-37, NFR-17). It shares the
+   * per-session lock with Open, Resume, Stop, Delete, and End, refuses the protected session,
+   * and sends only after a fresh listing shows the same session still able to take it.
+   */
+  const sendMessage = async (request: SendRequest): Promise<ActionResult> => {
+    const { send } = options;
+    if (send === undefined) {
+      return { outcome: "unavailable", message: "Not available yet." };
+    }
+    const { key } = request;
+    if (!SHORT_ID.test(key) && !isValidSessionId(key)) {
+      return refused("Unknown session.");
+    }
+    const state = options.listing();
+    const session = findSession(state.sessions, key);
+    if (session === undefined) return refused("That session isn't listed.");
+    if (!canSendTo(session)) {
+      return refused(
+        "A message can only go to a background session that isn't running.",
+      );
+    }
+    const protection = protectedMessage(options.isProtected(session));
+    if (protection !== null) return refused(protection);
+    if (isStale(state)) return refused(STALE);
+    const lockKey = session.id ?? session.sessionId ?? key;
+    if (locks.has(lockKey)) {
+      return refused("Another action on this session is still running.");
+    }
+    locks.add(lockKey);
+    try {
+      let fresh: SessionView[];
+      try {
+        fresh = await options.freshListing();
+      } catch {
+        return {
+          outcome: "unknown",
+          message: "Couldn't check the session's current state.",
+        };
+      }
+      const match = findSession(fresh, key);
+      if (
+        match === undefined ||
+        !sameSession(session, match) ||
+        !canSendTo(match)
+      ) {
+        return refused("The session has changed. Check it and try again.");
+      }
+      const again = protectedMessage(options.isProtected(match));
+      if (again !== null) return refused(again);
+      const target: SendTarget = {
+        shortId: match.id ?? "",
+        sessionId: match.sessionId ?? "",
+        folder: match.cwd ?? "",
+        state: match.state ?? "",
+      };
+      const sessionKey = match.sessionId ?? match.id ?? key;
+      // The user's own action, so the session's changes don't notify for a while (FR-12).
+      ownActions.set(sessionKey, now());
+      try {
+        return await send(request, target);
+      } finally {
+        ownActions.set(sessionKey, now());
+      }
+    } finally {
+      locks.delete(lockKey);
+    }
+  };
+
   const resumeFromHistory = async (key: string): Promise<ActionResult> => {
     const executor = options.executors.resume;
     if (executor === undefined || options.historyFolder === undefined) {
@@ -428,6 +509,7 @@ export function createActionTracker(options: ActionTrackerOptions) {
   const run = async (request: ActionRequest): Promise<ActionResult> => {
     if (request.action === "start") return startSession(request);
     if (request.action === "fork") return forkSession(request);
+    if (request.action === "send") return sendMessage(request);
     if (request.action === "history") {
       if (options.history === undefined) {
         return { outcome: "unavailable", message: "Not available yet." };

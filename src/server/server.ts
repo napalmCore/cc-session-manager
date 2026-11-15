@@ -73,6 +73,14 @@ const actionRequestSchema = z.union([
     .strict(),
   z
     .object({
+      action: z.literal("send"),
+      key: z.string().max(64),
+      // Checked again, with a clear message, by Send itself.
+      message: z.string().max(20_000),
+    })
+    .strict(),
+  z
+    .object({
       action: z.literal("history"),
       page: z.number().int().min(0).max(100_000).optional(),
     })
@@ -400,11 +408,11 @@ export async function startServer(
       } catch {
         return c.json({ outcome: "refused", message: "Invalid request" }, 400);
       }
-      // Only Start carries a prompt, so only it gets the larger limit.
+      // Only Start, Fork, and Send carry a prompt or message, so only they get the larger limit.
       const isStart =
         typeof parsed === "object" &&
         parsed !== null &&
-        ["start", "fork"].includes(
+        ["start", "fork", "send"].includes(
           String((parsed as { action?: unknown }).action),
         );
       if (!isStart && text.length > MAX_ACTION_BODY) {

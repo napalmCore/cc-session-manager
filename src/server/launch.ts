@@ -17,6 +17,13 @@ export interface ClaudeLaunch {
  * `--fork-session` are ever passed, and a fork always has `--fork-session`. A name goes in the
  * same argument as its option, so it can't be read as another option however it looks.
  */
+export function sendArguments(sessionId: string, message: string): string[] {
+  if (!isValidSessionId(sessionId)) throw new Error("Invalid session ID");
+  if (message.trim() === "") throw new Error("A message is needed");
+  // Only these, so the session keeps its own saved options and permission mode (C-19).
+  return ["--bg", "--resume", sessionId, "--", message];
+}
+
 export function claudeArguments(launch: ClaudeLaunch): string[] {
   const args: string[] = [];
   if (launch.forkOf !== undefined) {
