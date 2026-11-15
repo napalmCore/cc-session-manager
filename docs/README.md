@@ -18,7 +18,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [`requirements.md`](requirements.md)   | Signed off for iteration 3               |
 | [`design.md`](design.md)               | Signed off for iteration 3               |
 | [`test-plan.md`](test-plan.md)         | Exit criteria met for iterations 2 and 3 |
-| [`release-notes.md`](release-notes.md) | 0.2.0 and 0.1.0                          |
+| [`release-notes.md`](release-notes.md) | 0.4.0, 0.3.0, 0.2.0, and 0.1.0           |
 
 ## Decision log
 

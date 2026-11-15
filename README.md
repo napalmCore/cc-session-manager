@@ -24,7 +24,7 @@ pnpm start
 
 The tool starts a server on `127.0.0.1` and opens the dashboard in your browser with a one-time sign-in link. If no browser opens, it prints the link instead, which works once, for 2 minutes. Press Ctrl+C in its terminal to stop it. Starting it again while it runs opens the running one instead.
 
-To use Stop, Delete, and End on every session, start it from a normal terminal, not from inside a Claude Code session. A session that starts the dashboard is protected from those actions.
+To use Stop, Delete, End, and Send on every session, start it from a normal terminal, not from inside a Claude Code session. A session that starts the dashboard is protected from those actions.
 
 ## What it does
 
@@ -37,7 +37,7 @@ To use Stop, Delete, and End on every session, start it from a normal terminal, 
 - Forks a session into a new one that starts from its conversation so far, leaving the original unchanged.
 - Shows a History of past sessions whose transcripts are still on this computer, with Resume and Fork.
 - Searches your prompts and Claude's replies when you ask, and keeps nothing afterwards.
-- Sends a message to a background session that has finished or stopped, as its next turn.
+- Sends a message to a background session that has finished, stopped, or failed and has no process, as its next turn.
 - Says what a waiting session waits for, such as a permission prompt or your answer, so you can answer it in Claude Code. The dashboard never answers prompts itself.
 
 See the [release notes](docs/release-notes.md) for details, the safety rules for actions, privacy, and known limits.

@@ -2,7 +2,7 @@
 
 ## 0.4.0
 
-The fourth release. It covers iteration 5. Get it from the GitHub release: clone the repository at the `v0.4.0` tag, then follow the README. It isn't published to npm. The repository is public from this release.
+The fourth release. It covers iteration 5. Get it from the GitHub release: clone the repository at the `v0.4.0` tag, then follow the README. It isn't published to npm. It's the first release since the repository became public, on the day 0.3.0 was released.
 
 cc-session-manager is an independent tool. It isn't made, endorsed, or supported by Anthropic.
 
@@ -10,18 +10,18 @@ cc-session-manager is an independent tool. It isn't made, endorsed, or supported
 
 ### What's new
 
-- **Send:** a "Send…" button on a background session that has finished, stopped, or failed and has no process opens a form with a message box. Pressing Send is the confirmation. The message goes to the session as its next turn, with `claude --bg --resume <session ID> -- <message>`, and the session runs again with its own saved options. If the session started running in the meantime, Claude Code starts a new session with the message instead; the result names it and its row is highlighted, and it's left for you to stop or delete (FR-37).
+- **Send:** a "Send…" button on a background session that has finished, stopped, or failed and has no process opens a form with a message box. Pressing Send is the confirmation. The message goes to the session as its next turn, with `claude --bg --resume <session ID> -- <message>`, and the session runs again with its own saved options. If the session started running in the meantime, Claude Code starts a new session with the message instead; the result names it and its row is highlighted, and it's left for you to stop or delete; it uses your quota until you do. A send counts as your own action, so that session's notifications are held for 30 seconds afterwards, as after Stop (FR-37).
 - **Waiting sessions:** a session waiting on Claude Code reads "Waiting on a permission prompt", "Waiting on your answer", or "Needs you in Claude Code", on its row, in notifications, and in screen-reader announcements. A row in Needs you adds "Answer it in Claude Code." The dashboard never answers a prompt (FR-38).
-- **The repository is public,** with `SECURITY.md` pointing to GitHub's private vulnerability reporting. Its CI actions are pinned to full commit hashes and kept current by Dependabot, and `main` takes changes only through pull requests with CI passing.
-- The open bugs were checked again on Claude Code 2.1.325. BUG-29 is closed as not reproducible. Reports for Claude Code's own behaviour are drafted in [claude-code-reports.md](claude-code-reports.md).
+- **The repository is public,** with `SECURITY.md` pointing to GitHub's private vulnerability reporting. Its CI actions are pinned to full commit hashes and kept current by Dependabot, and `main` takes changes only through pull requests with CI passing, which the owner can bypass as admin.
+- The open bugs were checked again on Claude Code 2.1.325, except BUG-22, which would need a session left at its trust dialog. BUG-29 is closed as not reproducible. Reports for Claude Code's own behaviour are drafted in [claude-code-reports.md](claude-code-reports.md).
 
 ### Privacy and security
 
 0.3.0's privacy and security notes still apply, with these changes:
 
-- A message is passed to Claude Code and never stored, logged, cached, or put in the page address, and the result doesn't repeat it. Claude Code keeps it in the session's transcript, as for any turn. The message field asks the browser not to autofill or spell-check it (C-21).
+- A message is passed to Claude Code and never stored, logged, cached, or put in the page address, and the result doesn't repeat it. Claude Code keeps it in the session's transcript, as for any turn. The message field asks the browser not to autofill or spell-check it, though the browser decides. An error from running Claude Code, which can hold its command line, is never logged or shown (C-21).
 - Send passes only `--bg`, `--resume`, the session ID, `--`, and the message, with no shell. The session ID and folder come from the server's own listing, never from the page. Nothing that could change a session's permission mode is passed (C-19).
-- Send isn't offered, and is refused, for the session that started the dashboard, and for every session while the dashboard can't tell which session that is. It's refused for a session that has a process or is waiting, and, after a fresh listing just before sending, for one that has changed or gone.
+- Send isn't offered, and is refused, for the session that started the dashboard, and for every session while the dashboard can't tell which session that is. It's refused for a session that has a process or is waiting, and, after a fresh listing just before sending, for one that has changed or gone. Like Fork, it runs only in the session's recorded folder, and only if that's still a local folder.
 - The dashboard doesn't use hooks, doesn't change Claude Code's settings, and never answers a permission prompt or question (C-20).
 
 ### Known limits
@@ -30,10 +30,12 @@ The known limits of 0.3.0 still apply. Also:
 
 - Send only reaches a background session with no process. A running one, an interactive one, or one only in History offers Open, Resume, or Fork instead. Claude Code itself offers no supported way for another program to message a running session or answer its prompts.
 - `claude stop` on an idle background session leaves it "done", not "stopped", and Claude Code's own idle timeout does the same after about an hour. Both can take a message.
-- A send answers in about 15 seconds, because the dashboard watches the session for 10 seconds afterwards to catch one that fails straight away. A send to a session that was already failed and fails again at once may still be reported as sent (BUG-39); its row shows the failure on a later update.
-- If Claude Code doesn't say it restored the session's saved options, the result says so, sometimes when nothing was lost. A session removed with `claude rm` just before the send is rebuilt by Claude Code without its saved options, such as its name.
+- A send usually answers in about 15 seconds, because the dashboard watches the session for 10 seconds afterwards to catch one that fails straight away. It can take up to about 40 seconds, or more if the folder's drive is slow to check. A send to a session that was already failed and fails again at once may still be reported as sent (BUG-39); its row shows the failure on a later update.
+- If Claude Code doesn't say it restored the session's saved options, the result says so, sometimes when nothing was lost. If a session is removed with `claude rm` in the moment between the dashboard's last check and the send, Claude Code rebuilds it without its saved options, such as its name.
 - A message is on Claude Code's command line for a few seconds while it starts, where other programs running as you can read it, as with Start's prompts.
-- The "Waiting on a permission prompt" label wasn't seen live, because the test machine's Claude Code ran in auto mode.
+- The dashboard can't see which permission mode a message runs in. Nothing it passes can change it, so the session's own saved mode applies.
+- A message can be at most 8,000 characters. A lone half of a surrogate pair in it reaches Claude Code as a replacement character.
+- The page isn't limited in how many sessions it sends to at once, and each send starts a turn that uses your quota.
 
 ### Open bugs
 
@@ -55,8 +57,10 @@ The dashboard is built towards WCAG 2.2 AA and passes automated accessibility sc
 
 These were checked by automated tests and review, but not on real sessions:
 
-- A send that meets a session starting to run at the same moment. The new-session result was checked with the test server holding back its listing, not with a real race.
-- The "Waiting on a permission prompt" label, and Send for a session whose folder has gone or isn't trusted.
+- A send that meets a session starting to run at the same moment. The new-session result was checked with the test server holding back its listing, not with a real race, and only before the last Testing fixes.
+- The "Waiting on a permission prompt" and "Needs you in Claude Code" labels: the test machine's Claude Code ran in auto mode, so no permission prompt came up. "Waiting on your answer" was seen, before the last Testing fixes.
+- A send to a session in the `stopped` state; the checks used `done` and `failed` ones.
+- Send for a session whose folder has gone or isn't trusted, and Send's refusal wording from Claude Code.
 - Claude Code output too long to read, and the 30-second limit on a send.
 - macOS and Linux, planned for 0.5.0.
 
