@@ -147,7 +147,7 @@ The NFR-9 review, by an independent agent on `f71f920`, found no Critical or Hig
 
 - **Status:** in Testing from 2026-11-15. Implementation steps 1 to 5 are merged (#74 to #78), with main at `4ca56fe`.
 - **Exit criteria:** the same as iteration 4: every check below done or recorded as not run, no Critical or High bug open, and NFR-9's security review passed, now covering Send.
-- **How:** as in iteration 4. A runner agent runs the live checks and a verifier agent audits the evidence and repeats some (decision 0011). Agents use only throwaway folders under `~\\source`, start and end only their own background sessions, and run their own server on a free port from the repository's modules, never the tool's own command. They never answer a prompt. The owner's Claude Code runs in auto mode, so test sessions are given trivial prompts only.
+- **How:** as in iteration 4. A runner agent runs the live checks and a verifier agent audits the evidence and repeats some (decision 0011). Agents use only throwaway folders under `~\source`, start and end only their own background sessions, and run their own server on a free port from the repository's modules, never the tool's own command. They never answer a prompt. The owner's Claude Code runs in auto mode, so test sessions are given trivial prompts only.
 
 ### Requirements coverage
 
