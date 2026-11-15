@@ -143,6 +143,38 @@ The NFR-9 review, by an independent agent on `f71f920`, found no Critical or Hig
 | L24 | Search on the owner's real transcripts with a nonsense query and a common word           | Done within 30 s; the server's loop never pauses for long; Cancel stops it; unfetched results are gone after 60 s | Passed, and the verifier agreed: about 2.2 s for both queries, the loop pausing at most 36 ms, Cancel and a newer search dropped the old one, and unfetched results were there at 8 s and gone at 68 s                        |
 | L25 | The page in a real browser against the runner's own server                               | Each form, History, and Search usable by keyboard alone, with focus visible and results announced                 | Passed, with BUG-34 and BUG-35, now fixed. Every form, History, and Search worked by keyboard alone with focus visible and results announced, and with no console errors.                                                     |
 
+## Iteration 5
+
+- **Status:** in Testing from 2026-11-15. Implementation steps 1 to 5 are merged (#74 to #78), with main at `4ca56fe`.
+- **Exit criteria:** the same as iteration 4: every check below done or recorded as not run, no Critical or High bug open, and NFR-9's security review passed, now covering Send.
+- **How:** as in iteration 4. A runner agent runs the live checks and a verifier agent audits the evidence and repeats some (decision 0011). Agents use only throwaway folders under `~\source`, start and end only their own background sessions, and run their own server on a free port from the repository's modules, never the tool's own command. They never answer a prompt. The owner's Claude Code runs in auto mode, so test sessions are given trivial prompts only.
+
+### Requirements coverage
+
+| ID           | Automated                                                                                       | Live or manual check | Status                                              |
+| ------------ | ----------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------- |
+| FR-37        | `send` tests: eligibility, the fresh check, the lock, every result; `page` e2e: the Send dialog | L26 to L29, L31      | Planned                                             |
+| FR-38        | `waiting` tests; `dashboard` e2e: labels, the note, announcements                               | L30                  | Planned                                             |
+| FR-39        | The Bugs table                                                                                  | Step 2's re-check    | Done: see BUG-7, BUG-22, BUG-23, BUG-29, and BUG-30 |
+| C-19         | `send` tests: the exact arguments                                                               | L26, security review | Planned                                             |
+| C-20         | Code review: no hooks, settings, or answers                                                     | Security review      | Planned                                             |
+| C-21         | `send` tests: the message isn't in the result; `page` e2e: not announced                        | L26, security review | Planned                                             |
+| NFR-17       | `send` and `action-route` tests: protection, freshness, the lock, the schema, the body limit    | L29, security review | Planned                                             |
+| NFR-18       | `page` e2e: focus, labels, axe in both themes                                                   | L31                  | Planned                                             |
+| PU-1 to PU-4 | CI runs on pinned actions                                                                       | L32                  | Planned                                             |
+
+### Live checks
+
+| ID  | Check                                                                                            | Expected                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| L26 | Send to a background session left `done` with no process by `claude stop`                        | Delivered under the same ID, with Claude Code's note; the session runs again and its transcript has the message as its next prompt |
+| L27 | Send to a `failed` background session with no process                                            | Delivered, and not reported as failed from its old state                                                                           |
+| L28 | Send to a session that has a process by the time Claude Code runs                                | Reported as a new session with its short ID, and that row highlighted; the original unchanged                                      |
+| L29 | Refusals: a session with a process, the protected session, actions turned off, a removed session | Not offered on the page, and refused by the server before Claude Code runs                                                         |
+| L30 | A session waiting on a permission prompt or a question                                           | Its plain label and "Answer it in Claude Code." Recorded as not run if no waiting session can be seen without answering one        |
+| L31 | The page in a real browser against the runner's own server                                       | Send usable by keyboard alone, with focus visible, the result announced without the message, and focus kept on the row             |
+| L32 | The repository's settings                                                                        | Private vulnerability reporting on, `main` protected as PU-3 says, and CI's actions pinned                                         |
+
 ## Performance
 
 One `claude agents --json --all` run used about 353 ms of CPU, averaged over 12 runs on an 8-core Windows PC on 2026-11-06. This excludes the shell wrapper and transcript reads. At the 3-second interval, that is about 10.5% of one core, or about 1.3% of the whole PC.
