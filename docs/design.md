@@ -837,7 +837,7 @@ An agent re-checks each bug live on its own throwaway sessions, with the same ru
 | ---- | ----------------------------------------------------------------------------------------------- | --------------------------- |
 | 1    | Project upkeep: docs, `SECURITY.md`, private reporting, branch rule, pinned actions, Dependabot | PU-1 to PU-4                |
 | 2    | Re-check the open bugs, with workarounds and drafted reports                                    | FR-39                       |
-| 3    | Waiting sessions' labels and note                                                               | FR-38                       |
+| 3    | Waiting sessions' labels and note                                                               | FR-38, FR-5                 |
 | 4    | Send's server side                                                                              | FR-37, C-19 to C-21, NFR-17 |
 | 5    | Send's page                                                                                     | FR-37, NFR-18               |
 
