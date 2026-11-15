@@ -154,6 +154,8 @@ export interface ActionTrackerOptions {
   history?: (page: number, listing: SessionView[]) => Promise<HistoryPage>;
   /** Sends a message to a session that isn't running (FR-37). */
   send?: (request: SendRequest, target: SendTarget) => Promise<ActionResult>;
+  /** Send's own checks, run before its fresh listing (L-1). */
+  checkSend?: (message: string, folder: string) => Promise<ActionResult | null>;
   /** Forks a session into a new one (FR-33). */
   fork?: (request: ForkRequest, target: ForkTarget) => Promise<ActionResult>;
   /**
@@ -399,6 +401,12 @@ export function createActionTracker(options: ActionTrackerOptions) {
     }
     locks.add(lockKey);
     try {
+      // The message and folder first, so the fresh listing comes right before the send (L-1).
+      const problem = await options.checkSend?.(
+        request.message,
+        session.cwd ?? "",
+      );
+      if (problem !== undefined && problem !== null) return problem;
       let fresh: SessionView[];
       try {
         fresh = await options.freshListing();
@@ -412,6 +420,7 @@ export function createActionTracker(options: ActionTrackerOptions) {
       if (
         match === undefined ||
         !sameSession(session, match) ||
+        match.cwd !== session.cwd ||
         !canSendTo(match)
       ) {
         return refused("The session has changed. Check it and try again.");
@@ -427,11 +436,14 @@ export function createActionTracker(options: ActionTrackerOptions) {
       const sessionKey = match.sessionId ?? match.id ?? key;
       // The user's own action, so the session's changes don't notify for a while (FR-12).
       ownActions.set(sessionKey, now());
-      try {
-        return await send(request, target);
-      } finally {
+      const result = await send(request, target);
+      // Refused before Claude Code changed anything, so the session's events notify as usual.
+      if (result.outcome === "refused" || result.outcome === "unavailable") {
+        ownActions.delete(sessionKey);
+      } else {
         ownActions.set(sessionKey, now());
       }
+      return result;
     } finally {
       locks.delete(lockKey);
     }

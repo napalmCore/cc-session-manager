@@ -343,6 +343,57 @@ describe("Send in the action tracker (FR-37, NFR-17)", () => {
     expect(removed.send).not.toHaveBeenCalled();
   });
 
+  it("checks the message and folder before the fresh listing, and refuses a folder that changed (L-1)", async () => {
+    const order: string[] = [];
+    const t = createActionTracker({
+      listing: () => ({
+        sessions: [bg()],
+        lastSuccessAt: Date.now(),
+        lastPollFailed: false,
+      }),
+      freshListing: () => {
+        order.push("fresh");
+        return Promise.resolve([bg()]);
+      },
+      executors: {},
+      isProtected: () => false,
+      checkSend: () => {
+        order.push("check");
+        return Promise.resolve(null);
+      },
+      send: () => {
+        order.push("send");
+        return Promise.resolve({ outcome: "succeeded", message: "Sent." });
+      },
+    });
+    await t.handle(sendTo());
+    expect(order).toEqual(["check", "fresh", "send"]);
+
+    const refusing = tracker({});
+    const moved = createActionTracker({
+      listing: () => ({
+        sessions: [bg()],
+        lastSuccessAt: Date.now(),
+        lastPollFailed: false,
+      }),
+      freshListing: () => Promise.resolve([bg({ cwd: "C:\\elsewhere" })]),
+      executors: {},
+      isProtected: () => false,
+      send: refusing.send,
+    });
+    expect((await moved.handle(sendTo())).message).toMatch(/changed/);
+    expect(refusing.send).not.toHaveBeenCalled();
+  });
+
+  it("holds notifications only once Claude Code has run, not after a refusal (I-4)", async () => {
+    const { t } = tracker({
+      send: () =>
+        Promise.resolve({ outcome: "refused", message: "Not that folder." }),
+    });
+    expect((await t.handle(sendTo())).outcome).toBe("refused");
+    expect(t.ownActionSessions()).not.toContain(SESSION_ID);
+  });
+
   it("shares the per-session lock with Open", async () => {
     let release: () => void = () => undefined;
     const held = new Promise<ActionResult>((resolve) => {
@@ -357,5 +408,33 @@ describe("Send in the action tracker (FR-37, NFR-17)", () => {
     expect(send).not.toHaveBeenCalled();
     release();
     await opening;
+  });
+});
+
+describe("security review of iteration 5", () => {
+  it("gives unknown when Claude Code printed too much to read, since the message may have gone (L-2)", async () => {
+    const { l } = launcher(() => Promise.resolve({ kind: "overflow" }));
+    const result = await l.send(request(), target());
+    expect(result.outcome).toBe("unknown");
+    expect(result.message).toMatch(/may have been sent/);
+  });
+
+  it("matches only Claude Code's own first line for a refusal, and the note only as a line (I-1, I-2)", async () => {
+    const echoed = launcher(() =>
+      Promise.resolve(
+        exited(1, "", "Session not found.\nyour message said: please update"),
+      ),
+    );
+    expect((await echoed.l.send(request(), target())).message).toBe(
+      "Claude Code refused the message.",
+    );
+    const faked = launcher(() =>
+      Promise.resolve(
+        exited(0, `backgrounded · ${SHORT}\n`, `prompt: ${woke.trim()}\n`),
+      ),
+    );
+    expect((await faked.l.send(request(), target())).message).toMatch(
+      /didn't say it restored/,
+    );
   });
 });

@@ -674,6 +674,55 @@ test.describe("Send (FR-37)", () => {
       .toBe("cafe0001");
   });
 
+  test("keeps focus on the row when Send… goes away while the send runs, with no later update (BUG-A)", async ({
+    page,
+  }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/actions", async (route) => {
+      if (route.request().postDataJSON()?.action === "send") await held;
+      await route.continue();
+    });
+    await open(page);
+    await sendButton(page).focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "Send a message" });
+    await page.keyboard.type("hi");
+    await dialog.getByRole("button", { name: "Send", exact: true }).click();
+    // The session gains a process while Claude Code runs, so Send… goes before the answer.
+    const now = Date.now();
+    server.publish(
+      snapshot({
+        sessions: [
+          ...sessions(now),
+          {
+            ...parked(now),
+            state: "working",
+            statusLabel: "working",
+            finished: false,
+            pid: 77,
+          },
+        ],
+      }),
+    );
+    await expect(sendButton(page)).toHaveCount(0);
+    release();
+    await expect(dialog).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.activeElement
+              ?.closest("[data-session-key]")
+              ?.getAttribute("data-session-key") ??
+            document.activeElement?.tagName,
+        ),
+      )
+      .toBe("cafe0001");
+  });
+
   test("closes on a failed result too, since the message may have gone", async ({
     page,
   }) => {

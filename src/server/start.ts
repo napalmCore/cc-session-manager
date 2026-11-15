@@ -69,6 +69,8 @@ export function checkStartText(
 export type BackgroundRun =
   | { kind: "exited"; code: number; stdout: string; stderr: string }
   | { kind: "timeout" }
+  /** Claude Code printed more than the tool reads, so it ran, but its answer is unknown. */
+  | { kind: "overflow" }
   | { kind: "error" };
 
 /** Runs `claude` for a background start, with no shell (C-15). */
@@ -90,6 +92,11 @@ export function runBackground(
       (error, stdout, stderr) => {
         if (error === null) {
           resolve({ kind: "exited", code: 0, stdout, stderr });
+        } else if (
+          (error as { code?: unknown }).code ===
+          "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+        ) {
+          resolve({ kind: "overflow" });
         } else if (error.killed === true || typeof error.signal === "string") {
           resolve({ kind: "timeout" });
         } else if (typeof error.code === "number") {
@@ -107,9 +114,15 @@ export function runBackground(
  * never shown, logged, or kept.
  */
 export function refusalMessage(
-  stderr: string,
+  output: string,
   fallback = "Claude Code refused to start the session.",
 ): string {
+  // Claude Code refuses in one line; only that is matched, never anything it might repeat.
+  const stderr =
+    output
+      .split(/\r?\n/)
+      .find((line) => line.trim() !== "")
+      ?.trim() ?? "";
   if (/workspace not trusted/i.test(stderr)) {
     return "Claude Code doesn't trust this folder yet. Run `claude` there once and accept its prompt.";
   }
@@ -250,6 +263,12 @@ export function createLauncher(options: StartOptions) {
         message: "Claude Code didn't answer in time. Check the session list.",
       };
     }
+    if (result.kind === "overflow") {
+      return {
+        outcome: "unknown",
+        message: "Couldn't read Claude Code's answer. Check the session list.",
+      };
+    }
     if (result.kind === "error") {
       return { outcome: "failed", message: "Claude Code couldn't be run." };
     }
@@ -312,6 +331,24 @@ export function createLauncher(options: StartOptions) {
 
   return {
     /**
+     * Checks a message and the session's folder before Send takes its fresh listing, so the
+     * slow part (a cold drive-type read) isn't between that listing and the send (L-1). It also
+     * warms the drive-type cache, so the same check in send is quick.
+     */
+    async checkSend(
+      message: string,
+      folder: string,
+    ): Promise<ActionResult | null> {
+      if (programs.claude === null) return unavailable;
+      const problem = checkMessageText(message);
+      if (problem !== null) return refused(problem);
+      const checked = await checkLocalFolder(folder, options.driveType);
+      return checked.ok
+        ? null
+        : refused(`The session's folder can't be used: ${checked.message}`);
+    },
+
+    /**
      * Sends a message to a background session that isn't running (FR-37), as its next turn.
      * The message is never logged, kept, or repeated in the result (C-21).
      */
@@ -341,6 +378,13 @@ export function createLauncher(options: StartOptions) {
           outcome: "unknown",
           message:
             "Claude Code didn't answer in time, so the message may have been sent. Check the session.",
+        };
+      }
+      if (result.kind === "overflow") {
+        return {
+          outcome: "unknown",
+          message:
+            "Couldn't read Claude Code's answer, so the message may have been sent. Check the session.",
         };
       }
       if (result.kind === "error") {
@@ -385,7 +429,9 @@ export function createLauncher(options: StartOptions) {
             "Claude Code took the message, but the session failed straight away.",
         };
       }
-      const restored = result.stderr.includes(woke(target.shortId));
+      const restored = result.stderr
+        .split(/\r?\n/)
+        .some((line) => line.startsWith(woke(target.shortId)));
       return {
         outcome: "succeeded",
         message: restored
