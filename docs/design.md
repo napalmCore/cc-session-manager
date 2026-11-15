@@ -799,7 +799,7 @@ An agent ran `claude --bg --resume <session ID> -- <message>` the way Start runs
 ### Waiting sessions (FR-38)
 
 - **Labels:** `permission prompt` reads "Waiting on a permission prompt", and `input needed` reads "Waiting on your answer". Any other value, an unknown one, or `blocked` with no `waitingFor` reads "Needs you in Claude Code". The server keeps Claude Code's own value in `attentionReason`, so notifications compare it as now and a wording change alone never notifies. The page and the notification text map it to the plain label through one shared function (0029).
-- **Note:** the row adds "Answer it in Claude Code.", with Open where FR-14 offers it, and the folder and process ID where FR-20 applies.
+- **Note:** a row in Needs you adds "Answer it in Claude Code.", with Open where FR-14 offers it, and the folder and process ID where FR-20 applies. A Stale row keeps its label but no note, since it usually has no live prompt. Screen readers hear the row's name and then its label, with no "Needs you" prefix, since the label says it (owner's choice in the review of step 3).
 - **Send:** never offered on a waiting row, which always has a process.
 
 ### Page

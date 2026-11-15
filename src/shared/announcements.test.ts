@@ -29,7 +29,7 @@ describe("newAttentionMessage", () => {
       newAttentionMessage(new Set(), [
         session("a", "api-refactor", "permission prompt"),
       ]),
-    ).toBe("api-refactor needs you: permission prompt.");
+    ).toBe("api-refactor: Waiting on a permission prompt.");
   });
 
   it("announces a second session with no ID and no name separately (BUG-14)", () => {
@@ -46,13 +46,13 @@ describe("newAttentionMessage", () => {
     const both = [...first, anonymous("C:/two")];
 
     expect(newAttentionMessage(attentionKeys(first), both)).toBe(
-      "A session needs you: needs input.",
+      "A session: Needs you in Claude Code.",
     );
   });
 
   it("uses a generic name when a session has none", () => {
     expect(newAttentionMessage(new Set(), [session("a", undefined)])).toBe(
-      "A session needs you: needs input.",
+      "A session: Needs you in Claude Code.",
     );
   });
 
@@ -61,7 +61,7 @@ describe("newAttentionMessage", () => {
     const previous = attentionKeys([existing]);
 
     expect(newAttentionMessage(previous, [existing, session("b", "two")])).toBe(
-      "two needs you: needs input.",
+      "two: Needs you in Claude Code.",
     );
   });
 
@@ -71,7 +71,7 @@ describe("newAttentionMessage", () => {
         session("a", "one"),
         session("b", "two", "input needed"),
       ]),
-    ).toBe("one needs you: needs input. two needs you: input needed.");
+    ).toBe("one: Needs you in Claude Code. two: Waiting on your answer.");
   });
 
   it("announces a repeated ID only once", () => {
@@ -80,7 +80,7 @@ describe("newAttentionMessage", () => {
         session("a", "one"),
         session("a", "one"),
       ]),
-    ).toBe("one needs you: needs input.");
+    ).toBe("one: Needs you in Claude Code.");
   });
 
   it("gives the same keys whatever order sessions are in", () => {
@@ -96,6 +96,6 @@ describe("newAttentionMessage", () => {
 
     expect(
       newAttentionMessage(previous, [session("a", "one", "input needed")]),
-    ).toBe("one needs you: input needed.");
+    ).toBe("one: Waiting on your answer.");
   });
 });

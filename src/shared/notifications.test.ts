@@ -240,7 +240,7 @@ describe("notificationContent", () => {
     );
     expect(content).toEqual({
       title: "Claude Code session",
-      body: "alpha: permission prompt",
+      body: "alpha: Waiting on a permission prompt",
       tag: "cc-session-manager-7",
       keys: ["s1"],
     });

@@ -1,3 +1,4 @@
+import { waitingLabel } from "./waiting.js";
 import type { SessionView, Snapshot } from "./protocol.js";
 import { groupSessions } from "./session-groups.js";
 
@@ -152,7 +153,7 @@ export interface NotificationContent {
 function describe(event: NotifyEvent): string {
   switch (event.kind) {
     case "needs-you":
-      return `${event.folder}: ${event.reason}`;
+      return `${event.folder}: ${waitingLabel(event.reason)}`;
     case "finished":
       return `${event.folder}: finished`;
     case "failed":
