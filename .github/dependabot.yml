@@ -10,3 +10,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # The project targets Node 24, so its types stay on 24.x (owner's choice, 0.4.0).
+      - dependency-name: "@types/node"
+        versions: [">=25"]
