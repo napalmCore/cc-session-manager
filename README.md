@@ -15,7 +15,7 @@ cc-session-manager is an independent, open-source tool. It isn't made, endorsed,
 ## Install and run
 
 ```
-git clone --branch v0.4.0 https://github.com/napalmCore/cc-session-manager.git
+git clone --branch v0.4.1 https://github.com/napalmCore/cc-session-manager.git
 cd cc-session-manager
 pnpm install
 pnpm build
