@@ -10,7 +10,7 @@ cc-session-manager is an independent tool. It isn't made, endorsed, or supported
 
 ### What's changed
 
-- The server's web framework, Hono, is updated from 4.13.16 to 4.13.18. 4.13.18 fixes four Medium advisories. One affects this tool: [GHSA-39q9-qp46-w8xg](https://github.com/advisories/GHSA-39q9-qp46-w8xg), where a request body sent in many tiny pieces could use a lot of memory, even under the request-size limit that the dashboard's action and search routes use. The server listens only on `127.0.0.1`, so only programs on your own computer could try this. The other three advisories cover Hono features the dashboard doesn't use.
+- The server's web framework, Hono, is updated from 4.13.16 to 4.13.18. 4.13.18 fixes four Medium advisories. One affects this tool: [GHSA-39q9-qp46-w8xg](https://github.com/advisories/GHSA-39q9-qp46-w8xg), where a request body sent in many tiny pieces could use a lot of memory, even under a request-size limit. The dashboard sets that limit on three routes: actions, search, and the hand-over a second start of the tool sends. The hand-over route takes requests before any sign-in check, so on it any program on your computer could try this; on the other two, a request without the dashboard's sign-in cookie is refused first. The server listens only on `127.0.0.1`, so nothing outside your computer can reach any of them. The other three advisories cover Hono features the dashboard doesn't use.
 - Development tools are updated: Prettier 3.10.1, Vite 8.3.8, the Vite React plugin 6.3.0, and Playwright 1.65.0. Running the browser tests locally needs `pnpm exec playwright install chromium` once.
 
 Everything else in the 0.4.0 notes, including the known limits and open bugs, still applies.
