@@ -331,6 +331,24 @@ export function createLauncher(options: StartOptions) {
 
   return {
     /**
+     * Checks a message and the session's folder before Send takes its fresh listing, so the
+     * slow part (a cold drive-type read) isn't between that listing and the send (L-1). It also
+     * warms the drive-type cache, so the same check in send is quick.
+     */
+    async checkSend(
+      message: string,
+      folder: string,
+    ): Promise<ActionResult | null> {
+      if (programs.claude === null) return unavailable;
+      const problem = checkMessageText(message);
+      if (problem !== null) return refused(problem);
+      const checked = await checkLocalFolder(folder, options.driveType);
+      return checked.ok
+        ? null
+        : refused(`The session's folder can't be used: ${checked.message}`);
+    },
+
+    /**
      * Sends a message to a background session that isn't running (FR-37), as its next turn.
      * The message is never logged, kept, or repeated in the result (C-21).
      */

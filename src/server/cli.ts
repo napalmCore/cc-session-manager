@@ -309,6 +309,7 @@ actionsRef.current = createActionTracker({
   start: (request) => launcher.start(request),
   fork: (request, target) => launcher.fork(request, target),
   send: (request, target) => launcher.send(request, target),
+  checkSend: (message, folder) => launcher.checkSend(message, folder),
   // A past session's folder, only if it's still a local folder that can be used (FR-33, FR-35).
   historyFolder: async (sessionId) => {
     const entry = await history.find(sessionId);

@@ -343,6 +343,48 @@ describe("Send in the action tracker (FR-37, NFR-17)", () => {
     expect(removed.send).not.toHaveBeenCalled();
   });
 
+  it("checks the message and folder before the fresh listing, and refuses a folder that changed (L-1)", async () => {
+    const order: string[] = [];
+    const t = createActionTracker({
+      listing: () => ({
+        sessions: [bg()],
+        lastSuccessAt: Date.now(),
+        lastPollFailed: false,
+      }),
+      freshListing: () => {
+        order.push("fresh");
+        return Promise.resolve([bg()]);
+      },
+      executors: {},
+      isProtected: () => false,
+      checkSend: () => {
+        order.push("check");
+        return Promise.resolve(null);
+      },
+      send: () => {
+        order.push("send");
+        return Promise.resolve({ outcome: "succeeded", message: "Sent." });
+      },
+    });
+    await t.handle(sendTo());
+    expect(order).toEqual(["check", "fresh", "send"]);
+
+    const refusing = tracker({});
+    const moved = createActionTracker({
+      listing: () => ({
+        sessions: [bg()],
+        lastSuccessAt: Date.now(),
+        lastPollFailed: false,
+      }),
+      freshListing: () => Promise.resolve([bg({ cwd: "C:\\elsewhere" })]),
+      executors: {},
+      isProtected: () => false,
+      send: refusing.send,
+    });
+    expect((await moved.handle(sendTo())).message).toMatch(/changed/);
+    expect(refusing.send).not.toHaveBeenCalled();
+  });
+
   it("holds notifications only once Claude Code has run, not after a refusal (I-4)", async () => {
     const { t } = tracker({
       send: () =>
