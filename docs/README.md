@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 5, Phase 6: Release, done.** 0.1.0, 0.2.0, 0.3.0, and 0.4.0 are released ([0017](decisions/0017-first-release.md)), and the repository is public. Iteration 5 covered upkeep for the public repository, the open bugs, sending messages to background sessions that aren't running, and plain labels for waiting sessions, with no answering of prompts ([0027](decisions/0027-iteration-5-plan.md), [0028](decisions/0028-iteration-5-requirements.md), [0029](decisions/0029-iteration-5-design.md)). Testing is closed: see the [test plan](test-plan.md#iteration-5). 0.4.0 was released as the annotated tag `v0.4.0` and a [GitHub release](https://github.com/napalmCore/cc-session-manager/releases/tag/v0.4.0), with nothing on npm. Iteration 6, for 0.5.0, covers macOS and Linux, and isn't planned yet.
+**Iteration 6, Phase 2: Requirements.** 0.1.0 to 0.4.0 are released ([0017](decisions/0017-first-release.md)), and the repository is public. Iteration 5 is closed ([0030](decisions/0030-iteration-6-plan.md)). Iteration 6, for 0.5.0, brings macOS and Linux: monitoring, notifications, usage, History, Search, Stop, Delete, Send, Open, Resume, New session, and Fork, with End, Force end, and leftover programs staying Windows-only for now, and tests on CI only until a machine is available ([0027](decisions/0027-iteration-5-plan.md), [0030](decisions/0030-iteration-6-plan.md)).
 
 ## How these docs work
 
@@ -53,3 +53,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0027](decisions/0027-iteration-5-plan.md)              | Close iteration 4, and iterations 5 and 6 scope     | Accepted                                  |
 | [0028](decisions/0028-iteration-5-requirements.md)      | Iteration 5 requirements choices                    | Accepted                                  |
 | [0029](decisions/0029-iteration-5-design.md)            | Iteration 5 design choices                          | Accepted                                  |
+| [0030](decisions/0030-iteration-6-plan.md)              | Close iteration 5, and iteration 6 scope            | Accepted                                  |
