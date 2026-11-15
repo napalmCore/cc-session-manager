@@ -225,7 +225,8 @@ test.describe("session groups", () => {
       needsYou.getByText("Waiting on a permission prompt"),
     ).toBeVisible();
     await expect(needsYou.getByText("Needs you in Claude Code")).toBeVisible();
-    // The dashboard never answers a prompt, so each waiting row says where to (FR-38).
+    // The dashboard never answers a prompt, so each waiting row says where to (FR-38),
+    // and only the Needs you rows, which have a live prompt.
     await expect(needsYou.getByText("Answer it in Claude Code.")).toHaveCount(
       2,
     );
@@ -236,6 +237,10 @@ test.describe("session groups", () => {
       section(page, /finished/i).getByText("completed"),
     ).toBeVisible();
     await expect(page.getByText("abandoned")).toBeHidden();
+    // Stale rows, which usually have no live prompt, get no note, even when expanded.
+    await page.getByRole("button", { name: /stale/i }).click();
+    await expect(page.getByText("abandoned")).toBeVisible();
+    await expect(page.getByText("Answer it in Claude Code.")).toHaveCount(2);
   });
 
   test("shows the attention count in the tab title, without stale sessions", async ({
@@ -886,7 +891,8 @@ test.describe("screen reader text (BUG-10)", () => {
     // The "!" marker is hidden from screen readers.
     await expect(summary.locator('[aria-hidden="true"]')).toHaveText("! ");
     const text = (await summary.textContent())?.replace(/^! /, "");
-    expect(text).toMatch(/^prompting\. Needs you: .+\.$/);
+    // The status says what it waits for, with no repeated "Needs you" (FR-38).
+    expect(text).toMatch(/^prompting\. Waiting on .+\.$/);
     const running = page
       .getByRole("listitem")
       .filter({ has: page.getByText("running", { exact: true }) })
