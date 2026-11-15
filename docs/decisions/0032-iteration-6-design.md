@@ -15,12 +15,19 @@ Design research for iteration 6 read Claude Code's documentation and the systems
 - **A Linux terminal that exits with code 0 within about 2 seconds:** report failed and stop; or try the next terminal.
 - **A macOS folder with `\` or `!`:** show the command for it; or open Terminal anyway.
 
+After a design review by an agent:
+
+- **When to try the next Linux terminal:** only when a terminal's program can't be started or there's no display, any other quick exit being failed; on any non-zero exit within about 2 seconds, as FR-43 said; or per terminal, after a probe.
+- **A folder with `$` for Konsole:** leave out `--workdir` and use the working folder only, skipping Konsole if a probe shows it doesn't keep it; skip Konsole for it; or show the command.
+- **More local types:** allow `ecryptfs` on Linux and `zfs` on macOS; or neither.
+
 ## Decision
 
-The owner chose the first option each time.
+The owner chose the first option each time, including after the review.
 
 ## Consequences
 
-- C-22 adds `/sbin/mount` on macOS, and FR-44 names the removable-disk types. A name can't contain `$` or `%` anywhere.
+- C-22 adds `/sbin/mount` on macOS, and FR-44 names the removable-disk types and `ecryptfs`. A name can't contain `$` or `%` anywhere.
+- FR-43 now tries the next terminal only when a terminal can't be started at all, so a session that fails at once opens one window, not four.
 - U-30 to U-33 are resolved in the requirements. Process names, the first Automation prompt, and real network mounts need a live check once a machine is available.
 - Implementation starts with CI on all three systems.
