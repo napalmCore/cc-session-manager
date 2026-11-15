@@ -12,18 +12,22 @@ export interface ClaudeLaunch {
 }
 
 /**
+ * The arguments for sending a message (FR-37): only these, before and after `--`, so the
+ * session keeps its own saved options and permission mode, and a message that starts with `-`
+ * is never read as an option (C-19).
+ */
+export function sendArguments(sessionId: string, message: string): string[] {
+  if (!isValidSessionId(sessionId)) throw new Error("Invalid session ID");
+  if (message.trim() === "") throw new Error("A message is needed");
+  return ["--bg", "--resume", sessionId, "--", message];
+}
+
+/**
  * The arguments for `claude`, with every option before `--`, so a prompt or name that starts
  * with `-` is never read as an option (C-15). Only `--bg`, `--name`, `--resume`, and
  * `--fork-session` are ever passed, and a fork always has `--fork-session`. A name goes in the
  * same argument as its option, so it can't be read as another option however it looks.
  */
-export function sendArguments(sessionId: string, message: string): string[] {
-  if (!isValidSessionId(sessionId)) throw new Error("Invalid session ID");
-  if (message.trim() === "") throw new Error("A message is needed");
-  // Only these, so the session keeps its own saved options and permission mode (C-19).
-  return ["--bg", "--resume", sessionId, "--", message];
-}
-
 export function claudeArguments(launch: ClaudeLaunch): string[] {
   const args: string[] = [];
   if (launch.forkOf !== undefined) {

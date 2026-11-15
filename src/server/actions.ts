@@ -152,9 +152,9 @@ export interface ActionTrackerOptions {
   listFolders?: (folder: string | undefined) => Promise<FolderListing>;
   /** Reads a page of History (FR-35). */
   history?: (page: number, listing: SessionView[]) => Promise<HistoryPage>;
-  /** Forks a session into a new one (FR-33). */
   /** Sends a message to a session that isn't running (FR-37). */
   send?: (request: SendRequest, target: SendTarget) => Promise<ActionResult>;
+  /** Forks a session into a new one (FR-33). */
   fork?: (request: ForkRequest, target: ForkTarget) => Promise<ActionResult>;
   /**
    * A past session's folder from History, for Fork and Resume of a session Claude Code no longer
@@ -369,10 +369,6 @@ export function createActionTracker(options: ActionTrackerOptions) {
   };
 
   /**
-   * Resume of a session Claude Code no longer lists, found in History (FR-35, FR-14). A fresh
-   * listing comes first (C-9): a session listed again isn't resumed from here.
-   */
-  /**
    * Sends a message to a background session that isn't running (FR-37, NFR-17). It shares the
    * per-session lock with Open, Resume, Stop, Delete, and End, refuses the protected session,
    * and sends only after a fresh listing shows the same session still able to take it.
@@ -441,6 +437,10 @@ export function createActionTracker(options: ActionTrackerOptions) {
     }
   };
 
+  /**
+   * Resume of a session Claude Code no longer lists, found in History (FR-35, FR-14). A fresh
+   * listing comes first (C-9): a session listed again isn't resumed from here.
+   */
   const resumeFromHistory = async (key: string): Promise<ActionResult> => {
     const executor = options.executors.resume;
     if (executor === undefined || options.historyFolder === undefined) {

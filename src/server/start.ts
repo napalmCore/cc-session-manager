@@ -106,7 +106,10 @@ export function runBackground(
  * Claude Code's refusal, in the tool's own words (FR-18, 0025). Its text is only matched here,
  * never shown, logged, or kept.
  */
-export function refusalMessage(stderr: string): string {
+export function refusalMessage(
+  stderr: string,
+  fallback = "Claude Code refused to start the session.",
+): string {
   if (/workspace not trusted/i.test(stderr)) {
     return "Claude Code doesn't trust this folder yet. Run `claude` there once and accept its prompt.";
   }
@@ -121,7 +124,19 @@ export function refusalMessage(stderr: string): string {
   if (/outdated|update|restart/i.test(stderr)) {
     return "Claude Code's background service needs updating. Restart Claude Code and try again.";
   }
-  return "Claude Code refused to start the session.";
+  return fallback;
+}
+
+/** A message's own checks, in a message's words: a starting prompt's limits (NFR-17). */
+export function checkMessageText(message: string): string | null {
+  if (message.trim() === "") return "Type a message to send.";
+  if (message.length > MAX_PROMPT) {
+    return `A message can be at most ${String(MAX_PROMPT)} characters.`;
+  }
+  if (hasRawControl(message, "\n\r\t")) {
+    return "A message can't contain control characters other than line breaks and tabs.";
+  }
+  return null;
 }
 
 const BACKGROUNDED = /^backgrounded\s+·\s+([0-9a-f]{8})\b/;
@@ -165,7 +180,8 @@ export interface SendTarget {
 }
 
 /** Claude Code says this when it brought a session back with its saved options. */
-const WOKE = /note: woke session [0-9a-f]{8} with its saved options/;
+const woke = (shortId: string) =>
+  `note: woke session ${shortId} with its saved options`;
 
 /** Where a fork runs: the session's own ID and folder, from the server's own data. */
 export interface ForkTarget {
@@ -304,9 +320,8 @@ export function createLauncher(options: StartOptions) {
       target: SendTarget,
     ): Promise<ActionResult> {
       if (programs.claude === null) return unavailable;
-      const problem = checkStartText("background", undefined, request.message);
-      if (problem !== null)
-        return refused(problem.replace("prompt", "message"));
+      const problem = checkMessageText(request.message);
+      if (problem !== null) return refused(problem);
       const folder = await checkLocalFolder(target.folder, options.driveType);
       if (!folder.ok) {
         return refused(`The session's folder can't be used: ${folder.message}`);
@@ -331,7 +346,11 @@ export function createLauncher(options: StartOptions) {
       if (result.kind === "error") {
         return { outcome: "failed", message: "Claude Code couldn't be run." };
       }
-      if (result.code !== 0) return refused(refusalMessage(result.stderr));
+      if (result.code !== 0) {
+        return refused(
+          refusalMessage(result.stderr, "Claude Code refused the message."),
+        );
+      }
       const id = BACKGROUNDED.exec(result.stdout.trimStart())?.[1];
       if (id === undefined) {
         return {
@@ -366,7 +385,7 @@ export function createLauncher(options: StartOptions) {
             "Claude Code took the message, but the session failed straight away.",
         };
       }
-      const restored = WOKE.test(result.stderr);
+      const restored = result.stderr.includes(woke(target.shortId));
       return {
         outcome: "succeeded",
         message: restored

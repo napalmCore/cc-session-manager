@@ -239,7 +239,9 @@ describe("Send in the launcher (FR-37, C-21)", () => {
 
   it("checks the message and the folder before running anything", async () => {
     const { l, run } = launcher(() => Promise.resolve(exited(0, "")));
-    expect((await l.send(request("  "), target())).message).toMatch(/message/);
+    expect((await l.send(request("  "), target())).message).toBe(
+      "Type a message to send.",
+    );
     expect((await l.send(request("a".repeat(8001)), target())).outcome).toBe(
       "refused",
     );
