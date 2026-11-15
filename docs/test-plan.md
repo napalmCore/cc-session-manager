@@ -145,7 +145,7 @@ The NFR-9 review, by an independent agent on `f71f920`, found no Critical or Hig
 
 ## Iteration 5
 
-- **Status:** every check below is done, waiting for the owner to close Testing. Implementation steps 1 to 5 are merged (#74 to #78), with the Testing fixes in #80, and main at `c97436a`. No Critical or High bug is open, and the NFR-9 security review passed.
+- **Status:** exit criteria met on 2026-11-15, and Testing closed by the owner. Implementation steps 1 to 5 are merged (#74 to #78), with the Testing fixes in #80, and main at `c97436a`. No Critical or High bug is open, and the NFR-9 security review passed.
 - **Exit criteria:** the same as iteration 4: every check below done or recorded as not run, no Critical or High bug open, and NFR-9's security review passed, now covering Send.
 - **How:** a runner agent ran the live checks on `4ca56fe` with Claude Code 2.1.325, and a verifier agent audited the evidence and repeated L26, L27, L29, and L31 on `c97436a`, after the fixes (decision 0011). Agents used only throwaway folders under `~\source`, started and ended only their own background sessions, opened no terminals, and ran their own server on a free port from the repository's modules, never the tool's own command. They answered no prompt. The owner's Claude Code runs in auto mode, so test sessions had trivial prompts only.
 - **Not run:** L30's permission-prompt label, since auto mode raised no permission prompt. L28's race was simulated in the agents' own server, by holding back its listing, rather than timed.
