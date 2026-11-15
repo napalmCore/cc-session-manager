@@ -347,7 +347,7 @@ function SessionList({
             {isProtectedSession(session, actionProps.context) && (
               <p className={styles.note}>
                 The dashboard was started from this session, so it can&apos;t be
-                stopped, deleted, or ended from here.
+                stopped, deleted, ended, or sent a message from here.
               </p>
             )}
             {offer !== undefined && key !== undefined && (
