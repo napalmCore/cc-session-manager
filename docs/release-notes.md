@@ -1,5 +1,20 @@
 # Release notes
 
+## 0.4.1
+
+A security update to 0.4.0. Get it from the GitHub release: clone the repository at the `v0.4.1` tag, then follow the README. It isn't published to npm.
+
+cc-session-manager is an independent tool. It isn't made, endorsed, or supported by Anthropic.
+
+**Upgrading from 0.4.0:** stop the old version, run `git fetch --tags`, check out `v0.4.1`, and run `pnpm install` and `pnpm build` again. Nothing else changes, and the saved list of finished sessions carries over.
+
+### What's changed
+
+- The server's web framework, Hono, is updated from 4.13.16 to 4.13.18. 4.13.18 fixes four Medium advisories. One affects this tool: [GHSA-39q9-qp46-w8xg](https://github.com/advisories/GHSA-39q9-qp46-w8xg), where a request body sent in many tiny pieces could use a lot of memory, even under the request-size limit that the dashboard's action and search routes use. The server listens only on `127.0.0.1`, so only programs on your own computer could try this. The other three advisories cover Hono features the dashboard doesn't use.
+- Development tools are updated: Prettier 3.10.1, Vite 8.3.8, the Vite React plugin 6.3.0, and Playwright 1.65.0. Running the browser tests locally needs `pnpm exec playwright install chromium` once.
+
+Everything else in the 0.4.0 notes, including the known limits and open bugs, still applies.
+
 ## 0.4.0
 
 The fourth release. It covers iteration 5. Get it from the GitHub release: clone the repository at the `v0.4.0` tag, then follow the README. It isn't published to npm. It's the first release since the repository became public, on the day 0.3.0 was released.
