@@ -21,13 +21,21 @@ After a design review by an agent:
 - **A folder with `$` for Konsole:** leave out `--workdir` and use the working folder only, skipping Konsole if a probe shows it doesn't keep it; skip Konsole for it; or show the command.
 - **More local types:** allow `ecryptfs` on Linux and `zfs` on macOS; or neither.
 
+After a second design review:
+
+- **A row's Resume when its folder isn't local:** offer none, with Open starting in the home folder; or offer it, with the terminal started in that folder.
+- **`x-terminal-emulator` leading to an unlisted terminal:** skip it and try the listed ones; use it with the 2-second rule; or show the command.
+- **Case on macOS:** always compare without case; or check each volume with `getconf`.
+
 ## Decision
 
-The owner chose the first option each time, including after the review.
+The owner chose the first option each time, including after both reviews.
 
 ## Consequences
 
 - C-22 adds `/sbin/mount` on macOS, and FR-44 names the removable-disk types and `ecryptfs`. A name can't contain `$` or `%` anywhere.
 - FR-43 now tries the next terminal only when a terminal can't be started at all, so a session that fails at once opens one window, not four.
+- FR-44 covers a row's Resume and Open's starting folder, and C-24 compares without case on macOS.
+- A macOS folder with a control character is refused for Open and Resume, since its command can't be shown safely quoted.
 - U-30 to U-33 are resolved in the requirements. Process names, the first Automation prompt, and real network mounts need a live check once a machine is available.
 - Implementation starts with CI on all three systems.
