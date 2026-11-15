@@ -765,3 +765,85 @@ Each step is a separate pull request, approved by an independent agent before me
   - A search over all local transcripts, timed.
   - History's first page, timed.
 - **Security review (NFR-9):** the new actions, the folder picker, and search's handling of message text, before release.
+
+## Iteration 5
+
+Requirements: the Iteration 5 section of [requirements.md](requirements.md). Decisions: [0027](decisions/0027-iteration-5-plan.md), [0028](decisions/0028-iteration-5-requirements.md), and [0029](decisions/0029-iteration-5-design.md).
+
+### Experiments (U-25 to U-29)
+
+An agent ran `claude --bg --resume <session ID> -- <message>` the way Start runs Claude Code, with Claude Code 2.1.325, on seven of its own throwaway background sessions.
+
+- **Delivered:** exit 0, `backgrounded · <short ID>[ · <name>]` on standard output, the same short ID and session ID as before, and `note: woke session <short ID> with its saved options (--name, --model).` on standard error, listing the options it restored. The session reads `working` straight away and has a process about 2 seconds later. The command returns in about 4 seconds, or 5 when Claude Code's background service has to start.
+- **Copy:** a session with a process, working or idle, gets a copy: another short ID on standard output, and `note: session <ID> is already running in the background, so this started a copy as <new ID>.` on standard error. The original isn't changed.
+- **Removed and rebuilt:** a session removed with `claude rm` is rebuilt from its saved conversation under the same IDs, with no note and without its saved options, such as its name.
+- **Which states take a message:** `stopped`, `done`, and `failed`, whenever there's no process. `claude stop` on an idle session leaves it `done` with no process, and so does Claude Code's own idle timeout after about an hour, so `stopped` alone is rare. A `failed` session with no saved options was continued with no note.
+- **Not visible:** the listing has no permission-mode field.
+- **`waitingFor`:** Claude Code documents `permission prompt`, `input needed`, `sandbox request`, `worker request`, and `dialog open`.
+
+### Send (FR-37, C-19, NFR-17)
+
+- **Offered:** on a background row Claude Code lists, in state `stopped`, `done`, or `failed`, with a short ID, a session ID, no process ID, a usable folder, and not protected. A row with a process offers Open, as now.
+- **Request:** `{ action: "send", key, message }` with its own strict schema. The route's 32 KB body limit, which now covers only `start` and `fork`, is extended to `send`. The message has a starting prompt's checks (`checkStartText`'s background rules).
+- **Lock:** the per-session lock that Open, Resume, Stop, Delete, and End use, so only one action runs on a session at a time. Fork stays outside it, because it never changes the original.
+- **Check:** refused if the session is protected, or if the tool can't tell which session started it, through `isProtected` as Stop, Delete, and End use it, which covers FR-37's "none at all" rule. Refused if the listing is out of date (C-9). Then a fresh listing must show the same short ID and session ID, in one of those states, with no process ID, and still not protected. Anything else is refused, and a failed fresh listing gives an unknown result.
+- **Command:** `execFile(claude, ["--bg", "--resume", sessionId, "--", message], { cwd: folder })`, with no shell, `sessionLaunchEnv`, and a 30-second limit, after the folder checks.
+- **Result:** Claude Code's answer decides it, as Start's does.
+  - Exit 0 with the same short ID: delivered, followed by Start's 10-second failure watch. For a session that was already `failed`, a failure counts only after it has shown another state or a process. If the "woke session … with its saved options" note is missing, the result adds "Claude Code didn't say it restored the session's saved options." (0029).
+  - Exit 0 with another short ID: "Claude Code started a new session, `<ID>`, with your message, because this one was running." The result carries the new short ID, and the page highlights that row once it's listed. It's left running.
+  - Exit 0 with no `backgrounded · <ID>` line, or the 30-second limit reached: unknown, because the message may have been delivered. Never retried.
+  - A non-zero exit: Start's refusal mapping, in the tool's own words. An error running Claude Code at all: failed.
+  - Standard error is matched, never shown or logged (C-21).
+- **Notifications:** Send records the user's own action for the session, as Stop does, so its events are held for 30 seconds. A copy isn't held, so its events notify as any new session's do.
+
+### Waiting sessions (FR-38)
+
+- **Labels:** `permission prompt` reads "Waiting on a permission prompt", and `input needed` reads "Waiting on your answer". Any other value, an unknown one, or `blocked` with no `waitingFor` reads "Needs you in Claude Code". The server keeps Claude Code's own value in `attentionReason`, so notifications compare it as now and a wording change alone never notifies. The page and the notification text map it to the plain label through one shared function (0029).
+- **Note:** the row adds "Answer it in Claude Code.", with Open where FR-14 offers it, and the folder and process ID where FR-20 applies.
+- **Send:** never offered on a waiting row, which always has a process.
+
+### Page
+
+- **Send:** a "Send…" button on qualifying rows, hidden while actions are turned off or the row is protected, opens a dialog like Fork's, naming the session, with a message box. A refusal stays in the dialog; a send closes it, announces the result, and returns focus to the button. The field turns off autofill and spell check.
+
+### Project upkeep (PU-1 to PU-4)
+
+- **PU-1:** the docs' status line and the release decisions say the repository is public from 2026-11-14. Earlier wording stays as history.
+- **PU-2:** private vulnerability reporting is turned on, and `SECURITY.md` points to it.
+- **PU-3:** a branch rule on `main` requires a pull request and the `check` job, blocks force pushes and deletion, and lets admins bypass.
+- **PU-4:** CI's actions are pinned to full commit hashes with a version comment, and `.github/dependabot.yml` updates them weekly.
+
+### Open bugs (FR-39)
+
+An agent re-checks each bug live on its own throwaway sessions, with the same rules as the live checks. It records the outcome in the test plan's Bugs table. For Claude Code's own behaviour, it drafts a report for the owner to file.
+
+### Requirements coverage
+
+| Requirement  | Design                                                                            |
+| ------------ | --------------------------------------------------------------------------------- |
+| FR-37        | Send                                                                              |
+| FR-38        | Waiting sessions                                                                  |
+| FR-39        | Open bugs                                                                         |
+| C-19         | Send's command                                                                    |
+| C-20         | No hooks, settings, or answers anywhere in the design                             |
+| C-21         | Send's result: the message isn't echoed, and standard error isn't shown or logged |
+| NFR-17       | Send's request, lock, and check                                                   |
+| NFR-18       | Page                                                                              |
+| PU-1 to PU-4 | Project upkeep                                                                    |
+
+### Build plan
+
+| Step | Change                                                                                          | Covers                      |
+| ---- | ----------------------------------------------------------------------------------------------- | --------------------------- |
+| 1    | Project upkeep: docs, `SECURITY.md`, private reporting, branch rule, pinned actions, Dependabot | PU-1 to PU-4                |
+| 2    | Re-check the open bugs, with workarounds and drafted reports                                    | FR-39                       |
+| 3    | Waiting sessions' labels and note                                                               | FR-38, FR-5                 |
+| 4    | Send's server side                                                                              | FR-37, C-19 to C-21, NFR-17 |
+| 5    | Send's page                                                                                     | FR-37, NFR-18               |
+
+### Testing approach
+
+- **Unit tests:** Send's arguments; eligibility for every state with and without a process; protected and unknown-starter refusals; the fresh check; the lock with Open and Stop; the four result cases and the timeout; the note-line warning; the watch for an already `failed` session; the own-action hold; the body limit; hostile messages; nothing logged; and the shared label function, including that a wording change doesn't notify.
+- **Browser tests:** the Send dialog, its refusal and success, focus, the waiting labels, and axe in both themes.
+- **Live checks:** Send to a `done` session and to a `failed` one, each with no process; to one that gains a process in the meantime, giving a copy; the refusal for a session with a process; and the waiting labels if a waiting session can be seen without answering it.
+- **Security review (NFR-9):** Send and its route, before release.
