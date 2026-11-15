@@ -41,10 +41,28 @@ function sessions(now: number): SessionView[] {
   ];
 }
 
-const snapshot = (): Snapshot => ({
-  sessions: sessions(Date.now()),
+const PARKED_ID = "66666666-6666-4666-8666-666666666666";
+/** A background session that has finished and has no process, so it can take a message. */
+function parked(now: number): SessionView {
+  return {
+    ...toSessionView({
+      name: "parked",
+      id: "cafe0001",
+      sessionId: PARKED_ID,
+      cwd: "C:\\repos\\sample",
+      kind: "background",
+      state: "done",
+      startedAt: now - HOUR,
+    }),
+    lastActivityAt: now - 2 * HOUR,
+  };
+}
+
+const snapshot = (fields: Partial<Snapshot> = {}): Snapshot => ({
+  sessions: [...sessions(Date.now()), parked(Date.now())],
   error: null,
   warnings: [],
+  ...fields,
 });
 
 function historyReply(page = 0, pages = 2): ActionResult {
@@ -158,8 +176,8 @@ test.afterEach(async () => {
   await server.close();
 });
 
-async function open(page: Page) {
-  server.publish(snapshot());
+async function open(page: Page, data: Snapshot = snapshot()) {
+  server.publish(data);
   await page.goto(server.loginUrl);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByText("Loading sessions…")).toHaveCount(0);
@@ -510,6 +528,126 @@ test.describe("races and edges (review of #64)", () => {
   });
 });
 
+test.describe("Send (FR-37)", () => {
+  const sendButton = (page: Page) =>
+    page
+      .getByRole("group", { name: /"parked"/ })
+      .getByRole("button", { name: "Send…" });
+
+  test("is offered only on a background session with no process, and sends what's typed", async ({
+    page,
+  }) => {
+    await open(page);
+    await expect(sendButton(page)).toBeVisible();
+    await expect(
+      page.getByRole("group", { name: /"worker"/ }).getByRole("button", {
+        name: "Send…",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("group", { name: /"editor"/ }).getByRole("button", {
+        name: "Send…",
+      }),
+    ).toHaveCount(0);
+
+    await sendButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Send a message" });
+    await expect(dialog.getByLabel("Message", { exact: true })).toBeFocused();
+    await dialog
+      .getByLabel("Message", { exact: true })
+      .fill("Carry on, please.");
+    await dialog.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(requests.at(-1)).toEqual({
+      action: "send",
+      key: "cafe0001",
+      message: "Carry on, please.",
+    });
+    await expect(page.locator("[data-announcer]")).toContainText("Send,");
+    await expect(page.locator("[data-announcer]")).not.toContainText(
+      "Carry on",
+    );
+    await expect(sendButton(page)).toBeFocused();
+  });
+
+  test("keeps a refusal in the form, and closes on an unknown result so it isn't sent twice", async ({
+    page,
+  }) => {
+    reply = () => ({
+      outcome: "refused",
+      message: "The session has changed. Check it and try again.",
+    });
+    await open(page);
+    await sendButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Send a message" });
+    await dialog.getByLabel("Message", { exact: true }).fill("hi");
+    await dialog.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "The session has changed. Check it and try again.",
+    );
+    reply = () => ({
+      outcome: "unknown",
+      message:
+        "Claude Code didn't answer in time, so the message may have been sent. Check the session.",
+    });
+    await dialog.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator("[data-announcer]")).toContainText(
+      "may have been sent",
+    );
+  });
+
+  test("highlights the new session Claude Code started instead, once it's listed", async ({
+    page,
+  }) => {
+    reply = () => ({
+      outcome: "started",
+      message:
+        "Claude Code started a new session, 78fe91f0, with your message, because this one was running.",
+      newSessionId: "78fe91f0",
+    });
+    await open(page);
+    await sendButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Send a message" });
+    await dialog.getByLabel("Message", { exact: true }).fill("hi");
+    await dialog.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const now = Date.now();
+    server.publish(
+      snapshot({
+        sessions: [
+          ...sessions(now),
+          parked(now),
+          toSessionView({
+            name: "the copy",
+            id: "78fe91f0",
+            cwd: "C:\\repos\\sample",
+            kind: "background",
+            state: "working",
+            pid: 99,
+            startedAt: now,
+          }),
+        ],
+      }),
+    );
+    await expect(
+      page.locator('[data-session-key="78fe91f0"][data-highlighted="true"]'),
+    ).toBeVisible();
+  });
+
+  test("isn't offered while actions are turned off", async ({ page }) => {
+    await open(page, snapshot({ actionsBlocked: "Actions are turned off." }));
+    await expect(page.getByText("parked").first()).toBeVisible();
+    await expect(sendButton(page)).toHaveCount(0);
+  });
+
+  test("isn't offered on the protected session", async ({ page }) => {
+    await open(page, snapshot({ protectedSessions: [PARKED_ID] }));
+    await expect(page.getByText("parked").first()).toBeVisible();
+    await expect(sendButton(page)).toHaveCount(0);
+  });
+});
+
 test.describe("accessibility (NFR-16)", () => {
   const check = async (page: Page) => {
     const { violations } = await new AxeBuilder({ page })
@@ -537,6 +675,16 @@ test.describe("accessibility (NFR-16)", () => {
         .click();
       await expect(
         page.getByRole("dialog", { name: "Fork session" }),
+      ).toBeVisible();
+      await check(page);
+      await page.getByRole("button", { name: "Cancel" }).click();
+
+      await page
+        .getByRole("group", { name: /"parked"/ })
+        .getByRole("button", { name: "Send…" })
+        .click();
+      await expect(
+        page.getByRole("dialog", { name: "Send a message" }),
       ).toBeVisible();
       await check(page);
       await page.getByRole("button", { name: "Cancel" }).click();
