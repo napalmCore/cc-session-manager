@@ -112,7 +112,8 @@ function identify(pid: number): { startMs: number; path: string } {
       "-Command",
       `$p = Get-Process -Id ${String(pid)}; [DateTimeOffset]::new($p.StartTime.ToUniversalTime()).ToUnixTimeMilliseconds(); $p.Path`,
     ],
-    { encoding: "utf8", windowsHide: true },
+    // A time limit of its own, so a stuck PowerShell fails the test rather than hanging it.
+    { encoding: "utf8", windowsHide: true, timeout: TEST_HELPER_TIMEOUT_MS },
   )
     .trim()
     .split(/\r?\n/);
