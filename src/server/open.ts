@@ -15,7 +15,7 @@ export const REPEAT_WINDOW_MS = 10_000;
 export interface OpenOptions {
   programs: Programs;
   launch?: (plan: LaunchPlan, env: NodeJS.ProcessEnv) => Promise<void>;
-  folderExists: (folder: string) => boolean;
+  folderExists: (folder: string) => boolean | Promise<boolean>;
   transcriptExists: (sessionId: string) => Promise<boolean>;
   homeFolder: string;
   environment?: NodeJS.ProcessEnv;
@@ -99,16 +99,17 @@ export function createOpenExecutors(options: OpenOptions) {
   };
 
   return {
-    open(session: SessionView): Promise<ActionResult> {
+    async open(session: SessionView): Promise<ActionResult> {
       if (session.id === undefined) {
-        return Promise.resolve({
+        return {
           outcome: "refused",
           message: "That session can't be opened.",
-        });
+        };
       }
-      // attach works from any folder, so a missing folder falls back to the home folder.
+      // attach works from any folder, so a missing folder, or one that isn't local, falls back
+      // to the home folder.
       const cwd =
-        session.cwd !== undefined && options.folderExists(session.cwd)
+        session.cwd !== undefined && (await options.folderExists(session.cwd))
           ? session.cwd
           : options.homeFolder;
       // Keyed by the short id, which is stable while a sessionId can appear between polls.
@@ -124,7 +125,7 @@ export function createOpenExecutors(options: OpenOptions) {
         };
       }
       // A resumed session works in the folder it's started in, so it must be the original.
-      if (cwd === undefined || !options.folderExists(cwd)) {
+      if (cwd === undefined || !(await options.folderExists(cwd))) {
         return {
           outcome: "refused",
           message: "The session's folder no longer exists.",

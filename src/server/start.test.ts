@@ -40,80 +40,76 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-// Windows-only until iteration 6 step 3 rebuilds this for macOS and Linux (NFR-19).
-describe.runIf(process.platform === "win32")(
-  "folder checks (NFR-14, 0025)",
-  () => {
-    it("accepts an existing local folder, resolved", async () => {
-      const result = await checkLocalFolder(root, fixed);
-      expect(result.ok).toBe(true);
-    });
+describe("folder checks (NFR-14, 0025)", () => {
+  it("accepts an existing local folder, resolved", async () => {
+    const result = await checkLocalFolder(root, fixed);
+    expect(result.ok).toBe(true);
+  });
 
-    it.each([
-      ["a network share", "\\\\server\\share\\work"],
-      ["a device path", "\\\\?\\C:\\work"],
-      ["a device namespace path", "\\\\.\\C:\\work"],
-      ["a relative path", "work\\here"],
-      ["a drive-relative path", "C:work"],
-      ["an empty path", ""],
-    ])("refuses %s", async (_label, folder) => {
-      expect((await checkLocalFolder(folder, fixed)).ok).toBe(false);
-    });
+  it.each([
+    ["a network share", "\\\\server\\share\\work"],
+    ["a device path", "\\\\?\\C:\\work"],
+    ["a device namespace path", "\\\\.\\C:\\work"],
+    ["a relative path", "work\\here"],
+    ["a drive-relative path", "C:work"],
+    ["an empty path", ""],
+  ])("refuses %s", async (_label, folder) => {
+    expect((await checkLocalFolder(folder, fixed)).ok).toBe(false);
+  });
 
-    it("refuses control characters", async () => {
-      expect((await checkLocalFolder(`${root}\nx`, fixed)).ok).toBe(false);
-    });
+  it("refuses control characters", async () => {
+    expect((await checkLocalFolder(`${root}\nx`, fixed)).ok).toBe(false);
+  });
 
-    it("refuses a network drive, and a drive whose type can't be read", async () => {
-      const network = await checkLocalFolder(root, () =>
-        Promise.resolve("Network"),
-      );
-      expect(network).toMatchObject({ ok: false });
-      expect(network.ok ? "" : network.message).toMatch(/isn't a local folder/);
-      const unread = await checkLocalFolder(root, () => Promise.resolve(null));
-      expect(unread).toMatchObject({ ok: false });
-      // A drive that couldn't be checked, as when PowerShell is slow, isn't called a network one.
-      expect(unread.ok ? "" : unread.message).toMatch(/Couldn't check/);
-    });
+  it("refuses a network drive, and a drive whose type can't be read", async () => {
+    const network = await checkLocalFolder(root, () =>
+      Promise.resolve("Network"),
+    );
+    expect(network).toMatchObject({ ok: false });
+    expect(network.ok ? "" : network.message).toMatch(/isn't a local folder/);
+    const unread = await checkLocalFolder(root, () => Promise.resolve(null));
+    expect(unread).toMatchObject({ ok: false });
+    // A drive that couldn't be checked, as when PowerShell is slow, isn't called a network one.
+    expect(unread.ok ? "" : unread.message).toMatch(/Couldn't check/);
+  });
 
-    it("refuses a missing folder and a file", async () => {
-      expect((await checkLocalFolder(join(root, "missing"), fixed)).ok).toBe(
-        false,
-      );
-      const file = join(root, "file.txt");
-      writeFileSync(file, "x");
-      expect((await checkLocalFolder(file, fixed)).ok).toBe(false);
-    });
+  it("refuses a missing folder and a file", async () => {
+    expect((await checkLocalFolder(join(root, "missing"), fixed)).ok).toBe(
+      false,
+    );
+    const file = join(root, "file.txt");
+    writeFileSync(file, "x");
+    expect((await checkLocalFolder(file, fixed)).ok).toBe(false);
+  });
 
-    it("checks the drive of the resolved path too", async () => {
-      const inner = join(root, "inner");
-      mkdirSync(inner);
-      const seen: string[] = [];
-      await checkLocalFolder(inner, (letter) => {
-        seen.push(letter);
-        return Promise.resolve("Fixed");
-      });
-      expect(seen).toHaveLength(2);
+  it("checks the drive of the resolved path too", async () => {
+    const inner = join(root, "inner");
+    mkdirSync(inner);
+    const seen: string[] = [];
+    await checkLocalFolder(inner, (letter) => {
+      seen.push(letter);
+      return Promise.resolve("Fixed");
     });
+    expect(seen).toHaveLength(2);
+  });
 
-    it("remembers a drive's type for a while, but not a failed read", async () => {
-      let time = 0;
-      const read = vi.fn<DriveTypeReader>((letter) =>
-        Promise.resolve(letter === "Z" ? null : "Fixed"),
-      );
-      const cached = cachedDriveType(read, () => time);
-      await cached("c");
-      await cached("C");
-      expect(read).toHaveBeenCalledTimes(1);
-      await cached("Z");
-      await cached("Z");
-      expect(read).toHaveBeenCalledTimes(3);
-      time += 31_000;
-      await cached("C");
-      expect(read).toHaveBeenCalledTimes(4);
-    });
-  },
-);
+  it("remembers a drive's type for a while, but not a failed read", async () => {
+    let time = 0;
+    const read = vi.fn<DriveTypeReader>((letter) =>
+      Promise.resolve(letter === "Z" ? null : "Fixed"),
+    );
+    const cached = cachedDriveType(read, () => time);
+    await cached("c");
+    await cached("C");
+    expect(read).toHaveBeenCalledTimes(1);
+    await cached("Z");
+    await cached("Z");
+    expect(read).toHaveBeenCalledTimes(3);
+    time += 31_000;
+    await cached("C");
+    expect(read).toHaveBeenCalledTimes(4);
+  });
+});
 
 describe("name and prompt checks (NFR-14)", () => {
   it.each([
@@ -225,8 +221,7 @@ const exited = (
 ): Promise<BackgroundRun> =>
   Promise.resolve({ kind: "exited", code, stdout, stderr });
 
-// Windows-only until iteration 6 step 3 rebuilds this for macOS and Linux (NFR-19).
-describe.runIf(process.platform === "win32")("Start (FR-32)", () => {
+describe("Start (FR-32)", () => {
   const background = (fields: Partial<StartRequest> = {}): StartRequest => ({
     action: "start",
     folder: root,
