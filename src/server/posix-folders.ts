@@ -94,7 +94,9 @@ export function parseMacMount(text: string): MountTable | null {
   const mounts: MountTable = [];
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
-    if (line.split(" on ").length > 2) return null;
+    // Only " on /" separates the source from the mount point, so a volume named like
+    // "Photos on SSD" is fine; a source holding " on /" too can't be split for certain.
+    if (line.split(" on /").length > 2) return null;
     const match = /^(.+?) on (.+) \(([^()]*)\)$/.exec(line.trimEnd());
     if (match === null) continue;
     const flags = (match[3] ?? "").split(",").map((flag) => flag.trim());
@@ -110,7 +112,10 @@ export function parseMacMount(text: string): MountTable | null {
  * volumes are, so `/volumes/share` still finds the mount at `/Volumes/share` (C-24).
  */
 function comparable(path: string, platform: NodeJS.Platform): string {
-  return platform === "darwin" ? path.normalize("NFD").toLowerCase() : path;
+  // Upper then lower case folds more letters than lower case alone, such as ß and ſ.
+  return platform === "darwin"
+    ? path.normalize("NFD").toUpperCase().toLowerCase()
+    : path;
 }
 
 /** Whether `path` is `point` or under it, on whole parts. */
@@ -157,9 +162,20 @@ function mountByTree(path: string, table: MountTable): Mount | null {
   if (current === undefined) return null;
   for (let depth = 0; depth < table.length; depth += 1) {
     const here: Mount = current;
-    const children = table.filter(
+    const matching = table.filter(
       (mount) =>
         mount !== here && mount.parent === here.id && within(path, mount.point),
+    );
+    // A child mounted later over a folder above another child's point covers it, so the
+    // earlier one is left out, as on Linux a later NFS mount at /a hides a tmpfs at /a/b.
+    const children = matching.filter(
+      (mount) =>
+        !matching.some(
+          (other) =>
+            other !== mount &&
+            (other.id ?? 0) > (mount.id ?? 0) &&
+            within(mount.point, other.point),
+        ),
     );
     if (children.length === 0) return here;
     current = children.reduce((a, b) =>

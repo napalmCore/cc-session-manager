@@ -85,6 +85,14 @@ describe("Open", () => {
     expect(launch.mock.calls[0]?.[0].cwd).toBe("C:\\Users\\u");
   });
 
+  it("waits for a folder check that answers later, as macOS and Linux do (FR-44)", async () => {
+    const { executors, launch } = setup({
+      folderExists: () => Promise.resolve(false),
+    });
+    await executors.open(background());
+    expect(launch.mock.calls[0]?.[0].cwd).toBe("C:\\Users\\u");
+  });
+
   it("ignores a repeated click for the same session within the window", async () => {
     const { executors, launch, advance } = setup();
     await executors.open(background());

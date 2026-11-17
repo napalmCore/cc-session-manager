@@ -303,7 +303,7 @@ describe("review of step 3 (FR-44, C-24)", () => {
 
   it("refuses a whole macOS table with a line it can't split for certain", () => {
     expect(
-      parseMacMount("//me@host/a on b on /Volumes/x (smbfs, nodev)"),
+      parseMacMount("//me@host/a on /b on /Volumes/x (smbfs, nodev)"),
     ).toBeNull();
   });
 
@@ -332,5 +332,52 @@ describe("review of step 3 (FR-44, C-24)", () => {
       reason: "not-local",
     });
     expect(touched.some((path) => path.startsWith("/net"))).toBe(false);
+  });
+});
+
+describe("follow-ups to step 3 (FR-44)", () => {
+  it("on Linux, a later mount over a folder above an earlier one covers it", () => {
+    const table = parseMountinfo(
+      [
+        "22 1 8:1 / / rw - ext4 /dev/sda1 rw",
+        "30 22 0:30 / /a/b rw - tmpfs tmpfs rw",
+        "31 22 0:31 / /a rw - nfs server:/e rw",
+      ].join("\n"),
+    );
+    expect(mountFor("/a/b/x", table, "linux")?.type).toBe("nfs");
+    expect(mountFor("/c", table, "linux")?.type).toBe("ext4");
+  });
+
+  it('reads a macOS volume with " on " in its name, but not a source with " on /"', () => {
+    expect(
+      parseMacMount(
+        "/dev/disk5s1 on /Volumes/Photos on SSD (apfs, local, journaled)",
+      ),
+    ).toEqual([{ point: "/Volumes/Photos on SSD", type: "apfs", local: true }]);
+    expect(
+      parseMacMount("//me@host/a on /b on /Volumes/x (smbfs, nodev)"),
+    ).toBeNull();
+  });
+
+  it("on macOS, folds case further and ignores Unicode form", () => {
+    const table = [
+      { point: "/", type: "apfs", local: true },
+      { point: "/Volumes/Straße", type: "smbfs", local: false },
+      { point: "/Volumes/Café", type: "smbfs", local: false },
+    ];
+    expect(mountFor("/VOLUMES/STRASSE/x", table, "darwin")?.type).toBe("smbfs");
+    // The same name, composed and decomposed.
+    expect(mountFor("/Volumes/Cafe\u0301/x", table, "darwin")?.type).toBe(
+      "smbfs",
+    );
+  });
+});
+
+// The real places, on macOS and Linux only.
+describe.runIf(process.platform !== "win32")("Browse's places (FR-44)", () => {
+  it("offers / and the home folder when they're local", async () => {
+    const { posixPlaces } = await import("./posix-folders.js");
+    const places = await posixPlaces();
+    expect(places).toContain("/");
   });
 });
