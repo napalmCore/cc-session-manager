@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { realpath } from "node:fs";
 import { stat } from "node:fs/promises";
 import { promisify } from "node:util";
+import { checkPosixFolder } from "./posix-folders.js";
 import { hasControl } from "./text-checks.js";
 
 // The native version resolves `subst` drives, junctions, and links; the JavaScript one doesn't.
@@ -116,7 +117,10 @@ function driveRefusal(
 export async function checkLocalFolder(
   folder: string,
   driveType: DriveTypeReader,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<FolderCheck> {
+  // macOS and Linux: the mount table decides, before the folder is touched (FR-44).
+  if (platform !== "win32") return checkPosixFolder(folder, { platform });
   if (folder.length === 0 || folder.length > 1024) {
     return { ok: false, message: "Choose a folder." };
   }

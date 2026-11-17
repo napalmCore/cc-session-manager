@@ -61,6 +61,7 @@ import {
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
 import { PRINTED_LINK_MS, startServer } from "./server.js";
+import { checkPosixFolder, posixPlaces } from "./posix-folders.js";
 import { createFileStore, dataDirectory, secureDataFolder } from "./store.js";
 import type { Snapshot } from "../shared/protocol.js";
 import { createSessionTracker, enrichWithFinished } from "./tracker.js";
@@ -112,7 +113,9 @@ const handOver = async (): Promise<boolean> => {
 if (await handOver()) process.exit(0);
 removeStaleLock(dataFolder);
 
-function folderExists(folder: string): boolean {
+async function folderExists(folder: string): Promise<boolean> {
+  // macOS and Linux: through the mount table first, so a dead network mount is never touched (FR-44).
+  if (process.platform !== "win32") return (await checkPosixFolder(folder)).ok;
   try {
     return existsSync(folder) && statSync(folder).isDirectory();
   } catch {
@@ -310,7 +313,11 @@ actionsRef.current = createActionTracker({
   history: (page, listing) => history.page(page, listing),
   listFolders: createFolderPicker({
     driveType,
-    localDrives: cachedLocalDrives(powershellLocalDrives(programs.powershell)),
+    // macOS and Linux have no drives: Browse starts from home, /, and local volumes (FR-44).
+    localDrives:
+      process.platform === "win32"
+        ? cachedLocalDrives(powershellLocalDrives(programs.powershell))
+        : () => posixPlaces(),
   }),
   start: (request) => launcher.start(request),
   fork: (request, target) => launcher.fork(request, target),

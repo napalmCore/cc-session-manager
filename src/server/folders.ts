@@ -1,4 +1,5 @@
 import { stat } from "node:fs/promises";
+import { checkPosixFolder } from "./posix-folders.js";
 import { sessionKeys } from "../shared/notifications.js";
 import type { SessionView } from "../shared/protocol.js";
 
@@ -18,6 +19,9 @@ export interface FolderWatchOptions {
 }
 
 async function isFolder(path: string): Promise<boolean> {
+  // macOS and Linux: through the mount table first, so a dead network mount is never touched;
+  // a folder that isn't local counts as gone, so no Resume is offered for it (FR-44).
+  if (process.platform !== "win32") return (await checkPosixFolder(path)).ok;
   try {
     return (await stat(path)).isDirectory();
   } catch {

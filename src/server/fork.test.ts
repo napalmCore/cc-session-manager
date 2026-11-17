@@ -60,8 +60,7 @@ function launcher(
   };
 }
 
-// Windows-only until iteration 6 step 3 rebuilds this for macOS and Linux (NFR-19).
-describe.runIf(process.platform === "win32")("Fork (FR-33)", () => {
+describe("Fork (FR-33)", () => {
   const request = (fields: Partial<ForkRequest> = {}): ForkRequest => ({
     action: "fork",
     key: SESSION_ID,
