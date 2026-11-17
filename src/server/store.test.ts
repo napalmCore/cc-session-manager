@@ -480,11 +480,8 @@ describe("dataDirectory", () => {
 });
 
 describe("a private data folder on macOS and Linux (FR-41)", () => {
-  it("does nothing on Windows, or when the folder doesn't exist yet", () => {
+  it("does nothing on Windows", () => {
     expect(secureDataFolder("C:/nowhere", "win32", 1000)).toBeNull();
-    expect(
-      secureDataFolder(join(tmpdir(), "ccsm-missing-x"), "linux", 1000),
-    ).toBeNull();
   });
 
   // Modes, links, and owners only mean this on macOS and Linux.
@@ -496,6 +493,12 @@ describe("a private data folder on macOS and Linux (FR-41)", () => {
     });
     afterEach(() => {
       rmSync(folder, { recursive: true, force: true });
+    });
+
+    it("creates a missing folder private before checking it", () => {
+      const missing = join(folder, "new");
+      expect(secureDataFolder(missing, process.platform, uid)).toBeNull();
+      expect(statSync(missing).mode & 0o777).toBe(0o700);
     });
 
     it("sets a folder and its files back to the user's own modes", () => {

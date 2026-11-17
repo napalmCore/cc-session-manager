@@ -180,7 +180,10 @@ export function sessionLaunchEnv(
   // On macOS and Linux, the launched program's own PATH is cleaned too, so an older npm
   // install's `#!/usr/bin/env node` can't find a `node` planted in the session's folder (C-22).
   if (platform !== "win32" && cleaned.PATH !== undefined) {
-    cleaned.PATH = cleanPosixPath(cleaned.PATH);
+    const path = cleanPosixPath(cleaned.PATH);
+    // An empty PATH would mean the current folder to execvp, so it's left out instead.
+    if (path === "") delete cleaned.PATH;
+    else cleaned.PATH = path;
   }
   return cleaned;
 }

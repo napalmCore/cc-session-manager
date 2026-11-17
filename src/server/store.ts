@@ -177,11 +177,18 @@ export function secureDataFolder(
   uid: number | undefined = process.getuid?.(),
 ): string | null {
   if (platform === "win32" || uid === undefined) return null;
+  // Created private here, before the check, so no one else can create it first. An existing
+  // folder is left as it is, and checked below.
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+  } catch {
+    // Checked below.
+  }
   let folder;
   try {
     folder = lstatSync(directory);
   } catch {
-    return null;
+    return `The data folder ${directory} couldn't be created.`;
   }
   const own = (stat: { uid: number }) => stat.uid === uid;
   if (folder.isSymbolicLink() || !folder.isDirectory() || !own(folder)) {
@@ -189,6 +196,7 @@ export function secureDataFolder(
   }
   try {
     if ((folder.mode & 0o077) !== 0) chmodSync(directory, 0o700);
+    // The folder holds only plain files today, so one level is checked.
     for (const name of readdirSync(directory)) {
       const path = join(directory, name);
       const file = lstatSync(path);

@@ -167,20 +167,24 @@ describe("isSafeProgramPath", () => {
 
 describe("sessionLaunchEnv", () => {
   it("removes the variables that would hide a new session, and keeps the user's settings", () => {
-    const env = sessionLaunchEnv({
-      CLAUDECODE: "1",
-      CLAUDE_CODE_CHILD_SESSION: "1",
-      CLAUDE_CODE_SESSION_ID: SESSION_ID,
-      CLAUDE_PID: "123",
-      CLAUDE_CODE_ENTRYPOINT: "cli",
-      CLAUDE_CODE_MESSAGING_SOCKET: "x",
-      CLAUDE_CODE_SESSION_ATTENDED: "1",
-      CLAUDE_JOB_DIR: "x",
-      CLAUDE_CODE_EXECPATH: "x",
-      CLAUDE_CONFIG_DIR: "D:\\claude",
-      CLAUDE_CODE_GIT_BASH_PATH: "D:\\git\\bash.exe",
-      PATH: "C:\\bin",
-    });
+    const env = sessionLaunchEnv(
+      {
+        CLAUDECODE: "1",
+        CLAUDE_CODE_CHILD_SESSION: "1",
+        CLAUDE_CODE_SESSION_ID: SESSION_ID,
+        CLAUDE_PID: "123",
+        CLAUDE_CODE_ENTRYPOINT: "cli",
+        CLAUDE_CODE_MESSAGING_SOCKET: "x",
+        CLAUDE_CODE_SESSION_ATTENDED: "1",
+        CLAUDE_JOB_DIR: "x",
+        CLAUDE_CODE_EXECPATH: "x",
+        CLAUDE_CONFIG_DIR: "D:\\claude",
+        CLAUDE_CODE_GIT_BASH_PATH: "D:\\git\\bash.exe",
+        PATH: "C:\\bin",
+        // Windows' environment, which keeps its PATH as it is.
+      },
+      "win32",
+    );
 
     expect(env).toEqual({
       CLAUDE_CONFIG_DIR: "D:\\claude",
@@ -377,6 +381,8 @@ describe("programs on macOS and Linux (FR-40, C-22)", () => {
     expect(sessionLaunchEnv(env, "linux")).toEqual({ PATH: "/usr/bin" });
     expect(sessionLaunchEnv(env, "darwin")).toEqual({ PATH: "/usr/bin" });
     expect(sessionLaunchEnv(env, "win32")).toEqual({ PATH: ".:/usr/bin::bin" });
+    // Nothing absolute left: no PATH at all, rather than an empty one meaning here.
+    expect(sessionLaunchEnv({ PATH: ".:bin" }, "linux")).toEqual({});
   });
 
   it("has no Windows Terminal, cmd, or PowerShell there", () => {
