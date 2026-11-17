@@ -138,6 +138,7 @@ describe("name and prompt checks (NFR-14)", () => {
       "A prompt can't contain control characters other than line breaks and tabs.",
     ],
     ["background", "50%", "go", "A name can't contain %."],
+    ["interactive", "x $HOME", undefined, "A name can't contain $."],
     ["background", "a\tb", "go", "A name can't contain control characters."],
     [
       "background",

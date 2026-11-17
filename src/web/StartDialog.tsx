@@ -114,8 +114,8 @@ function SessionOptions({
         <Label>Name (optional)</Label>
         <Input className={styles.input} autoComplete="off" spellCheck={false} />
         <Text slot="description" className={styles.fieldHelp}>
-          Up to {MAX_NAME} characters, without %. A terminal session can only be
-          named when Windows Terminal is installed.
+          Up to {MAX_NAME} characters, without % or $. A terminal session can
+          only be named when Windows Terminal is installed.
         </Text>
       </TextField>
       {kind === "background" && (

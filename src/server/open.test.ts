@@ -49,7 +49,7 @@ function setup(
     transcriptExists: () => Promise.resolve(true),
     homeFolder: "C:\\Users\\u",
     environment: {
-      PATH: "C:\\bin",
+      PATH: "/usr/local/bin",
       CLAUDECODE: "1",
       CLAUDE_CONFIG_DIR: "D:\\c",
     },
@@ -76,7 +76,7 @@ describe("Open", () => {
     expect(plan?.file).toBe(programs.wt);
     expect(plan?.args.slice(-2)).toEqual(["attach", "abcd1234"]);
     expect(plan?.cwd).toBe("C:\\work");
-    expect(env).toEqual({ PATH: "C:\\bin", CLAUDE_CONFIG_DIR: "D:\\c" });
+    expect(env).toEqual({ PATH: "/usr/local/bin", CLAUDE_CONFIG_DIR: "D:\\c" });
   });
 
   it("uses the home folder when the session's folder no longer exists", async () => {

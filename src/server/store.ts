@@ -1,5 +1,7 @@
 import {
   existsSync,
+  chmodSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -153,7 +155,62 @@ export function dataDirectory(
   if (platform === "darwin") {
     return join(home, "Library", "Application Support", APP_FOLDER);
   }
-  return join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), APP_FOLDER);
+  // State, not documents: $XDG_STATE_HOME when it's an absolute path, or ~/.local/state (FR-41).
+  const state = env.XDG_STATE_HOME;
+  return join(
+    state !== undefined && state.startsWith("/")
+      ? state
+      : join(home, ".local", "state"),
+    APP_FOLDER,
+  );
+}
+
+/**
+ * On macOS and Linux, makes sure the data folder and its files are the user's own and readable
+ * only by them, since the lock holds the hand-over secret (FR-41). A link, or something owned by
+ * someone else, is refused; modes others could use are set back. Returns why it's refused, or
+ * null when it's fine or doesn't exist yet. Windows keeps its own folder's permissions.
+ */
+export function secureDataFolder(
+  directory: string,
+  platform: NodeJS.Platform = process.platform,
+  uid: number | undefined = process.getuid?.(),
+): string | null {
+  if (platform === "win32" || uid === undefined) return null;
+  // Created private here, before the check, so no one else can create it first. An existing
+  // folder is left as it is, and checked below.
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+  } catch {
+    // Checked below.
+  }
+  let folder;
+  try {
+    folder = lstatSync(directory);
+  } catch {
+    return `The data folder ${directory} couldn't be created.`;
+  }
+  const own = (stat: { uid: number }) => stat.uid === uid;
+  if (folder.isSymbolicLink() || !folder.isDirectory() || !own(folder)) {
+    return `The data folder ${directory} isn't a folder of your own, so the tool won't use it.`;
+  }
+  try {
+    if ((folder.mode & 0o077) !== 0) chmodSync(directory, 0o700);
+    // The folder holds only plain files today, so one level is checked.
+    for (const name of readdirSync(directory)) {
+      const path = join(directory, name);
+      const file = lstatSync(path);
+      if (file.isSymbolicLink() || !own(file)) {
+        return `${path} in the data folder isn't a file of your own, so the tool won't use the folder.`;
+      }
+      if ((file.mode & 0o077) !== 0) {
+        chmodSync(path, file.isDirectory() ? 0o700 : 0o600);
+      }
+    }
+  } catch {
+    return `The data folder ${directory} couldn't be made private, so the tool won't use it.`;
+  }
+  return null;
 }
 
 export function createFileStore(
