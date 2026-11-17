@@ -19,8 +19,10 @@ jobs:
         include:
           - os: windows-latest
             timeout: 15
+          # GitHub can take a while to assign a macOS machine, and that wait counts toward the
+          # job's limit, so it's longer here; the test steps below keep their own limits.
           - os: macos-latest
-            timeout: 15
+            timeout: 45
           - os: ubuntu-latest
             timeout: 10
     timeout-minutes: ${{ matrix.timeout }}
@@ -39,10 +41,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm test
+        timeout-minutes: 15
       - run: pnpm build
       - name: Install Playwright's browser
         run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
       - run: pnpm exec playwright test
+        timeout-minutes: 15
 
   # The single check `main` requires: it passes only when every system passed (NFR-19).
   check:
