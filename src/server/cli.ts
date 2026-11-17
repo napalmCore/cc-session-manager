@@ -56,12 +56,14 @@ import {
   createProtection,
   PROTECTED_MESSAGE,
   processStartMs,
+  type Identity,
   readIdentity,
 } from "./protect.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
 import { PRINTED_LINK_MS, startServer } from "./server.js";
 import { checkPosixFolder, posixPlaces } from "./posix-folders.js";
+import { walkFromHere } from "./process-walk.js";
 import { createFileStore, dataDirectory, secureDataFolder } from "./store.js";
 import type { Snapshot } from "../shared/protocol.js";
 import { createSessionTracker, enrichWithFinished } from "./tracker.js";
@@ -84,6 +86,21 @@ if (identity.pid !== undefined) {
   const startMs = await processStartMs(programs.powershell, identity.pid);
   if (startMs !== null) identity.pidStartMs = startMs;
 }
+// On macOS and Linux, the parent processes too, in addition to the variables: either one
+// finding a session protects it. A walk that fails can't tell, so actions are turned off (FR-45).
+const identities: Identity[] = [identity];
+if (process.platform !== "win32") {
+  const walked = await walkFromHere();
+  if (walked.kind === "found") {
+    identities.push({
+      insideClaude: true,
+      pid: walked.pid,
+      pidStartMs: walked.startMs,
+    });
+  } else if (walked.kind === "failed") {
+    identities.push({ insideClaude: true });
+  }
+}
 
 // A second start hands over to the running instance, so the port stays the same (U-15).
 // It tries twice, a second apart, so a lock that's still being written, or an instance that's
@@ -98,7 +115,7 @@ const handOver = async (): Promise<boolean> => {
     }
     // A dead instance's port could be anyone's now, so don't ask it for anything.
     if (!processAlive(existing.pid)) return false;
-    const link = await requestHandover(existing, identity);
+    const link = await requestHandover(existing, identities);
     if (link !== null) {
       console.log(
         `cc-session-manager is already running at http://127.0.0.1:${String(existing.port)}`,
@@ -123,7 +140,7 @@ async function folderExists(folder: string): Promise<boolean> {
   }
 }
 
-const protection = createProtection([identity]);
+const protection = createProtection(identities);
 let lastSnapshot: Snapshot | null = null;
 let sequence = 0;
 const runId = randomBytes(4).toString("hex");
@@ -181,7 +198,7 @@ const server = await startServer({
   handover: {
     secret: handoverSecret,
     onHandover: (handed) => {
-      protection.add(handed);
+      for (const one of handed) protection.add(one);
       if (lastSnapshot !== null) publish(lastSnapshot);
     },
   },

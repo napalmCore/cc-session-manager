@@ -28,7 +28,7 @@ const identity: Identity = {
 let server: RunningServer;
 let secret: string;
 let clock: number;
-const onHandover = vi.fn<(identity: Identity) => void>();
+const onHandover = vi.fn<(identities: Identity[]) => void>();
 
 function post(
   body: string,
@@ -90,7 +90,7 @@ const signed = (
 ) => ({
   nonce,
   proof: handoverProof(secret, "client", nonce),
-  identity,
+  identities: [identity],
   ...extra,
 });
 
@@ -116,13 +116,13 @@ afterEach(async () => {
 
 describe("handover route", () => {
   it("returns a one-time sign-in link and protects the second start's session", async () => {
-    const link = await requestHandover(lockFor(), identity);
+    const link = await requestHandover(lockFor(), [identity]);
     expect(link).toMatch(
       new RegExp(
         `^http://127\\.0\\.0\\.1:${String(server.port)}/auth\\?token=[0-9a-f]{64}$`,
       ),
     );
-    expect(onHandover).toHaveBeenCalledWith(identity);
+    expect(onHandover).toHaveBeenCalledWith([identity]);
 
     const first = await get(pathOf(link ?? ""));
     expect(first.status).toBe(303);
@@ -131,12 +131,12 @@ describe("handover route", () => {
   });
 
   it("keeps the first sign-in link working alongside a handover link", async () => {
-    await requestHandover(lockFor(), identity);
+    await requestHandover(lockFor(), [identity]);
     expect((await get(pathOf(server.loginUrl))).status).toBe(303);
   });
 
   it("expires a handover link after 60 seconds", async () => {
-    const link = await requestHandover(lockFor(), identity);
+    const link = await requestHandover(lockFor(), [identity]);
     clock += HANDOVER_LINK_MS + 1;
     expect((await get(pathOf(link ?? ""))).status).toBe(403);
   });
@@ -144,7 +144,7 @@ describe("handover route", () => {
   it("refuses a wrong secret", async () => {
     const link = await requestHandover(
       { ...lockFor(), secret: newHandoverSecret() },
-      identity,
+      [identity],
     );
     expect(link).toBeNull();
     expect(onHandover).not.toHaveBeenCalled();
@@ -173,16 +173,27 @@ describe("handover route", () => {
     ["unknown fields", () => signed({ extra: 1 })],
     [
       "a bad session ID",
-      () => signed({ identity: { ...identity, sessionId: "x" } }),
+      () => signed({ identities: [{ ...identity, sessionId: "x" }] }),
     ],
     ["no identity", () => ({ nonce: "a".repeat(64), proof: signed().proof })],
-    ["the secret itself instead of a proof", () => ({ secret, identity })],
+    ["an empty list of identities", () => signed({ identities: [] })],
+    [
+      "more than four identities",
+      () =>
+        signed({
+          identities: [identity, identity, identity, identity, identity],
+        }),
+    ],
+    [
+      "the secret itself instead of a proof",
+      () => ({ secret, identities: [identity] }),
+    ],
     [
       "a proof made with another secret",
       () => ({
         nonce: "a".repeat(64),
         proof: handoverProof(newHandoverSecret(), "client", "a".repeat(64)),
-        identity,
+        identities: [identity],
       }),
     ],
   ])("refuses a request with %s", async (_label, body) => {
@@ -227,7 +238,7 @@ describe("requestHandover", () => {
   it("is null when nothing answers on the lock's port", async () => {
     const lock = lockFor();
     await server.close();
-    expect(await requestHandover(lock, identity)).toBeNull();
+    expect(await requestHandover(lock, [identity])).toBeNull();
     server = await startServer({ preferredPort: 0 });
   });
 });
@@ -263,10 +274,9 @@ describe("requestHandover's checks on the answer", () => {
   });
 
   const ask = () =>
-    requestHandover(
-      { version: 1, pid: process.pid, port: fakePort, secret },
+    requestHandover({ version: 1, pid: process.pid, port: fakePort, secret }, [
       identity,
-    );
+    ]);
   const token = "c".repeat(64);
 
   it("accepts a link for the lock's own port", async () => {
