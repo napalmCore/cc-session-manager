@@ -121,13 +121,13 @@ export function removeStaleLock(directory: string): void {
  */
 export function requestHandover(
   lock: InstanceLock,
-  identity: Identity,
+  identities: Identity[],
 ): Promise<string | null> {
   const nonce = randomBytes(32).toString("hex");
   const body = JSON.stringify({
     nonce,
     proof: handoverProof(lock.secret, "client", nonce),
-    identity,
+    identities,
   });
   return new Promise((resolve) => {
     const req = request(

@@ -43,7 +43,8 @@ const handoverRequestSchema = z
   .object({
     nonce: z.string().regex(/^[0-9a-f]{64}$/),
     proof: z.string().regex(/^[0-9a-f]{64}$/),
-    identity: identitySchema,
+    // Every session a second start found, from the variables and from its parent processes.
+    identities: z.array(identitySchema).min(1).max(4),
   })
   .strict();
 
@@ -109,7 +110,10 @@ export interface ServerOptions {
   /** Search inside conversations (FR-36). */
   search?: Search;
   /** Lets a second start of the tool hand over to this one (U-15). */
-  handover?: { secret: string; onHandover: (identity: Identity) => void };
+  handover?: {
+    secret: string;
+    onHandover: (identities: Identity[]) => void;
+  };
   now?: () => number;
   /** A clock that never goes back, for the printed link's expiry. */
   monotonic?: () => number;
@@ -284,7 +288,7 @@ export async function startServer(
         return c.json({ message: "Forbidden" }, 403);
       }
       usedNonces.add(request.data.nonce);
-      handover.onHandover(toIdentity(request.data.identity));
+      handover.onHandover(request.data.identities.map(toIdentity));
       const token = randomBytes(32).toString("hex");
       const current = now();
       for (const [link, expires] of handoverLinks) {

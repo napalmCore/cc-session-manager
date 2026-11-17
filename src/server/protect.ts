@@ -9,6 +9,11 @@ export interface Identity {
   pid?: number;
   /** When that process started, so a reused process ID isn't mistaken for it. */
   pidStartMs?: number;
+  /**
+   * True when that start time was read to the whole second, rounded down, as the macOS and Linux
+   * walk reads it, so it can be up to a second early (FR-45, 0032).
+   */
+  startToSecond?: boolean;
   /** True when the start came from inside a Claude Code session, even with no IDs. */
   insideClaude: boolean;
 }
@@ -22,6 +27,7 @@ export const identitySchema = z
       .optional(),
     pid: z.number().int().positive().max(0xffffffff).optional(),
     pidStartMs: z.number().int().positive().optional(),
+    startToSecond: z.boolean().optional(),
     insideClaude: z.boolean(),
   })
   .strict();
@@ -32,6 +38,9 @@ export function toIdentity(parsed: z.infer<typeof identitySchema>): Identity {
   if (parsed.sessionId !== undefined) identity.sessionId = parsed.sessionId;
   if (parsed.pid !== undefined) identity.pid = parsed.pid;
   if (parsed.pidStartMs !== undefined) identity.pidStartMs = parsed.pidStartMs;
+  if (parsed.startToSecond !== undefined) {
+    identity.startToSecond = parsed.startToSecond;
+  }
   return identity;
 }
 
@@ -39,6 +48,9 @@ export function toIdentity(parsed: z.infer<typeof identitySchema>): Identity {
 // little later than the process's own start time.
 const LISTED_BEFORE_MS = 1_000;
 const LISTED_AFTER_MS = 5_000;
+// A start time read to the second can be up to a second early, so the listed one may be a
+// second later still: 6 seconds in all, as the design says (0032).
+const ROUNDED_START_MS = 1_000;
 const LOOKUP_TIMEOUT_MS = 10_000;
 
 export const PROTECTED_MESSAGE =
@@ -109,7 +121,10 @@ function matches(identity: Identity, session: SessionView): boolean {
   }
   return (
     session.startedAt >= identity.pidStartMs - LISTED_BEFORE_MS &&
-    session.startedAt <= identity.pidStartMs + LISTED_AFTER_MS
+    session.startedAt <=
+      identity.pidStartMs +
+        LISTED_AFTER_MS +
+        (identity.startToSecond === true ? ROUNDED_START_MS : 0)
   );
 }
 
