@@ -62,21 +62,25 @@ describe("the folder picker (FR-32, NFR-15)", () => {
     expect(listing.truncated).toBe(true);
   });
 
-  it("refuses a network share or a network drive, with the drives still offered", async () => {
-    const pick = createFolderPicker({
-      driveType: fixed,
-      localDrives: drives,
-    });
-    const share = await pick("\\\\server\\share");
-    expect(share.outcome).toBe("refused");
-    expect(share.folders).toBeUndefined();
-    expect(share.drives).toEqual(["C:\\"]);
-    const network = createFolderPicker({
-      driveType: () => Promise.resolve("Network"),
-      localDrives: drives,
-    });
-    expect((await network(root)).outcome).toBe("refused");
-  });
+  // Windows drive types; macOS and Linux use the mount table (posix-folders tests).
+  it.runIf(process.platform === "win32")(
+    "refuses a network share or a network drive, with the drives still offered",
+    async () => {
+      const pick = createFolderPicker({
+        driveType: fixed,
+        localDrives: drives,
+      });
+      const share = await pick("\\\\server\\share");
+      expect(share.outcome).toBe("refused");
+      expect(share.folders).toBeUndefined();
+      expect(share.drives).toEqual(["C:\\"]);
+      const network = createFolderPicker({
+        driveType: () => Promise.resolve("Network"),
+        localDrives: drives,
+      });
+      expect((await network(root)).outcome).toBe("refused");
+    },
+  );
 
   it.runIf(process.platform === "win32")(
     "doesn't list junctions, so it never follows them",
