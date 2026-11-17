@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { lstat, readFile, readlink, readdir, stat } from "node:fs/promises";
-import { homedir, userInfo } from "node:os";
+import { lstat, readFile, readlink, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { posix } from "node:path";
 import { hasControl } from "./text-checks.js";
 
@@ -17,6 +17,9 @@ export interface Mount {
   type: string;
   /** macOS marks local volumes; Linux doesn't need it. */
   local?: boolean;
+  /** Linux's mount ID and the ID of the mount it sits on, from mountinfo. */
+  id?: number;
+  parent?: number;
 }
 
 /** The table, in the order the system lists it, so later mounts sit on top of earlier ones. */
@@ -74,15 +77,24 @@ export function parseMountinfo(text: string): MountTable {
     const point = fields[4];
     const type = fields[separator + 1];
     if (separator < 6 || point === undefined || type === undefined) continue;
-    mounts.push({ point: decodeOctal(point), type });
+    const id = Number(fields[0]);
+    const parent = Number(fields[1]);
+    if (!Number.isInteger(id) || !Number.isInteger(parent)) continue;
+    mounts.push({ point: decodeOctal(point), type, id, parent });
   }
   return mounts;
 }
 
-/** Parses macOS's `mount` output: `<source> on <path> (<type>, <flags>)`. */
-export function parseMacMount(text: string): MountTable {
+/**
+ * Parses macOS's `mount` output: `<source> on <path> (<type>, <flags>)`. A line that holds
+ * " on " more than once can't be split for certain, and a mount point read wrong would let its
+ * folders count as local, so such a table is refused as a whole (null).
+ */
+export function parseMacMount(text: string): MountTable | null {
   const mounts: MountTable = [];
   for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    if (line.split(" on ").length > 2) return null;
     const match = /^(.+?) on (.+) \(([^()]*)\)$/.exec(line.trimEnd());
     if (match === null) continue;
     const flags = (match[3] ?? "").split(",").map((flag) => flag.trim());
@@ -93,10 +105,24 @@ export function parseMacMount(text: string): MountTable {
   return mounts;
 }
 
+/**
+ * How paths are compared: exactly on Linux; on macOS without case or Unicode form, as its usual
+ * volumes are, so `/volumes/share` still finds the mount at `/Volumes/share` (C-24).
+ */
+function comparable(path: string, platform: NodeJS.Platform): string {
+  return platform === "darwin" ? path.normalize("NFD").toLowerCase() : path;
+}
+
 /** Whether `path` is `point` or under it, on whole parts. */
-function within(path: string, point: string): boolean {
-  if (point === "/") return path.startsWith("/");
-  return path === point || path.startsWith(`${point}/`);
+function within(
+  path: string,
+  point: string,
+  platform: NodeJS.Platform = "linux",
+): boolean {
+  const p = comparable(path, platform);
+  const m = comparable(point, platform);
+  if (m === "/") return p.startsWith("/");
+  return p === m || p.startsWith(`${m}/`);
 }
 
 /**
@@ -104,18 +130,60 @@ function within(path: string, point: string): boolean {
  * own point or on a folder above it, so a network mount over a parent can't be mistaken for the
  * local one beneath it (FR-44).
  */
-export function visibleMounts(table: MountTable): MountTable {
+export function visibleMounts(
+  table: MountTable,
+  platform: NodeJS.Platform = "linux",
+): MountTable {
   return table.filter(
     (mount, i) =>
-      !table.slice(i + 1).some((later) => within(mount.point, later.point)),
+      !table
+        .slice(i + 1)
+        .some((later) => within(mount.point, later.point, platform)),
   );
 }
 
-/** The visible mount a path is on: the one whose point is its longest whole-part prefix. */
-export function mountFor(path: string, visible: MountTable): Mount | null {
+/**
+ * Linux: the mount a path is on, found by going down the kernel's own mount tree from the root
+ * by mountinfo's IDs, at each step into the child mount whose point is the path's longest
+ * prefix. A mount stacked on the same point, or moved over a parent, is that mount's child, so
+ * the one on top is always reached, whatever order the lines are in (FR-44).
+ */
+function mountByTree(path: string, table: MountTable): Mount | null {
+  const ids = new Set(table.map((mount) => mount.id));
+  const roots = table.filter(
+    (mount) => mount.point === "/" && !ids.has(mount.parent),
+  );
+  let current = roots[roots.length - 1];
+  if (current === undefined) return null;
+  for (let depth = 0; depth < table.length; depth += 1) {
+    const here: Mount = current;
+    const children = table.filter(
+      (mount) =>
+        mount !== here && mount.parent === here.id && within(path, mount.point),
+    );
+    if (children.length === 0) return here;
+    current = children.reduce((a, b) =>
+      b.point.length >= a.point.length ? b : a,
+    );
+  }
+  return null;
+}
+
+/**
+ * The mount a path is on. On Linux, by the mount tree; elsewhere, the visible mount whose point
+ * is its longest whole-part prefix, the later listed winning a tie.
+ */
+export function mountFor(
+  path: string,
+  table: MountTable,
+  platform: NodeJS.Platform = "linux",
+): Mount | null {
+  if (platform !== "darwin" && table.every((mount) => mount.id !== undefined)) {
+    return mountByTree(path, table);
+  }
   let best: Mount | null = null;
-  for (const mount of visible) {
-    if (!within(path, mount.point)) continue;
+  for (const mount of visibleMounts(table, platform)) {
+    if (!within(path, mount.point, platform)) continue;
     if (best === null || mount.point.length >= best.point.length) best = mount;
   }
   return best;
@@ -139,12 +207,12 @@ export type Resolved =
  */
 export async function resolveLocal(
   folder: string,
-  visible: MountTable,
+  table: MountTable,
   platform: NodeJS.Platform,
   fs: ResolveFs,
 ): Promise<Resolved> {
   const local = (path: string) => {
-    const mount = mountFor(path, visible);
+    const mount = mountFor(path, table, platform);
     return mount !== null && isLocalMount(mount, platform);
   };
   if (!local("/")) return { ok: false, reason: "not-local" };
@@ -178,6 +246,8 @@ export async function resolveLocal(
     } catch {
       return { ok: false, reason: "missing" };
     }
+    // An empty target points nowhere.
+    if (target === "") return { ok: false, reason: "missing" };
     if (target.startsWith("/")) resolved = "/";
     pending.unshift(...target.split("/").filter((p) => p !== ""));
   }
@@ -253,7 +323,7 @@ export async function checkPosixFolder(
   }
   const resolved = await resolveLocal(
     folder,
-    visibleMounts(table),
+    table,
     platform,
     options.fs ?? { lstat, readlink },
   );
@@ -268,6 +338,10 @@ export async function checkPosixFolder(
     }
     return { ok: false, message: "That folder doesn't exist." };
   }
+  // The resolved path is checked again, since a link can lead anywhere.
+  if (resolved.path.length > 1024 || hasControl(resolved.path)) {
+    return { ok: false, message: "That folder can't be used." };
+  }
   if (
     SYSTEM_FOLDERS.some(
       (system) =>
@@ -281,7 +355,8 @@ export async function checkPosixFolder(
     options.isDirectory ??
     (async (path: string) => {
       try {
-        return (await stat(path)).isDirectory();
+        // lstat: the path is already resolved, so a link here would be a change since.
+        return (await lstat(path)).isDirectory();
       } catch {
         return false;
       }
@@ -300,12 +375,10 @@ export async function posixPlaces(
   platform: NodeJS.Platform = process.platform,
   home: string = homedir(),
 ): Promise<string[]> {
-  let user = "";
-  try {
-    user = userInfo().username;
-  } catch {
-    // No user name: the /media folders are left out.
-  }
+  // $USER, as FR-44 says, so Browse doesn't look the user up each time.
+  const user = /^[^/\0]+$/.test(process.env.USER ?? "")
+    ? (process.env.USER as string)
+    : "";
   const volumeRoots =
     platform === "darwin"
       ? ["/Volumes"]

@@ -258,3 +258,79 @@ describe.runIf(process.platform !== "win32")("on this system (FR-44)", () => {
     expect((await checkPosixFolder(join(root, "missing"))).ok).toBe(false);
   });
 });
+
+describe("review of step 3 (FR-44, C-24)", () => {
+  it("on macOS, a path in another case or Unicode form still finds a network mount", async () => {
+    const table = parseMacMount(MAC_MOUNT) ?? [];
+    const { fs, touched } = fakeFs({}, ["/volumes", "/Volumes"]);
+    expect(await resolveLocal("/volumes/share/x", table, "darwin", fs)).toEqual(
+      {
+        ok: false,
+        reason: "not-local",
+      },
+    );
+    expect(touched.some((path) => path.toLowerCase().includes("share"))).toBe(
+      false,
+    );
+    expect(mountFor("/VOLUMES/SHARE", table, "darwin")?.type).toBe("smbfs");
+    // Linux compares exactly.
+    expect(mountFor("/MNT/nfs", parseMountinfo(MOUNTINFO), "linux")?.type).toBe(
+      "ext4",
+    );
+  });
+
+  it("on Linux, follows the mount tree, so a network mount moved over a local one wins", () => {
+    // NFS (ID 40) was moved onto the tmpfs (ID 50) at /x/y, so it's listed before it.
+    const table = parseMountinfo(
+      [
+        "22 1 8:1 / / rw - ext4 /dev/sda1 rw",
+        "40 50 0:40 / /x/y rw - nfs server:/e rw",
+        "50 22 0:50 / /x/y rw - tmpfs tmpfs rw",
+      ].join("\n"),
+    );
+    expect(mountFor("/x/y/z", table, "linux")?.type).toBe("nfs");
+    expect(mountFor("/x/other", table, "linux")?.type).toBe("ext4");
+  });
+
+  it("reads mountinfo lines with several optional fields", () => {
+    const table = parseMountinfo(
+      "36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 shared:2 - ext3 /dev/root rw,errors=continue",
+    );
+    expect(table).toEqual([
+      { point: "/mnt2", type: "ext3", id: 36, parent: 35 },
+    ]);
+  });
+
+  it("refuses a whole macOS table with a line it can't split for certain", () => {
+    expect(
+      parseMacMount("//me@host/a on b on /Volumes/x (smbfs, nodev)"),
+    ).toBeNull();
+  });
+
+  it("counts a link with an empty target as missing, and a link to / as /", async () => {
+    const table: MountTable = [{ point: "/", type: "ext4" }];
+    const empty = fakeFs({ "/a": "" }, []);
+    expect(await resolveLocal("/a", table, "linux", empty.fs)).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    const root = fakeFs({ "/r": "/" }, []);
+    expect(await resolveLocal("/r", table, "linux", root.fs)).toEqual({
+      ok: true,
+      path: "/",
+    });
+  });
+
+  it("refuses a link whose .. climbs into a network mount, before touching it", async () => {
+    const table: MountTable = [
+      { point: "/", type: "ext4" },
+      { point: "/net", type: "nfs" },
+    ];
+    const { fs, touched } = fakeFs({ "/a/up": "../net/share" }, ["/a"]);
+    expect(await resolveLocal("/a/up", table, "linux", fs)).toEqual({
+      ok: false,
+      reason: "not-local",
+    });
+    expect(touched.some((path) => path.startsWith("/net"))).toBe(false);
+  });
+});
