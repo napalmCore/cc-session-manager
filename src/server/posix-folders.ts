@@ -97,7 +97,9 @@ export function parseMacMount(text: string): MountTable | null {
     // Only " on /" separates the source from the mount point, so a volume named like
     // "Photos on SSD" is fine; a source holding " on /" too can't be split for certain.
     if (line.split(" on /").length > 2) return null;
-    const match = /^(.+?) on (.+) \(([^()]*)\)$/.exec(line.trimEnd());
+    // The mount point is where " on /" starts it, so a source holding " on " but not
+    // " on /" still splits in the right place.
+    const match = /^(.+?) on (\/.*) \(([^()]*)\)$/.exec(line.trimEnd());
     if (match === null) continue;
     const flags = (match[3] ?? "").split(",").map((flag) => flag.trim());
     const type = flags[0];
@@ -173,6 +175,8 @@ function mountByTree(path: string, table: MountTable): Mount | null {
         !matching.some(
           (other) =>
             other !== mount &&
+            // Linux can reuse a freed ID, so this can miss a later mount; resolveLocal
+            // still checks each folder above first, and refuses there.
             (other.id ?? 0) > (mount.id ?? 0) &&
             within(mount.point, other.point),
         ),

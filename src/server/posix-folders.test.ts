@@ -381,3 +381,11 @@ describe.runIf(process.platform !== "win32")("Browse's places (FR-44)", () => {
     expect(places).toContain("/");
   });
 });
+
+describe('a macOS source with " on " but not " on /" (review of #100)', () => {
+  it("splits where the mount point starts, so the mount isn't lost", () => {
+    expect(
+      parseMacMount("//me@host/a on b on /Volumes/x (smbfs, nodev)"),
+    ).toEqual([{ point: "/Volumes/x", type: "smbfs", local: false }]);
+  });
+});
