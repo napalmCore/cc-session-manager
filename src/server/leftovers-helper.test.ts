@@ -2,7 +2,7 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createHelperRunner, helperScriptPath } from "./end.js";
 import {
   createInputRunner,
@@ -96,7 +96,10 @@ describe("parseCheck and parseEndLeftovers", () => {
 
 const powershell = resolvePrograms().powershell;
 const script = helperScriptPath();
-const SLOW = 60_000;
+// A cold Windows PowerShell on a busy CI runner can take far longer than the tool's own 10 s
+// limit, which stays as it is; these tests give the real helper more room (BUG-40).
+const SLOW = 120_000;
+const TEST_HELPER_TIMEOUT_MS = 45_000;
 
 /** Start time and image path, read the way the helper reads them. */
 function identify(pid: number): { startMs: number; path: string } {
@@ -109,7 +112,8 @@ function identify(pid: number): { startMs: number; path: string } {
       "-Command",
       `$p = Get-Process -Id ${String(pid)}; [DateTimeOffset]::new($p.StartTime.ToUniversalTime()).ToUnixTimeMilliseconds(); $p.Path`,
     ],
-    { encoding: "utf8", windowsHide: true },
+    // A time limit of its own, so a stuck PowerShell fails the test rather than hanging it.
+    { encoding: "utf8", windowsHide: true, timeout: TEST_HELPER_TIMEOUT_MS },
   )
     .trim()
     .split(/\r?\n/);
@@ -128,6 +132,14 @@ function running(pid: number): boolean {
 describe.runIf(process.platform === "win32" && powershell !== null)(
   "the real helper, on harmless processes",
   () => {
+    beforeAll(() => {
+      execFileSync(
+        powershell ?? "",
+        ["-NoProfile", "-NonInteractive", "-Command", "$null"],
+        { timeout: SLOW, windowsHide: true },
+      );
+    }, SLOW);
+
     const children: ChildProcess[] = [];
     const extraPids: number[] = [];
     const sleeper = (code = "setTimeout(() => {}, 60000)") => {
@@ -152,7 +164,8 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
     });
 
     // Not the tool's process, so the test's own children aren't protected as the tool's.
-    const unrelatedTool = () => createInputRunner(powershell ?? "", script, 0);
+    const unrelatedTool = () =>
+      createInputRunner(powershell ?? "", script, 0, TEST_HELPER_TIMEOUT_MS);
 
     it(
       "reports which processes still run, by process ID and start time",
@@ -217,10 +230,12 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
         ]);
 
         // As the tool, its own descendants are never offered.
-        const asTool = await createInputRunner(powershell ?? "", script)(
-          "check",
-          request,
-        );
+        const asTool = await createInputRunner(
+          powershell ?? "",
+          script,
+          process.pid,
+          TEST_HELPER_TIMEOUT_MS,
+        )("check", request);
         expect(asTool.kind).toBe("ok");
         if (asTool.kind !== "ok") return;
         expect(parseCheck(asTool.result)?.children).toEqual([]);
@@ -272,10 +287,12 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
         const pid = sleeper();
         const { startMs, path } = identify(pid);
 
-        const outcome = await createInputRunner(powershell ?? "", script)(
-          "end-leftovers",
-          { entries: [{ pid, startMs, path }] },
-        );
+        const outcome = await createInputRunner(
+          powershell ?? "",
+          script,
+          process.pid,
+          TEST_HELPER_TIMEOUT_MS,
+        )("end-leftovers", { entries: [{ pid, startMs, path }] });
 
         expect(outcome.kind).toBe("ok");
         if (outcome.kind !== "ok") return;
@@ -318,6 +335,7 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
         const outcome = await createHelperRunner(
           powershell ?? "",
           script,
+          TEST_HELPER_TIMEOUT_MS,
         )({
           action: "record",
           pid,
@@ -409,6 +427,7 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
           const recorded = await createHelperRunner(
             powershell ?? "",
             script,
+            TEST_HELPER_TIMEOUT_MS,
           )({
             action: "record",
             pid: session,
@@ -450,6 +469,7 @@ describe.runIf(process.platform === "win32" && powershell !== null)(
           const outcome = await createHelperRunner(
             powershell ?? "",
             script,
+            TEST_HELPER_TIMEOUT_MS,
           )({
             action: "inspect",
             pid: session,
