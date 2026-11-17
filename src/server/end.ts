@@ -51,6 +51,7 @@ export function helperScriptPath(): string {
 export function createHelperRunner(
   powershell: string,
   script: string,
+  timeoutMs: number = HELPER_TIMEOUT_MS,
 ): HelperRun {
   return (args) =>
     new Promise((resolve) => {
@@ -78,7 +79,7 @@ export function createHelperRunner(
       execFile(
         powershell,
         argv,
-        { cwd: dirname(script), timeout: HELPER_TIMEOUT_MS, windowsHide: true },
+        { cwd: dirname(script), timeout: timeoutMs, windowsHide: true },
         (error, stdout) => {
           if (
             error !== null &&
