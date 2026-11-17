@@ -4,7 +4,7 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 
 ## Current phase
 
-**Iteration 6, Phase 2: Requirements.** 0.1.0 to 0.4.0 are released ([0017](decisions/0017-first-release.md)), and the repository is public. Iteration 5 is closed ([0030](decisions/0030-iteration-6-plan.md)). Iteration 6, for 0.5.0, brings macOS and Linux: monitoring, notifications, usage, History, Search, Stop, Delete, Send, Open, Resume, New session, and Fork, with End, Force end, and leftover programs staying Windows-only for now, and tests on CI only until a machine is available ([0027](decisions/0027-iteration-5-plan.md), [0030](decisions/0030-iteration-6-plan.md)).
+**Iteration 6, Phase 3: Design.** 0.1.0 to 0.4.0 are released ([0017](decisions/0017-first-release.md)), and the repository is public. Iteration 5 is closed ([0030](decisions/0030-iteration-6-plan.md)). Iteration 6, for 0.5.0, brings macOS and Linux: monitoring, notifications, usage, History, Search, Stop, Delete, Send, Open, Resume, New session, and Fork, with End, Force end, and leftover programs staying Windows-only for now, and tests on CI only until a machine is available ([0027](decisions/0027-iteration-5-plan.md), [0030](decisions/0030-iteration-6-plan.md)).
 
 ## How these docs work
 
@@ -55,3 +55,4 @@ SDLC records for cc-session-manager, a tool for managing and monitoring Claude C
 | [0029](decisions/0029-iteration-5-design.md)            | Iteration 5 design choices                          | Accepted                                  |
 | [0030](decisions/0030-iteration-6-plan.md)              | Close iteration 5, and iteration 6 scope            | Accepted                                  |
 | [0031](decisions/0031-iteration-6-requirements.md)      | Iteration 6 requirements choices                    | Accepted                                  |
+| [0032](decisions/0032-iteration-6-design.md)            | Iteration 6 design choices                          | Accepted                                  |
