@@ -10,9 +10,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { chmodSync, symlinkSync } from "node:fs";
 import {
+  cleanPosixPath,
   findClaude,
+  findPosixClaude,
+  isSafePosixProgramPath,
   isSafeProgramPath,
+  resolvePrograms,
   planOpen,
   SESSION_IDENTITY_VARIABLES,
   sessionLaunchEnv,
@@ -36,7 +41,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-// Windows-only until iteration 6 step 2 rebuilds this for macOS and Linux (NFR-19).
+// The Windows lookup of claude.exe; findPosixClaude below covers macOS and Linux (FR-40).
 describe.runIf(process.platform === "win32")("findClaude", () => {
   it("uses the native claude.exe inside an npm install", () => {
     const npm = join(root, "npm");
@@ -355,3 +360,76 @@ describe.runIf(process.platform === "win32")(
     }, 30_000);
   },
 );
+
+describe("programs on macOS and Linux (FR-40, C-22)", () => {
+  it("keeps only absolute PATH entries, so a session's folder is never searched", () => {
+    expect(cleanPosixPath("/usr/bin::.:bin:./x:/opt/claude/bin:")).toBe(
+      "/usr/bin:/opt/claude/bin",
+    );
+    expect(cleanPosixPath(undefined)).toBe("");
+    expect(isSafePosixProgramPath("/usr/local/bin/claude")).toBe(true);
+    expect(isSafePosixProgramPath("claude")).toBe(false);
+    expect(isSafePosixProgramPath("/tmp/a\nb/claude")).toBe(false);
+  });
+
+  it("cleans the launched program's PATH there, and leaves Windows' as it was", () => {
+    const env = { PATH: ".:/usr/bin::bin", CLAUDECODE: "1" };
+    expect(sessionLaunchEnv(env, "linux")).toEqual({ PATH: "/usr/bin" });
+    expect(sessionLaunchEnv(env, "darwin")).toEqual({ PATH: "/usr/bin" });
+    expect(sessionLaunchEnv(env, "win32")).toEqual({ PATH: ".:/usr/bin::bin" });
+  });
+
+  it("has no Windows Terminal, cmd, or PowerShell there", () => {
+    const programs = resolvePrograms({ PATH: "" }, "linux");
+    expect(programs).toEqual({
+      claude: null,
+      wt: null,
+      cmd: null,
+      powershell: null,
+    });
+  });
+});
+
+// Execute permission and links only mean this on macOS and Linux.
+describe.runIf(process.platform !== "win32")("findPosixClaude", () => {
+  function program(path: string, executable = true) {
+    touch(path);
+    chmodSync(path, executable ? 0o755 : 0o644);
+  }
+
+  it("finds the first executable claude on the PATH, through a link", () => {
+    program(join(root, "versions", "9.9.9"));
+    mkdirSync(join(root, "bin"), { recursive: true });
+    symlinkSync(join(root, "versions", "9.9.9"), join(root, "bin", "claude"));
+    program(join(root, "later", "claude"));
+    expect(
+      findPosixClaude({ PATH: `${join(root, "bin")}:${join(root, "later")}` }),
+    ).toBe(join(root, "bin", "claude"));
+  });
+
+  it("skips a claude that isn't executable, a folder, and relative entries", () => {
+    program(join(root, "plain", "claude"), false);
+    mkdirSync(join(root, "dir", "claude"), { recursive: true });
+    program(join(root, "good", "claude"));
+    const path = [
+      ".",
+      "",
+      "good-relative",
+      join(root, "plain"),
+      join(root, "dir"),
+      join(root, "good"),
+    ].join(":");
+    expect(findPosixClaude({ PATH: path })).toBe(join(root, "good", "claude"));
+  });
+
+  it("never finds one planted in the current folder", () => {
+    const here = process.cwd();
+    program(join(root, "claude"));
+    try {
+      process.chdir(root);
+      expect(findPosixClaude({ PATH: ".::claude-folder" })).toBeNull();
+    } finally {
+      process.chdir(here);
+    }
+  });
+});

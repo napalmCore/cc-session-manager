@@ -61,7 +61,7 @@ import {
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
 import { PRINTED_LINK_MS, startServer } from "./server.js";
-import { createFileStore, dataDirectory } from "./store.js";
+import { createFileStore, dataDirectory, secureDataFolder } from "./store.js";
 import type { Snapshot } from "../shared/protocol.js";
 import { createSessionTracker, enrichWithFinished } from "./tracker.js";
 import { createTranscriptReader, transcriptExists } from "./transcripts.js";
@@ -70,6 +70,12 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const programs = resolvePrograms();
 const dataFolder = dataDirectory();
+// On macOS and Linux the folder holds the hand-over secret, so it must be the user's alone (FR-41).
+const unsafeFolder = secureDataFolder(dataFolder);
+if (unsafeFolder !== null) {
+  console.error(unsafeFolder);
+  process.exit(1);
+}
 
 // The session this start came from, if any, so it's protected from Stop, Delete, and End (FR-22).
 const identity = readIdentity(process.env);

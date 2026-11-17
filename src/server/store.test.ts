@@ -1,10 +1,12 @@
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +18,7 @@ import {
   CORRUPT_NAME,
   createFileStore,
   dataDirectory,
+  secureDataFolder,
   scrubNames,
 } from "./store.js";
 import { createSessionTracker } from "./tracker.js";
@@ -457,12 +460,15 @@ describe("dataDirectory", () => {
     );
   });
 
-  it("uses XDG_DATA_HOME on Linux, or falls back under the home folder", () => {
-    expect(dataDirectory("linux", { XDG_DATA_HOME: "/data" }, "/home/a")).toBe(
-      join("/data", "cc-session-manager"),
+  it("uses XDG_STATE_HOME on Linux when it's absolute, or ~/.local/state (FR-41)", () => {
+    expect(
+      dataDirectory("linux", { XDG_STATE_HOME: "/state" }, "/home/a"),
+    ).toBe(join("/state", "cc-session-manager"));
+    expect(dataDirectory("linux", { XDG_STATE_HOME: "state" }, "/home/a")).toBe(
+      join("/home/a", ".local", "state", "cc-session-manager"),
     );
     expect(dataDirectory("linux", {}, "/home/a")).toBe(
-      join("/home/a", ".local", "share", "cc-session-manager"),
+      join("/home/a", ".local", "state", "cc-session-manager"),
     );
   });
 
@@ -470,5 +476,54 @@ describe("dataDirectory", () => {
     for (const platform of ["win32", "darwin", "linux"] as const) {
       expect(dataDirectory(platform, {}, "/home/a")).not.toContain(".claude");
     }
+  });
+});
+
+describe("a private data folder on macOS and Linux (FR-41)", () => {
+  it("does nothing on Windows, or when the folder doesn't exist yet", () => {
+    expect(secureDataFolder("C:/nowhere", "win32", 1000)).toBeNull();
+    expect(
+      secureDataFolder(join(tmpdir(), "ccsm-missing-x"), "linux", 1000),
+    ).toBeNull();
+  });
+
+  // Modes, links, and owners only mean this on macOS and Linux.
+  describe.runIf(process.platform !== "win32")("on this system", () => {
+    let folder = "";
+    const uid = process.getuid?.() ?? -1;
+    beforeEach(() => {
+      folder = mkdtempSync(join(tmpdir(), "ccsm-private-"));
+    });
+    afterEach(() => {
+      rmSync(folder, { recursive: true, force: true });
+    });
+
+    it("sets a folder and its files back to the user's own modes", () => {
+      chmodSync(folder, 0o755);
+      writeFileSync(join(folder, "instance.json"), "{}", { mode: 0o644 });
+      expect(secureDataFolder(folder, process.platform, uid)).toBeNull();
+      expect(statSync(folder).mode & 0o777).toBe(0o700);
+      expect(statSync(join(folder, "instance.json")).mode & 0o777).toBe(0o600);
+    });
+
+    it("refuses a folder or file that's a link, or someone else's", () => {
+      writeFileSync(join(folder, "elsewhere"), "{}");
+      symlinkSync(join(folder, "elsewhere"), join(folder, "instance.json"));
+      expect(secureDataFolder(folder, process.platform, uid)).toMatch(
+        /isn't a file of your own/,
+      );
+      const link = `${folder}-link`;
+      symlinkSync(folder, link);
+      try {
+        expect(secureDataFolder(link, process.platform, uid)).toMatch(
+          /isn't a folder of your own/,
+        );
+      } finally {
+        rmSync(link, { force: true });
+      }
+      expect(secureDataFolder(folder, process.platform, uid + 1)).toMatch(
+        /isn't a folder of your own/,
+      );
+    });
   });
 });

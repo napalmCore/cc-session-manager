@@ -49,6 +49,8 @@ export function checkStartText(
     }
     if (hasControl(name)) return "A name can't contain control characters.";
     if (name.includes("%")) return "A name can't contain %.";
+    // Konsole expands $ variables in its arguments, so $ is refused on every system (0032).
+    if (name.includes("$")) return "A name can't contain $.";
   }
   if (kind === "background") {
     if (prompt === undefined || prompt.trim() === "") {
