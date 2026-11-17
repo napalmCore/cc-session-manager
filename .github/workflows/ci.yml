@@ -9,9 +9,21 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    runs-on: windows-latest
-    timeout-minutes: 10
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Each system reports on its own, so one failing doesn't hide the others (NFR-19).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            timeout: 15
+          - os: macos-latest
+            timeout: 15
+          - os: ubuntu-latest
+            timeout: 10
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,5 +40,16 @@ jobs:
       - run: pnpm format:check
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm exec playwright install chromium
+      - name: Install Playwright's browser
+        run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
       - run: pnpm exec playwright test
+
+  # The single check `main` requires: it passes only when every system passed (NFR-19).
+  check:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every system passed
+        run: test "${{ needs.test.result }}" = "success"
