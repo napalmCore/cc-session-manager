@@ -96,6 +96,7 @@ if (process.platform !== "win32") {
       insideClaude: true,
       pid: walked.pid,
       pidStartMs: walked.startMs,
+      startToSecond: true,
     });
   } else if (walked.kind === "failed") {
     identities.push({ insideClaude: true });

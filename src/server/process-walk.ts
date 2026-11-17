@@ -24,7 +24,10 @@ export type WalkResult =
   | { kind: "none" }
   | { kind: "failed" };
 
-/** Linux reports start times in clock ticks of 1/100 s since boot (USER_HZ). */
+/**
+ * Linux reports start times in clock ticks since boot. The kernel always shows them to programs
+ * as USER_HZ, which is 100 on every architecture Node runs on, whatever the kernel's own rate.
+ */
 const LINUX_TICKS_PER_SECOND = 100;
 const PS = "/bin/ps";
 const PS_TIMEOUT_MS = 5_000;
@@ -37,9 +40,9 @@ export function isClaudeProcess(info: ProcessInfo): boolean {
   if (posix.basename(program) === "claude") return true;
   if (program.includes("/ClaudeCode.app/")) return true;
   if (/\/claude\/versions\/[^/]+$/.test(program)) return true;
-  const runsNode =
-    posix.basename(program) === "node" ||
-    posix.basename(info.args[0] ?? "") === "node";
+  // Some Linux systems install Node as nodejs.
+  const isNode = (path: string) => /^node(js)?$/.test(posix.basename(path));
+  const runsNode = isNode(program) || isNode(info.args[0] ?? "");
   return (
     runsNode &&
     info.args.some((arg) => arg.endsWith("@anthropic-ai/claude-code/cli.js"))

@@ -56,12 +56,23 @@ describe("which process is Claude Code's (FR-45)", () => {
     expect(
       isClaudeProcess(info({ program: "/bin/bash", args: ["-bash"] })),
     ).toBe(false);
-    // On Linux, Node shows as MainThread, but its program file is still node.
+    // Node running something else isn't Claude Code; Node installed as nodejs still counts.
     expect(
       isClaudeProcess(
-        info({ program: "/usr/bin/node", args: ["MainThread", "server.js"] }),
+        info({ program: "/usr/bin/node", args: ["node", "server.js"] }),
       ),
     ).toBe(false);
+    expect(
+      isClaudeProcess(
+        info({
+          program: "/usr/bin/nodejs",
+          args: [
+            "nodejs",
+            "/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js",
+          ],
+        }),
+      ),
+    ).toBe(true);
   });
 });
 

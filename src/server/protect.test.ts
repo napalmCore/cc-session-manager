@@ -184,3 +184,40 @@ describe("processStartMs", () => {
     30_000,
   );
 });
+
+describe("a start time from the parent-process walk (FR-45, 0032)", () => {
+  // The walk reads start times to the second, rounded down, so the listed start time can be up
+  // to 6 seconds after it.
+  const walked = {
+    insideClaude: true,
+    pid: 100,
+    pidStartMs: 10_000,
+    startToSecond: true,
+  };
+
+  it("protects a session listed up to 6 seconds after it", () => {
+    const protection = createProtection([walked]);
+    expect(protection.isProtected(interactive(SESSION_ID, 100, 15_500))).toBe(
+      PROTECTED_MESSAGE,
+    );
+    expect(protection.isProtected(interactive(SESSION_ID, 100, 16_000))).toBe(
+      PROTECTED_MESSAGE,
+    );
+  });
+
+  it("doesn't take a later one for it, and keeps actions off until it's found", () => {
+    const protection = createProtection([walked]);
+    protection.observe([interactive(SESSION_ID, 100, 16_500)]);
+    expect(protection.isProtected(interactive(SESSION_ID, 100, 16_500))).toBe(
+      UNKNOWN_MESSAGE,
+    );
+  });
+
+  it("keeps the 5-second limit for a start time read to the millisecond", () => {
+    const protection = createProtection([{ ...walked, startToSecond: false }]);
+    protection.observe([interactive(SESSION_ID, 100, 15_500)]);
+    expect(protection.isProtected(interactive(SESSION_ID, 100, 15_500))).toBe(
+      UNKNOWN_MESSAGE,
+    );
+  });
+});
