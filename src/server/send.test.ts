@@ -136,126 +136,138 @@ describe("Send's arguments (C-19)", () => {
   });
 });
 
-describe("Send in the launcher (FR-37, C-21)", () => {
-  it("sends in the session's folder with no shell, and says so without repeating the message", async () => {
-    const { l, run } = launcher(() =>
-      Promise.resolve(exited(0, `backgrounded · ${SHORT} · name\n`, woke)),
-    );
-    const result = await l.send(request(HOSTILE), target());
-    expect(result).toEqual({
-      outcome: "succeeded",
-      message: "Message sent. The session is running again.",
+// Windows-only until iteration 6 step 3 rebuilds this for macOS and Linux (NFR-19).
+describe.runIf(process.platform === "win32")(
+  "Send in the launcher (FR-37, C-21)",
+  () => {
+    it("sends in the session's folder with no shell, and says so without repeating the message", async () => {
+      const { l, run } = launcher(() =>
+        Promise.resolve(exited(0, `backgrounded · ${SHORT} · name\n`, woke)),
+      );
+      const result = await l.send(request(HOSTILE), target());
+      expect(result).toEqual({
+        outcome: "succeeded",
+        message: "Message sent. The session is running again.",
+      });
+      const plan = run.mock.calls[0]?.[0];
+      expect(plan?.file).toBe(programs.claude);
+      expect(plan?.args).toEqual([
+        "--bg",
+        "--resume",
+        SESSION_ID,
+        "--",
+        HOSTILE,
+      ]);
+      expect(plan?.cwd).toBe(root);
+      expect(JSON.stringify(result)).not.toContain("carry");
     });
-    const plan = run.mock.calls[0]?.[0];
-    expect(plan?.file).toBe(programs.claude);
-    expect(plan?.args).toEqual(["--bg", "--resume", SESSION_ID, "--", HOSTILE]);
-    expect(plan?.cwd).toBe(root);
-    expect(JSON.stringify(result)).not.toContain("carry");
-  });
 
-  it("adds a line when Claude Code doesn't say it restored the saved options", async () => {
-    const { l } = launcher(() =>
-      Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`, "")),
-    );
-    const result = await l.send(request(), target());
-    expect(result.outcome).toBe("succeeded");
-    expect(result.message).toMatch(/didn't say it restored/);
-  });
-
-  it("reports a copy Claude Code started instead, with its ID", async () => {
-    const { l, watch } = launcher(() =>
-      Promise.resolve(
-        exited(
-          0,
-          "backgrounded · 78fe91f0\n",
-          `note: session ${SHORT} is already running in the background, so this started a copy as 78fe91f0.\n`,
-        ),
-      ),
-    );
-    const result = await l.send(request(), target());
-    expect(result).toEqual({
-      outcome: "started",
-      message:
-        "Claude Code started a new session, 78fe91f0, with your message, because this one was running.",
-      newSessionId: "78fe91f0",
+    it("adds a line when Claude Code doesn't say it restored the saved options", async () => {
+      const { l } = launcher(() =>
+        Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`, "")),
+      );
+      const result = await l.send(request(), target());
+      expect(result.outcome).toBe("succeeded");
+      expect(result.message).toMatch(/didn't say it restored/);
     });
-    expect(watch).not.toHaveBeenCalled();
-  });
 
-  it("gives unknown for output it can't match and for a timeout, and never retries", async () => {
-    const nothing = launcher(() => Promise.resolve(exited(0, "hello\n")));
-    expect((await nothing.l.send(request(), target())).outcome).toBe("unknown");
-    expect(nothing.run).toHaveBeenCalledTimes(1);
-    const slow = launcher(() => Promise.resolve({ kind: "timeout" }));
-    const timed = await slow.l.send(request(), target());
-    expect(timed.outcome).toBe("unknown");
-    expect(timed.message).toMatch(/may have been sent/);
-    expect(slow.run).toHaveBeenCalledTimes(1);
-  });
-
-  it("maps a refusal to the tool's own words, and an error to failed", async () => {
-    const refused = launcher(() =>
-      Promise.resolve(
-        exited(
-          1,
-          "",
-          "Workspace not trusted. Run `claude` in C:\\secret once.",
+    it("reports a copy Claude Code started instead, with its ID", async () => {
+      const { l, watch } = launcher(() =>
+        Promise.resolve(
+          exited(
+            0,
+            "backgrounded · 78fe91f0\n",
+            `note: session ${SHORT} is already running in the background, so this started a copy as 78fe91f0.\n`,
+          ),
         ),
-      ),
-    );
-    const result = await refused.l.send(request(), target());
-    expect(result.outcome).toBe("refused");
-    expect(result.message).not.toContain("secret");
-    const broken = launcher(() => Promise.resolve({ kind: "error" }));
-    expect((await broken.l.send(request(), target())).outcome).toBe("failed");
-  });
+      );
+      const result = await l.send(request(), target());
+      expect(result).toEqual({
+        outcome: "started",
+        message:
+          "Claude Code started a new session, 78fe91f0, with your message, because this one was running.",
+        newSessionId: "78fe91f0",
+      });
+      expect(watch).not.toHaveBeenCalled();
+    });
 
-  it("reports a failure straight away, but not an old one before the session has run", async () => {
-    const before = bg({ state: "failed" });
-    const running = bg({ state: "working", pid: 7 });
-    const failedAgain = bg({ state: "failed" });
-    // Still showing its old failure, then running, then failed again.
-    const { l } = launcher(
-      () => Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`)),
-      [[before], [running], [failedAgain]],
-    );
-    const result = await l.send(request(), target({ state: "failed" }));
-    expect(result.outcome).toBe("failed");
-    // Only the old failure: not a new one.
-    const quiet = launcher(
-      () => Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`)),
-      [[before], [before]],
-    );
-    expect(
-      (await quiet.l.send(request(), target({ state: "failed" }))).outcome,
-    ).toBe("succeeded");
-    // A session that was done and shows failed has failed now.
-    const done = launcher(
-      () => Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`)),
-      [[failedAgain]],
-    );
-    expect((await done.l.send(request(), target())).outcome).toBe("failed");
-  });
+    it("gives unknown for output it can't match and for a timeout, and never retries", async () => {
+      const nothing = launcher(() => Promise.resolve(exited(0, "hello\n")));
+      expect((await nothing.l.send(request(), target())).outcome).toBe(
+        "unknown",
+      );
+      expect(nothing.run).toHaveBeenCalledTimes(1);
+      const slow = launcher(() => Promise.resolve({ kind: "timeout" }));
+      const timed = await slow.l.send(request(), target());
+      expect(timed.outcome).toBe("unknown");
+      expect(timed.message).toMatch(/may have been sent/);
+      expect(slow.run).toHaveBeenCalledTimes(1);
+    });
 
-  it("checks the message and the folder before running anything", async () => {
-    const { l, run } = launcher(() => Promise.resolve(exited(0, "")));
-    expect((await l.send(request("  "), target())).message).toBe(
-      "Type a message to send.",
-    );
-    expect((await l.send(request("a".repeat(8001)), target())).outcome).toBe(
-      "refused",
-    );
-    expect((await l.send(request("a\u0007b"), target())).outcome).toBe(
-      "refused",
-    );
-    const gone = await l.send(
-      request(),
-      target({ folder: join(root, "missing") }),
-    );
-    expect(gone.message).toMatch(/folder can't be used/);
-    expect(run).not.toHaveBeenCalled();
-  });
-});
+    it("maps a refusal to the tool's own words, and an error to failed", async () => {
+      const refused = launcher(() =>
+        Promise.resolve(
+          exited(
+            1,
+            "",
+            "Workspace not trusted. Run `claude` in C:\\secret once.",
+          ),
+        ),
+      );
+      const result = await refused.l.send(request(), target());
+      expect(result.outcome).toBe("refused");
+      expect(result.message).not.toContain("secret");
+      const broken = launcher(() => Promise.resolve({ kind: "error" }));
+      expect((await broken.l.send(request(), target())).outcome).toBe("failed");
+    });
+
+    it("reports a failure straight away, but not an old one before the session has run", async () => {
+      const before = bg({ state: "failed" });
+      const running = bg({ state: "working", pid: 7 });
+      const failedAgain = bg({ state: "failed" });
+      // Still showing its old failure, then running, then failed again.
+      const { l } = launcher(
+        () => Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`)),
+        [[before], [running], [failedAgain]],
+      );
+      const result = await l.send(request(), target({ state: "failed" }));
+      expect(result.outcome).toBe("failed");
+      // Only the old failure: not a new one.
+      const quiet = launcher(
+        () => Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`)),
+        [[before], [before]],
+      );
+      expect(
+        (await quiet.l.send(request(), target({ state: "failed" }))).outcome,
+      ).toBe("succeeded");
+      // A session that was done and shows failed has failed now.
+      const done = launcher(
+        () => Promise.resolve(exited(0, `backgrounded · ${SHORT}\n`)),
+        [[failedAgain]],
+      );
+      expect((await done.l.send(request(), target())).outcome).toBe("failed");
+    });
+
+    it("checks the message and the folder before running anything", async () => {
+      const { l, run } = launcher(() => Promise.resolve(exited(0, "")));
+      expect((await l.send(request("  "), target())).message).toBe(
+        "Type a message to send.",
+      );
+      expect((await l.send(request("a".repeat(8001)), target())).outcome).toBe(
+        "refused",
+      );
+      expect((await l.send(request("a\u0007b"), target())).outcome).toBe(
+        "refused",
+      );
+      const gone = await l.send(
+        request(),
+        target({ folder: join(root, "missing") }),
+      );
+      expect(gone.message).toMatch(/folder can't be used/);
+      expect(run).not.toHaveBeenCalled();
+    });
+  },
+);
 
 describe("Send in the action tracker (FR-37, NFR-17)", () => {
   function tracker(options: {
@@ -411,30 +423,34 @@ describe("Send in the action tracker (FR-37, NFR-17)", () => {
   });
 });
 
-describe("security review of iteration 5", () => {
-  it("gives unknown when Claude Code printed too much to read, since the message may have gone (L-2)", async () => {
-    const { l } = launcher(() => Promise.resolve({ kind: "overflow" }));
-    const result = await l.send(request(), target());
-    expect(result.outcome).toBe("unknown");
-    expect(result.message).toMatch(/may have been sent/);
-  });
+// Windows-only until iteration 6 step 3 rebuilds this for macOS and Linux (NFR-19).
+describe.runIf(process.platform === "win32")(
+  "security review of iteration 5",
+  () => {
+    it("gives unknown when Claude Code printed too much to read, since the message may have gone (L-2)", async () => {
+      const { l } = launcher(() => Promise.resolve({ kind: "overflow" }));
+      const result = await l.send(request(), target());
+      expect(result.outcome).toBe("unknown");
+      expect(result.message).toMatch(/may have been sent/);
+    });
 
-  it("matches only Claude Code's own first line for a refusal, and the note only as a line (I-1, I-2)", async () => {
-    const echoed = launcher(() =>
-      Promise.resolve(
-        exited(1, "", "Session not found.\nyour message said: please update"),
-      ),
-    );
-    expect((await echoed.l.send(request(), target())).message).toBe(
-      "Claude Code refused the message.",
-    );
-    const faked = launcher(() =>
-      Promise.resolve(
-        exited(0, `backgrounded · ${SHORT}\n`, `prompt: ${woke.trim()}\n`),
-      ),
-    );
-    expect((await faked.l.send(request(), target())).message).toMatch(
-      /didn't say it restored/,
-    );
-  });
-});
+    it("matches only Claude Code's own first line for a refusal, and the note only as a line (I-1, I-2)", async () => {
+      const echoed = launcher(() =>
+        Promise.resolve(
+          exited(1, "", "Session not found.\nyour message said: please update"),
+        ),
+      );
+      expect((await echoed.l.send(request(), target())).message).toBe(
+        "Claude Code refused the message.",
+      );
+      const faked = launcher(() =>
+        Promise.resolve(
+          exited(0, `backgrounded · ${SHORT}\n`, `prompt: ${woke.trim()}\n`),
+        ),
+      );
+      expect((await faked.l.send(request(), target())).message).toMatch(
+        /didn't say it restored/,
+      );
+    });
+  },
+);

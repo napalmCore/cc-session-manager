@@ -36,7 +36,8 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("findClaude", () => {
+// Windows-only until iteration 6 step 2 rebuilds this for macOS and Linux (NFR-19).
+describe.runIf(process.platform === "win32")("findClaude", () => {
   it("uses the native claude.exe inside an npm install", () => {
     const npm = join(root, "npm");
     touch(join(npm, "claude.cmd"));
