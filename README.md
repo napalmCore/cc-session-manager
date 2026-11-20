@@ -44,7 +44,7 @@ See the [release notes](docs/release-notes.md) for details, the safety rules for
 
 ## Privacy
 
-The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open, Resume, New session, Fork, and Send start Claude Code, which works as it normally does. It reads session transcripts for token counts, model, branch, folder, and times, never keeping message text. Only Search reads message text, when you search, and it keeps only its results, in memory, until the page fetches them or for at most 60 seconds. It saves finished sessions with their token counts, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager` on Windows, `~/Library/Application Support/cc-session-manager` on macOS, and `~/.local/state/cc-session-manager` on Linux. A damaged saved file is set aside with names removed, or deleted if it isn't JSON.
+The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open, Resume, New session, Fork, and Send start Claude Code, which works as it normally does. It reads session transcripts for token counts, model, branch, folder, and times, never keeping message text. Only Search reads message text, when you search, and it keeps only its results, in memory, until the page fetches them or for at most 60 seconds. It saves finished sessions with their token counts, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager` on Windows, `~/Library/Application Support/cc-session-manager` on macOS, and `~/.local/state/cc-session-manager` on Linux, or `$XDG_STATE_HOME/cc-session-manager` when that's set. A damaged saved file is set aside with names removed, or deleted if it isn't JSON.
 
 ## Development
 
