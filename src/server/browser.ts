@@ -4,7 +4,6 @@ import {
   closeSync,
   openSync,
   readdirSync,
-  statSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -49,7 +48,34 @@ export interface OpenBrowserOptions {
   lifetimeMs?: number;
 }
 
-const REDIRECT_FILE = /^signin-[0-9a-f]{32}\.html$/;
+/** A redirect file's name carries when its link expires, so any start can tell it's dead. */
+const REDIRECT_FILE = /^signin-(\d{1,15})-[0-9a-f]{32}\.html$/;
+
+/**
+ * Deletes redirect files whose links expired by `now`. A dashboard that starts or stops passes
+ * Infinity, since every earlier link is dead then; a hand-over's file, left by a start that
+ * exits at once, is swept by the running dashboard once it expires (BUG-41's review, Info 1).
+ */
+export function sweepRedirectFiles(
+  folder: string,
+  now: number = Date.now(),
+): void {
+  let names: string[];
+  try {
+    names = readdirSync(folder);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const match = REDIRECT_FILE.exec(name);
+    if (match === null || Number(match[1]) > now) continue;
+    try {
+      unlinkSync(join(folder, name));
+    } catch {
+      // Gone already.
+    }
+  }
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -60,29 +86,20 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Writes a page that sends the browser on to the link, readable only by the user (0600), and
- * deletes older ones, whose links have expired. Returns its path.
+ * Writes a page that sends the browser on to the link, readable only by the user (0600), named
+ * with when the link expires, and deletes expired ones. Returns its path.
  */
 export function writeRedirectFile(
   folder: string,
   url: string,
+  expiresAt: number,
   now: number = Date.now(),
-  maxAgeMs = 2 * 60_000,
 ): string {
-  try {
-    for (const name of readdirSync(folder)) {
-      if (!REDIRECT_FILE.test(name)) continue;
-      const path = join(folder, name);
-      try {
-        if (now - statSync(path).mtimeMs > maxAgeMs) unlinkSync(path);
-      } catch {
-        // Gone already.
-      }
-    }
-  } catch {
-    // The folder can't be listed; writing below still says if it's usable.
-  }
-  const path = join(folder, `signin-${randomBytes(16).toString("hex")}.html`);
+  sweepRedirectFiles(folder, now);
+  const path = join(
+    folder,
+    `signin-${String(Math.ceil(expiresAt))}-${randomBytes(16).toString("hex")}.html`,
+  );
   const link = escapeHtml(url);
   const page = `<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="0;url=${link}"><title>cc-session-manager</title><p><a href="${link}">Open the dashboard</a></p>
 `;
@@ -131,6 +148,12 @@ export function openBrowser(
       resolve();
     };
     const env = options.env ?? process.env;
+    // On Linux with no display, no browser can open, so the link is printed, and no redirect
+    // file is written for nothing (FR-42; the M1 review, Info 4).
+    if (platform === "linux" && !hasDisplay(env)) {
+      finish(true);
+      return;
+    }
     // On macOS and Linux, other users can read a program's arguments, so the browser gets a
     // private file that leads to the link, never the link itself (M1).
     let target = url;
@@ -139,30 +162,27 @@ export function openBrowser(
         finish(true);
         return;
       }
+      const lifetimeMs = options.lifetimeMs ?? 2 * 60_000;
       try {
-        target = writeRedirectFile(options.redirectFolder, url);
+        target = writeRedirectFile(
+          options.redirectFolder,
+          url,
+          Date.now() + lifetimeMs,
+        );
       } catch {
         finish(true);
         return;
       }
       const written = target;
-      setTimeout(
-        () => {
-          try {
-            unlinkSync(written);
-          } catch {
-            // Gone already.
-          }
-        },
-        options.lifetimeMs ?? 2 * 60_000,
-      ).unref();
+      setTimeout(() => {
+        try {
+          unlinkSync(written);
+        } catch {
+          // Gone already.
+        }
+      }, lifetimeMs).unref();
     }
     const [command, args] = browserCommand(target, platform);
-    // On Linux with no display, no browser can open, so the link is printed (FR-42).
-    if (platform === "linux" && !hasDisplay(env)) {
-      finish(true);
-      return;
-    }
     // On macOS and Linux, open or xdg-open is found on the cleaned PATH, never by a bare name,
     // so nothing in a relative PATH entry can run (C-22).
     const file =
