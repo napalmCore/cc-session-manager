@@ -68,18 +68,23 @@ function decodeOctal(text: string): string {
   );
 }
 
-/** Parses `/proc/self/mountinfo`: the mount point is the fifth field, the type follows `-`. */
-export function parseMountinfo(text: string): MountTable {
+/**
+ * Parses `/proc/self/mountinfo`: the mount point is the fifth field, the type follows `-`. A
+ * line that can't be read could be a network mount, and leaving it out would let its folders
+ * count as local, so such a table is refused as a whole (null), as on macOS (L3).
+ */
+export function parseMountinfo(text: string): MountTable | null {
   const mounts: MountTable = [];
   for (const line of text.split("\n")) {
+    if (line === "") continue;
     const fields = line.split(" ");
     const separator = fields.indexOf("-");
     const point = fields[4];
     const type = fields[separator + 1];
-    if (separator < 6 || point === undefined || type === undefined) continue;
+    if (separator < 6 || point === undefined || type === undefined) return null;
     const id = Number(fields[0]);
     const parent = Number(fields[1]);
-    if (!Number.isInteger(id) || !Number.isInteger(parent)) continue;
+    if (!Number.isInteger(id) || !Number.isInteger(parent)) return null;
     mounts.push({ point: decodeOctal(point), type, id, parent });
   }
   return mounts;
@@ -100,10 +105,13 @@ export function parseMacMount(text: string): MountTable | null {
     // The mount point is where " on /" starts it, so a source holding " on " but not
     // " on /" still splits in the right place.
     const match = /^(.+?) on (\/.*) \(([^()]*)\)$/.exec(line.trimEnd());
-    if (match === null) continue;
+    // A line that can't be read could be a network mount, so the table is refused (L3).
+    if (match === null) return null;
     const flags = (match[3] ?? "").split(",").map((flag) => flag.trim());
     const type = flags[0];
-    if (type === undefined || match[2] === undefined) continue;
+    if (type === undefined || type === "" || match[2] === undefined) {
+      return null;
+    }
     mounts.push({ point: match[2], type, local: flags.includes("local") });
   }
   return mounts;

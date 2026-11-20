@@ -76,6 +76,49 @@ describe("which process is Claude Code's (FR-45)", () => {
   });
 });
 
+describe("Claude Code processes the first walk missed (L1)", () => {
+  it("knows an older npm install, a replaced program, and a renamed process", () => {
+    // npm's `claude` script run by Node: node /usr/local/bin/claude.
+    expect(
+      isClaudeProcess(
+        info({
+          program: "/usr/bin/node",
+          args: ["node", "/usr/local/bin/claude", "--resume"],
+        }),
+      ),
+    ).toBe(true);
+    // A program an update replaced while it ran.
+    expect(
+      isClaudeProcess(
+        info({
+          program: "/home/me/.local/share/claude/versions/2.1.3 (deleted)",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isClaudeProcess(
+        info({ program: "/home/me/.local/bin/claude (deleted)" }),
+      ),
+    ).toBe(true);
+    // Node that set its title to claude.
+    expect(
+      isClaudeProcess(info({ program: "/usr/bin/node", args: ["claude"] })),
+    ).toBe(true);
+    // Still not: Node running something else, or a program merely named like it.
+    expect(
+      isClaudeProcess(
+        info({
+          program: "/usr/bin/node",
+          args: ["node", "/srv/app/claude.js"],
+        }),
+      ),
+    ).toBe(false);
+    expect(isClaudeProcess(info({ program: "/usr/bin/claude-helper" }))).toBe(
+      false,
+    );
+  });
+});
+
 describe("reading /proc/<pid>/stat (FR-45)", () => {
   it("reads after the last ), since a name can hold one", () => {
     const fields = Array.from({ length: 20 }, (_, i) => String(i));
@@ -112,14 +155,36 @@ describe("walking up the parent processes (FR-45)", () => {
     });
   });
 
-  it("reports none when it reaches process 1 without one, never reading process 1", async () => {
+  it("reports none when it reaches process 1 without one", async () => {
     const seen: number[] = [];
     const tracked = (pid: number) => {
       seen.push(pid);
-      return read(pid);
+      return pid === 1
+        ? Promise.resolve(info({ parent: 0, program: "/sbin/init" }))
+        : read(pid);
     };
     expect(await walkToClaude(tracked, 20)).toEqual({ kind: "none" });
-    expect(seen).not.toContain(1);
+    expect(seen).toEqual([20, 10, 1]);
+    // An unreadable process 1 is none too, not a failed walk.
+    expect(await walkToClaude(read, 20)).toEqual({ kind: "none" });
+  });
+
+  it("finds Claude Code as process 1, as in a container that starts it directly (L1)", async () => {
+    const container = (pid: number) =>
+      Promise.resolve(
+        pid === 1
+          ? info({
+              parent: 0,
+              program: "/usr/local/bin/claude",
+              startMs: 5_000,
+            })
+          : info({ parent: 1, program: "/bin/bash" }),
+      );
+    expect(await walkToClaude(container, 30)).toEqual({
+      kind: "found",
+      pid: 1,
+      startMs: 5_000,
+    });
   });
 
   it("fails when a process can't be read, or points to itself", async () => {

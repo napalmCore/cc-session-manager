@@ -36,8 +36,14 @@ const MAX_DEPTH = 64;
 
 /** Whether a process is Claude Code's: its own program, a ClaudeCode.app host, or Node running its CLI. */
 export function isClaudeProcess(info: ProcessInfo): boolean {
-  const program = info.program ?? info.args[0] ?? "";
+  // Linux adds " (deleted)" to a program replaced while it runs, as an update does (L1).
+  const program = (info.program ?? info.args[0] ?? "").replace(
+    / \(deleted\)$/,
+    "",
+  );
   if (posix.basename(program) === "claude") return true;
+  // Its first argument, which an older npm install's Node sets to "claude" (L1).
+  if (posix.basename(info.args[0] ?? "") === "claude") return true;
   if (program.includes("/ClaudeCode.app/")) return true;
   if (/\/claude\/versions\/[^/]+$/.test(program)) return true;
   // Some Linux systems install Node as nodejs.
@@ -45,7 +51,11 @@ export function isClaudeProcess(info: ProcessInfo): boolean {
   const runsNode = isNode(program) || isNode(info.args[0] ?? "");
   return (
     runsNode &&
-    info.args.some((arg) => arg.endsWith("@anthropic-ai/claude-code/cli.js"))
+    // Node running Claude Code's CLI, or an older npm install's `claude` script (L1).
+    (info.args.some((arg) =>
+      arg.endsWith("@anthropic-ai/claude-code/cli.js"),
+    ) ||
+      posix.basename(info.args[1] ?? "") === "claude")
   );
 }
 
@@ -149,22 +159,29 @@ export async function readMacProcess(pid: number): Promise<ProcessInfo | null> {
   };
 }
 
-/** Follows parent processes from `start` until a Claude Code process, or process 1. */
+/**
+ * Follows parent processes from `start` until a Claude Code process, up to and including
+ * process 1, which is Claude Code itself in a container that starts it directly (L1).
+ */
 export async function walkToClaude(
   read: (pid: number) => Promise<ProcessInfo | null>,
   start: number = process.ppid,
 ): Promise<WalkResult> {
   let pid = start;
-  for (let depth = 0; depth < MAX_DEPTH && pid > 1; depth += 1) {
+  for (let depth = 0; depth < MAX_DEPTH && pid >= 1; depth += 1) {
     const info = await read(pid);
-    if (info === null) return { kind: "failed" };
+    if (info === null) {
+      // Process 1 may be unreadable, such as init when the tool runs as a user; that's none.
+      return pid === 1 ? { kind: "none" } : { kind: "failed" };
+    }
     if (isClaudeProcess(info)) {
       return { kind: "found", pid, startMs: info.startMs };
     }
+    if (pid === 1) return { kind: "none" };
     if (info.parent === pid) return { kind: "failed" };
     pid = info.parent;
   }
-  return pid <= 1 ? { kind: "none" } : { kind: "failed" };
+  return pid < 1 ? { kind: "none" } : { kind: "failed" };
 }
 
 /** The walk on this system: `/proc` on Linux, `ps` on macOS. */
