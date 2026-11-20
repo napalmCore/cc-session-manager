@@ -97,9 +97,17 @@ function isExecutableFile(path: string): boolean {
 
 /** `claude` on macOS and Linux: the first executable file of that name on the cleaned PATH. */
 export function findPosixClaude(env: NodeJS.ProcessEnv): string | null {
+  return findPosixProgram("claude", env);
+}
+
+/** A program on macOS and Linux: the first executable file of that name on the cleaned PATH. */
+export function findPosixProgram(
+  name: string,
+  env: NodeJS.ProcessEnv,
+): string | null {
   for (const entry of cleanPosixPath(env.PATH).split(":")) {
     if (entry === "") continue;
-    const candidate = posix.join(entry, "claude");
+    const candidate = posix.join(entry, name);
     if (isExecutableFile(candidate)) {
       return isSafePosixProgramPath(candidate) ? candidate : null;
     }
@@ -206,15 +214,16 @@ export function planOpen(
   cwd: string,
 ): LaunchPlan {
   if (programs.claude === null) throw new Error("claude.exe wasn't found");
-  let claudeArgs: string[];
+  return planTerminal(programs, openArguments(target), cwd);
+}
+
+/** The fixed arguments for Open and Resume (FR-14). Throws if an ID is malformed. */
+export function openArguments(target: OpenTarget): string[] {
   if (target.mode === "attach") {
     if (!SHORT_ID.test(target.id)) throw new Error("Invalid session ID");
-    claudeArgs = ["attach", target.id];
-  } else {
-    if (!isValidSessionId(target.sessionId))
-      throw new Error("Invalid session ID");
-    claudeArgs = ["--resume", target.sessionId];
+    return ["attach", target.id];
   }
-
-  return planTerminal(programs, claudeArgs, cwd);
+  if (!isValidSessionId(target.sessionId))
+    throw new Error("Invalid session ID");
+  return ["--resume", target.sessionId];
 }

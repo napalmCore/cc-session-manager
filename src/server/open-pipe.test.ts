@@ -39,12 +39,18 @@ function buildChild(): string {
   }).outputText;
   writeFileSync(
     join(folder, "open.mjs"),
-    compiled.replace('"./programs.js"', '"./programs.mjs"'),
+    compiled
+      .replace('"./programs.js"', '"./programs.mjs"')
+      .replace('"./posix-terminal.js"', '"./posix-terminal.mjs"'),
   );
-  // launchDetached uses nothing from programs.ts; these only satisfy the import.
+  // launchDetached uses nothing from these; they only satisfy the imports.
   writeFileSync(
     join(folder, "programs.mjs"),
-    "export const planOpen = () => undefined;\nexport const sessionLaunchEnv = (env) => env;\n",
+    "export const planOpen = () => undefined;\nexport const openArguments = () => [];\nexport const sessionLaunchEnv = (env) => env;\n",
+  );
+  writeFileSync(
+    join(folder, "posix-terminal.mjs"),
+    "export const openPosixTerminal = () => undefined;\n",
   );
   const child = join(folder, "child.mjs");
   writeFileSync(

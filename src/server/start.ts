@@ -8,6 +8,7 @@ import {
   sendArguments,
 } from "./launch.js";
 import { checkLocalFolder, type DriveTypeReader } from "./local-folder.js";
+import { openPosixTerminal } from "./posix-terminal.js";
 import { hasControl, hasRawControl } from "./text-checks.js";
 import {
   type LaunchPlan,
@@ -167,6 +168,9 @@ export interface StartOptions {
   /** Watches the listing after a background start, for up to FAILURE_WATCH_MS. */
   watch: ListingWatch;
   environment?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  /** The macOS and Linux terminal (FR-43); a stand-in in tests. */
+  posixTerminal?: typeof openPosixTerminal;
 }
 
 /** A Fork request (FR-33): the page names only a session; the server finds its folder. */
@@ -219,6 +223,23 @@ export function createLauncher(options: StartOptions) {
     folder: string,
     what: "session" | "fork",
   ): Promise<ActionResult> => {
+    const platform = options.platform ?? process.platform;
+    if (kind === "interactive" && platform !== "win32") {
+      if (programs.claude === null) return unavailable;
+      const environment = options.environment ?? process.env;
+      return (options.posixTerminal ?? openPosixTerminal)(
+        programs.claude,
+        args,
+        folder,
+        sessionLaunchEnv(environment, platform),
+        {
+          folderOk: async (path) =>
+            (await checkLocalFolder(path, options.driveType, platform)).ok,
+          platform,
+          toolEnv: environment,
+        },
+      );
+    }
     if (kind === "interactive") {
       let plan: LaunchPlan;
       try {

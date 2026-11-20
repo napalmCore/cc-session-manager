@@ -1,5 +1,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { homedir } from "node:os";
+import { hasDisplay } from "./posix-terminal.js";
+import { findPosixProgram } from "./programs.js";
 
 /** Printed under a first start's link when no browser opened (FR-29, BUG-8). */
 export const PRINTED_LINK_NOTE =
@@ -25,6 +27,9 @@ export interface OpenBrowserOptions {
   beforePrint?: () => void;
   spawn?: typeof nodeSpawn;
   log?: (line: string) => void;
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  find?: (name: string, env: NodeJS.ProcessEnv) => string | null;
 }
 
 /**
@@ -39,7 +44,8 @@ export function openBrowser(
 ): Promise<void> {
   const spawn = options.spawn ?? nodeSpawn;
   const log = options.log ?? ((line: string) => console.log(line));
-  const [command, args] = browserCommand(url);
+  const platform = options.platform ?? process.platform;
+  const [command, args] = browserCommand(url, platform);
   return new Promise((resolve) => {
     let settled = false;
     const finish = (failed: boolean) => {
@@ -52,8 +58,24 @@ export function openBrowser(
       }
       resolve();
     };
+    const env = options.env ?? process.env;
+    // On Linux with no display, no browser can open, so the link is printed (FR-42).
+    if (platform === "linux" && !hasDisplay(env)) {
+      finish(true);
+      return;
+    }
+    // On macOS and Linux, open or xdg-open is found on the cleaned PATH, never by a bare name,
+    // so nothing in a relative PATH entry can run (C-22).
+    const file =
+      platform === "win32"
+        ? command
+        : (options.find ?? findPosixProgram)(command, env);
+    if (file === null) {
+      finish(true);
+      return;
+    }
     try {
-      const child = spawn(command, args, {
+      const child = spawn(file, args, {
         cwd: homedir(),
         detached: true,
         stdio: "ignore",

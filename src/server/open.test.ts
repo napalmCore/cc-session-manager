@@ -6,6 +6,7 @@ import {
   launchDetached,
   REPEAT_WINDOW_MS,
 } from "./open.js";
+import type { openPosixTerminal } from "./posix-terminal.js";
 import type { LaunchPlan, Programs } from "./programs.js";
 import { toSessionView } from "./rules.js";
 
@@ -54,6 +55,8 @@ function setup(
       CLAUDE_CONFIG_DIR: "D:\\c",
     },
     now: () => now,
+    // The Windows terminal; macOS and Linux are tested with a stand-in below.
+    platform: "win32",
     ...overrides,
   });
   return {
@@ -208,5 +211,68 @@ describe("launchDetached", () => {
         process.env,
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe("Open and Resume on macOS and Linux (FR-43)", () => {
+  const posix = (folderOk: boolean) => {
+    const posixTerminal = vi.fn<typeof openPosixTerminal>(() =>
+      Promise.resolve({ outcome: "started", message: "ok" }),
+    );
+    const launch = vi.fn(() => Promise.resolve());
+    const executors = createOpenExecutors({
+      programs: {
+        ...programs,
+        claude: "/usr/local/bin/claude",
+        wt: null,
+        cmd: null,
+      },
+      launch,
+      folderExists: () => folderOk,
+      transcriptExists: () => Promise.resolve(true),
+      homeFolder: "/home/me",
+      environment: { PATH: "/usr/bin:.", CLAUDECODE: "1", DISPLAY: ":0" },
+      platform: "linux",
+      posixTerminal,
+    });
+    return { executors, posixTerminal, launch };
+  };
+  const row = (): SessionView =>
+    toSessionView({
+      id: "abcd1234",
+      sessionId: SESSION_ID,
+      kind: "background",
+      state: "done",
+      cwd: "/home/me/work",
+    });
+
+  it("opens with only the checked ID, in the session's folder, with a cleaned environment", async () => {
+    const { executors, posixTerminal, launch } = posix(true);
+    expect((await executors.open(row())).outcome).toBe("started");
+    const [claude, args, folder, env] = posixTerminal.mock.calls[0] ?? [];
+    expect([claude, args, folder]).toEqual([
+      "/usr/local/bin/claude",
+      ["attach", "abcd1234"],
+      "/home/me/work",
+    ]);
+    expect(env?.PATH).toBe("/usr/bin");
+    expect(env?.CLAUDECODE).toBeUndefined();
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it("opens in the home folder when the session's folder can't be used, and won't resume there", async () => {
+    const { executors, posixTerminal } = posix(false);
+    await executors.open(row());
+    expect(posixTerminal.mock.calls[0]?.[2]).toBe("/home/me");
+    expect((await executors.resume(row())).outcome).toBe("refused");
+    expect(posixTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes by session ID, and ignores a second Resume straight after", async () => {
+    const { executors, posixTerminal } = posix(true);
+    await executors.resume(row());
+    expect(posixTerminal.mock.calls[0]?.[1]).toEqual(["--resume", SESSION_ID]);
+    expect((await executors.resume(row())).outcome).toBe("refused");
+    expect(posixTerminal).toHaveBeenCalledTimes(1);
   });
 });
