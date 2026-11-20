@@ -16,6 +16,13 @@ import {
   visibleMounts,
 } from "./posix-folders.js";
 
+/** The Linux table, which these samples always parse to. */
+const mountinfo = (text: string) => {
+  const table = parseMountinfo(text);
+  if (table === null) throw new Error("The table was refused");
+  return table;
+};
+
 // Lines in the shape the probes saw on Ubuntu 26.04 (U-31).
 const MOUNTINFO = [
   "22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw",
@@ -37,7 +44,7 @@ const MAC_MOUNT = [
 
 describe("reading the mount table (FR-44, U-31)", () => {
   it("parses Linux's mountinfo, decoding its escapes", () => {
-    const table = parseMountinfo(MOUNTINFO);
+    const table = mountinfo(MOUNTINFO);
     expect(table.map((mount) => [mount.point, mount.type])).toEqual([
       ["/", "ext4"],
       ["/proc", "proc"],
@@ -92,7 +99,7 @@ describe("reading the mount table (FR-44, U-31)", () => {
 
 describe("which mount a folder is on (FR-44)", () => {
   it("matches the longest prefix on whole parts", () => {
-    const visible = visibleMounts(parseMountinfo(MOUNTINFO));
+    const visible = visibleMounts(mountinfo(MOUNTINFO));
     expect(mountFor("/mnt/nfs/sub", visible)?.type).toBe("nfs");
     expect(mountFor("/mnt/nfsfoo", visible)?.type).toBe("ext4");
     expect(mountFor("/home/me", visible)?.type).toBe("ext4");
@@ -274,14 +281,14 @@ describe("review of step 3 (FR-44, C-24)", () => {
     );
     expect(mountFor("/VOLUMES/SHARE", table, "darwin")?.type).toBe("smbfs");
     // Linux compares exactly.
-    expect(mountFor("/MNT/nfs", parseMountinfo(MOUNTINFO), "linux")?.type).toBe(
+    expect(mountFor("/MNT/nfs", mountinfo(MOUNTINFO), "linux")?.type).toBe(
       "ext4",
     );
   });
 
   it("on Linux, follows the mount tree, so a network mount moved over a local one wins", () => {
     // NFS (ID 40) was moved onto the tmpfs (ID 50) at /x/y, so it's listed before it.
-    const table = parseMountinfo(
+    const table = mountinfo(
       [
         "22 1 8:1 / / rw - ext4 /dev/sda1 rw",
         "40 50 0:40 / /x/y rw - nfs server:/e rw",
@@ -293,7 +300,7 @@ describe("review of step 3 (FR-44, C-24)", () => {
   });
 
   it("reads mountinfo lines with several optional fields", () => {
-    const table = parseMountinfo(
+    const table = mountinfo(
       "36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 shared:2 - ext3 /dev/root rw,errors=continue",
     );
     expect(table).toEqual([
@@ -337,7 +344,7 @@ describe("review of step 3 (FR-44, C-24)", () => {
 
 describe("follow-ups to step 3 (FR-44)", () => {
   it("on Linux, a later mount over a folder above an earlier one covers it", () => {
-    const table = parseMountinfo(
+    const table = mountinfo(
       [
         "22 1 8:1 / / rw - ext4 /dev/sda1 rw",
         "30 22 0:30 / /a/b rw - tmpfs tmpfs rw",
@@ -387,5 +394,43 @@ describe('a macOS source with " on " but not " on /" (review of #100)', () => {
     expect(
       parseMacMount("//me@host/a on b on /Volumes/x (smbfs, nodev)"),
     ).toEqual([{ point: "/Volumes/x", type: "smbfs", local: false }]);
+  });
+});
+
+describe("a mount line that can't be read (L3)", () => {
+  it("refuses the whole Linux table, so a mount left out can't make its folders local", () => {
+    const good = "36 25 0:32 / /mnt/data rw - ext4 /dev/sdb1 rw";
+    expect(
+      parseMountinfo(`${good}
+`),
+    ).toHaveLength(1);
+    expect(
+      parseMountinfo(`${good}
+garbage line
+`),
+    ).toBeNull();
+    expect(
+      parseMountinfo(`${good}
+x 25 0:33 / /mnt/nfs rw - nfs4 h:/ rw
+`),
+    ).toBeNull();
+  });
+
+  it("refuses the whole macOS table too", () => {
+    const good = "/dev/disk3s1 on / (apfs, local, journaled)";
+    expect(
+      parseMacMount(`${good}
+`),
+    ).toHaveLength(1);
+    expect(
+      parseMacMount(`${good}
+map auto_home on /System/Volumes/Data/home
+`),
+    ).toBeNull();
+    expect(
+      parseMacMount(`${good}
+//me@h/s on /Volumes/s ()
+`),
+    ).toBeNull();
   });
 });

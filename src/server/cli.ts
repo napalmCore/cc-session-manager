@@ -66,7 +66,7 @@ import {
 } from "./protect.js";
 import { toSessionView } from "./rules.js";
 import { parseSessions } from "./schema.js";
-import { PRINTED_LINK_MS, startServer } from "./server.js";
+import { HANDOVER_LINK_MS, PRINTED_LINK_MS, startServer } from "./server.js";
 import { checkPosixFolder, posixPlaces } from "./posix-folders.js";
 import { walkFromHere } from "./process-walk.js";
 import { createFileStore, dataDirectory, secureDataFolder } from "./store.js";
@@ -126,7 +126,11 @@ const handOver = async (): Promise<boolean> => {
       console.log(
         `cc-session-manager is already running at http://127.0.0.1:${String(existing.port)}`,
       );
-      await openBrowser(link, { note: HANDOVER_LINK_NOTE });
+      await openBrowser(link, {
+        note: HANDOVER_LINK_NOTE,
+        redirectFolder: dataFolder,
+        lifetimeMs: HANDOVER_LINK_MS,
+      });
       return true;
     }
     if (!processAlive(existing.pid)) return false;
@@ -406,11 +410,15 @@ console.log(
 );
 console.log("Press Ctrl+C to stop.");
 
+// The first link always has a time limit, whether or not a browser opens (M1).
+server.limitLoginLink(PRINTED_LINK_MS);
 void openBrowser(server.loginUrl, {
   note: PRINTED_LINK_NOTE,
   beforePrint: () => {
     server.limitLoginLink(PRINTED_LINK_MS);
   },
+  redirectFolder: dataFolder,
+  lifetimeMs: PRINTED_LINK_MS,
 });
 
 let stopping = false;
