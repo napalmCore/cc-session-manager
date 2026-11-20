@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import type { SessionView } from "../shared/protocol.js";
 import type { ActionResult } from "./actions.js";
+import { openPosixTerminal } from "./posix-terminal.js";
 import {
+  openArguments,
   planOpen,
   sessionLaunchEnv,
   type LaunchPlan,
@@ -20,6 +22,9 @@ export interface OpenOptions {
   homeFolder: string;
   environment?: NodeJS.ProcessEnv;
   now?: () => number;
+  platform?: NodeJS.Platform;
+  /** The macOS and Linux terminal (FR-43); a stand-in in tests. */
+  posixTerminal?: typeof openPosixTerminal;
 }
 
 /** Starts the planned terminal, detached from the tool, and resolves once it has started. */
@@ -52,7 +57,9 @@ const started: ActionResult = {
 export function createOpenExecutors(options: OpenOptions) {
   const launch = options.launch ?? launchDetached;
   const now = options.now ?? Date.now;
-  const env = sessionLaunchEnv(options.environment ?? process.env);
+  const platform = options.platform ?? process.platform;
+  const env = sessionLaunchEnv(options.environment ?? process.env, platform);
+  const posixTerminal = options.posixTerminal ?? openPosixTerminal;
   const recent = new Map<string, number>();
 
   const start = async (
@@ -65,6 +72,30 @@ export function createOpenExecutors(options: OpenOptions) {
         outcome: "unavailable",
         message: "Claude Code's program wasn't found.",
       };
+    }
+    if (platform !== "win32") {
+      const claude = options.programs.claude;
+      const last = recent.get(key);
+      if (last !== undefined && now() - last <= REPEAT_WINDOW_MS) {
+        return {
+          outcome: "refused",
+          message: "A terminal for this session was just started.",
+        };
+      }
+      let args: string[];
+      try {
+        args = openArguments(target);
+      } catch {
+        return { outcome: "refused", message: "That session can't be opened." };
+      }
+      recent.set(key, now());
+      const result = await posixTerminal(claude, args, cwd, env, {
+        folderOk: async (folder) => await options.folderExists(folder),
+        platform,
+        toolEnv: options.environment ?? process.env,
+      });
+      if (result.outcome !== "started") recent.delete(key);
+      return result;
     }
     if (options.programs.wt === null && options.programs.cmd === null) {
       return {

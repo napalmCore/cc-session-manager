@@ -17,6 +17,7 @@ import {
   MAX_NAME,
   MAX_PROMPT,
   refusalMessage,
+  type StartOptions,
   type StartRequest,
 } from "./start.js";
 import { hasControl } from "./text-checks.js";
@@ -195,7 +196,12 @@ describe("refusals in the tool's own words (FR-18, 0025)", () => {
 
 function executor(
   run: (plan: LaunchPlan) => Promise<BackgroundRun>,
-  options: { failed?: boolean; programs?: Programs } = {},
+  options: {
+    failed?: boolean;
+    programs?: Programs;
+    posixTerminal?: StartOptions["posixTerminal"];
+    platform?: NodeJS.Platform;
+  } = {},
 ) {
   const launch = vi.fn<
     (plan: LaunchPlan, env: NodeJS.ProcessEnv) => Promise<void>
@@ -218,6 +224,11 @@ function executor(
     run: runSpy,
     watch,
     environment: { CLAUDECODE: "1", PATH: "x" },
+    // The Windows terminal; macOS and Linux are tested with a stand-in below.
+    platform: options.platform ?? "win32",
+    ...(options.posixTerminal === undefined
+      ? {}
+      : { posixTerminal: options.posixTerminal }),
   });
   return { start, launch, watch, run: runSpy };
 }
@@ -321,6 +332,34 @@ describe("Start (FR-32)", () => {
     expect(plan?.args.join(" ")).not.toContain(root);
     // The new session doesn't inherit the tool's own session identity.
     expect(env?.CLAUDECODE).toBeUndefined();
+  });
+
+  it("on macOS and Linux, hands an interactive start to the system's terminal, with a cleaned environment", async () => {
+    for (const platform of ["darwin", "linux"] as const) {
+      const posixTerminal = vi.fn<NonNullable<StartOptions["posixTerminal"]>>(
+        () => Promise.resolve({ outcome: "started", message: "ok" }),
+      );
+      const { start, launch } = executor(() => exited(0, ""), {
+        programs: { ...programs, claude: "/usr/local/bin/claude" },
+        platform,
+        posixTerminal,
+      });
+      const result = await start({
+        action: "start",
+        folder: root,
+        kind: "interactive",
+        name: "my work",
+      });
+      expect(result.outcome).toBe("started");
+      expect(launch).not.toHaveBeenCalled();
+      const [claude, args, folder, env, deps] =
+        posixTerminal.mock.calls[0] ?? [];
+      expect(claude).toBe("/usr/local/bin/claude");
+      expect(args).toEqual(["--name=my work", "--"]);
+      expect(typeof folder).toBe("string");
+      expect(env?.CLAUDECODE).toBeUndefined();
+      expect(deps?.platform).toBe(platform);
+    }
   });
 
   it("refuses a name without Windows Terminal, but starts without one", async () => {

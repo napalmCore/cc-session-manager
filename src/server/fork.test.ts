@@ -54,6 +54,7 @@ function launcher(
       launch,
       run: runSpy,
       watch,
+      platform: "win32",
     }),
     launch,
     run: runSpy,
