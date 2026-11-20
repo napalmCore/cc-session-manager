@@ -1,5 +1,66 @@
 # Release notes
 
+## 0.5.0
+
+The fifth release. It covers iteration 6, which brings the dashboard to macOS and Linux. Get it from the GitHub release: clone the repository at the `v0.5.0` tag, then follow the README. It isn't published to npm.
+
+cc-session-manager is an independent tool. It isn't made, endorsed, or supported by Anthropic.
+
+**Upgrading from 0.4.x:** stop the old dashboard first, with Ctrl+C in its terminal, then run `git fetch --tags`, check out `v0.5.0`, and run `pnpm install` and `pnpm build` again. The saved list of finished sessions carries over on Windows and macOS. If an older dashboard is still running, a 0.5.0 start can't hand over to it, because the hand-over changed, so it stops and says so, naming the lock file to delete if no dashboard of yours is running (BUG-41).
+
+**On Linux,** the data folder moves from `~/.local/share/cc-session-manager`, or `$XDG_DATA_HOME/cc-session-manager` when that was set, to `~/.local/state/cc-session-manager`, or `$XDG_STATE_HOME/cc-session-manager` when that's set to an absolute path. Earlier versions weren't supported on Linux, so most people have nothing to move. To keep a list from an earlier run there, move only `finished-sessions.json` from the old folder into the new one while the dashboard is stopped; leave any `instance.json` behind.
+
+### What's new
+
+- **macOS and Linux:** everything but End runs on them: the session list, notifications, usage, History, Search, Stop, Delete, Send, Open, Resume, New session, and Fork. CI tests every change on Windows, macOS, and Linux, and `main` requires all three to pass (FR-40, NFR-19).
+- **End, Force end, and End leftover programs stay Windows-only for now.** On macOS and Linux they aren't offered, and one quiet line on the page says so. Stop and Delete there don't look for leftover programs (FR-46).
+- **Terminals on macOS:** Open and Resume open a new Terminal window in the session's folder, through `osascript`. The first time, macOS asks whether the program the dashboard runs in may control Terminal; if that's refused, the action fails and shows the command to run yourself. A terminal New session or Fork shows the exact command to run instead, since a name would pass through Terminal's shell, as does a folder whose name has `\` or `!` (FR-43).
+- **Terminals on Linux:** the dashboard tries the terminal `x-terminal-emulator` leads to, if it's GNOME Terminal, Konsole, or xterm, then `gnome-terminal`, `konsole`, and `xterm`, and uses the first that starts. A terminal that closes within about 2 seconds is reported as failed, with the command to run yourself. With no display, or no terminal, the command is shown instead (FR-43).
+- **Local folders only:** on macOS and Linux, the dashboard reads the system's mount table before touching a folder, and uses it only if it's on a known local filesystem. Network folders, FUSE and virtual filesystems are refused, and a folder is never touched before its mount is known to be local, so a hung network mount isn't touched through it. Browse starts from the home folder, `/`, and mounted volumes (FR-44).
+- **Protection by parent processes:** on macOS and Linux, the dashboard also follows its parent processes to find the Claude Code session that started it, in addition to the variables Claude Code sets (FR-45).
+- **Names can't contain `$`,** on every system, as they couldn't contain `%`.
+
+### Privacy and security
+
+0.4.0's privacy and security notes still apply, with these changes:
+
+- On macOS and Linux, the data folder is created readable only by you (mode 0700, its files 0600), and the dashboard refuses to start if it's a link or belongs to someone else (FR-41).
+- On macOS and Linux, programs are found only on a cleaned `PATH`, without empty, relative, or `.` entries, so nothing in a session's folder can run, and the programs it starts get the same cleaned `PATH` (C-22).
+- On macOS and Linux, other users of the computer can read a program's arguments. So the browser is given a private file in the data folder that leads to the sign-in link, never the link itself, and the file is deleted once the link expires. The link is also always printed in the terminal, since a browser installed as a snap can't read that folder. If you start the dashboard from inside Claude Code, the printed link lands in that session's transcript; it works once, for 2 minutes.
+- On every system, the first sign-in link now always expires 2 minutes after the dashboard starts, whether or not a browser opened (FR-29).
+- The NFR-9 security review found no Critical or High issue. Its Medium and two of its Lows are fixed in this release; the rest of its Lows, and the Infos that affect users, are listed below.
+
+### Known limits
+
+The known limits of 0.4.0 still apply. Also:
+
+- macOS and Linux were tested on CI only, not on a real computer. Checks still to be done live are listed under "Not checked live".
+- On macOS, Terminal is passed the command with the folder in single quotes, which `sh`, `bash`, and `zsh` read safely; for `fish` and `tcsh`, a folder with `\` or `!` shows the command instead. With `pwsh`, nushell, elvish, or xonsh as your login shell, a folder whose name holds a single quote could run commands when you open or resume a session in it.
+- On macOS, a network mount listed under `/System/Volumes/Data` may not be recognized through its firmlink. Unconfirmed on a real Mac.
+- On macOS and Linux, a `PATH` entry on a hung network mount can stall the dashboard while it looks for a program.
+- On macOS and Linux, a prompt or message is in Claude Code's arguments while it starts, where other users of the computer can read it. Claude Code takes them that way.
+- The data folder's own permissions are checked, but not those of the folders above it, and setting its modes follows links.
+- A disk image stored on network storage counts as local.
+- Fork, Send, and Resume run in the session's recorded folder, so a link in its path changed after the check is followed.
+- Konsole is started without `--workdir` for a folder with `$`, relying on its working folder; that was checked on CI's Ubuntu, not on a desktop.
+- On macOS, if you allow Automation after the 120-second wait has run out, the window can still open, and opening the session again attaches a second one.
+- Closing the terminal now stops the dashboard on macOS and Linux, even one started with `nohup`.
+- If the dashboard is stopped by force, a crash, a reboot, or on Windows by closing its window, its lock can be left behind. Normally the next start clears it. But if that process ID is reused and another dashboard, such as another user's, answers on the lock's port, the start stops and says to delete the lock file if no dashboard of yours is running.
+
+### Open bugs
+
+BUG-30 is Medium. BUG-7, BUG-22, BUG-23's `claude -p` half, and BUG-39 are Low. None is new in this release; BUG-40 and BUG-41, found during it, are fixed.
+
+### Not checked live
+
+These were checked by automated tests on CI and by review, but not on a real computer:
+
+- Anything on macOS or Linux with a real Claude Code session: its process names, including a background session's `ClaudeCode.app` host; protection for a start from a plain terminal, an SSH login, and `sudo -u`.
+- The first macOS Automation prompt, and Terminal opening in the folder.
+- Each Linux terminal on a real desktop, including `x-terminal-emulator` through the GNOME wrapper, and a Konsole already open.
+- An NFS or SMB folder, and one mounted over a local folder, being refused on a real system; firmlinks and folding of ß and ſ on APFS.
+- On Windows, Force end and an offer of leftover programs, which rest on automated tests; everything else on Windows was checked again live.
+
 ## 0.4.1
 
 A security update to 0.4.0. Get it from the GitHub release: clone the repository at the `v0.4.1` tag, then follow the README. It isn't published to npm.
