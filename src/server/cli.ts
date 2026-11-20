@@ -26,10 +26,11 @@ import {
   readLock,
   removeLock,
   removeStaleLock,
-  requestHandover,
+  askHandover,
 } from "./instance.js";
 import {
   HANDOVER_LINK_NOTE,
+  sweepRedirectFiles,
   openBrowser,
   PRINTED_LINK_NOTE,
 } from "./browser.js";
@@ -121,7 +122,16 @@ const handOver = async (): Promise<boolean> => {
     }
     // A dead instance's port could be anyone's now, so don't ask it for anything.
     if (!processAlive(existing.pid)) return false;
-    const link = await requestHandover(existing, identities);
+    const result = await askHandover(existing, identities);
+    // A running dashboard that refused, such as another version, keeps its lock, and this
+    // start stops rather than run a second dashboard beside it (BUG-41).
+    if (result.kind === "refused" && processAlive(existing.pid)) {
+      console.error(
+        `A different version of cc-session-manager is running at http://127.0.0.1:${String(existing.port)}. Stop it with Ctrl+C in its terminal, then start again.`,
+      );
+      process.exit(1);
+    }
+    const link = result.kind === "link" ? result.url : null;
     if (link !== null) {
       console.log(
         `cc-session-manager is already running at http://127.0.0.1:${String(existing.port)}`,
@@ -139,6 +149,8 @@ const handOver = async (): Promise<boolean> => {
 };
 if (await handOver()) process.exit(0);
 removeStaleLock(dataFolder);
+// No dashboard is running, so every earlier link is dead, and so are their redirect files.
+sweepRedirectFiles(dataFolder, Infinity);
 
 async function folderExists(folder: string): Promise<boolean> {
   // macOS and Linux: through the mount table first, so a dead network mount is never touched (FR-44).
@@ -212,6 +224,11 @@ const server = await startServer({
     onHandover: (handed) => {
       for (const one of handed) protection.add(one);
       if (lastSnapshot !== null) publish(lastSnapshot);
+      // The second start exits at once, so its redirect file is deleted here once its link
+      // has expired.
+      setTimeout(() => {
+        sweepRedirectFiles(dataFolder);
+      }, HANDOVER_LINK_MS + 1_000).unref();
     },
   },
 });
@@ -428,6 +445,8 @@ const shutdown = () => {
   poller.stop();
   leftovers.stop();
   if (locked) removeLock(dataFolder, lock);
+  // Every link dies with the dashboard, so its redirect files go too.
+  sweepRedirectFiles(dataFolder, Infinity);
   void server.close().finally(() => process.exit(0));
 };
 process.on("SIGINT", shutdown);

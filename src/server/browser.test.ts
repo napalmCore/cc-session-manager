@@ -6,7 +6,6 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +13,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   browserCommand,
+  sweepRedirectFiles,
   writeRedirectFile,
   HANDOVER_LINK_NOTE,
   openBrowser,
@@ -137,7 +137,7 @@ describe("the browser on each system (FR-42)", () => {
     });
     expect(spawn).toHaveBeenCalledWith(
       "/usr/bin/xdg-open",
-      [expect.stringMatching(/signin-[0-9a-f]{32}\.html$/)],
+      [expect.stringMatching(/signin-\d+-[0-9a-f]{32}\.html$/)],
       expect.anything(),
     );
   });
@@ -191,7 +191,7 @@ describe("the sign-in link on macOS and Linux (M1)", () => {
         redirectFolder: dir,
       });
       const [path] = calls[0]?.args ?? [];
-      expect(path).toMatch(/signin-[0-9a-f]{32}\.html$/);
+      expect(path).toMatch(/signin-\d+-[0-9a-f]{32}\.html$/);
       expect(calls[0]?.args.join(" ")).not.toContain("token");
       expect(readFileSync(path ?? "", "utf8")).toContain(
         'content="0;url=http://127.0.0.1:4780/auth?token=abc"',
@@ -229,22 +229,40 @@ describe("the sign-in link on macOS and Linux (M1)", () => {
 
   it("escapes the link for HTML, and deletes only expired redirect files", () => {
     const dir = folder();
-    const old = join(dir, `signin-${"a".repeat(32)}.html`);
-    const recent = join(dir, `signin-${"b".repeat(32)}.html`);
-    const other = join(dir, "sessions.json");
-    for (const path of [old, recent, other]) writeFileSync(path, "x");
     const now = Date.now();
-    utimesSync(old, new Date(now - 10 * 60_000), new Date(now - 10 * 60_000));
-    const path = writeRedirectFile(dir, 'http://h/a?x="<b>&y', now);
+    const expired = `signin-${String(now - 1)}-${"a".repeat(32)}.html`;
+    const live = `signin-${String(now + 60_000)}-${"b".repeat(32)}.html`;
+    for (const name of [expired, live, "sessions.json"]) {
+      writeFileSync(join(dir, name), "x");
+    }
+    const path = writeRedirectFile(
+      dir,
+      'http://h/a?x="<b>&y',
+      now + 1_000,
+      now,
+    );
     expect(readFileSync(path, "utf8")).toContain(
       "http://h/a?x=&quot;&lt;b&gt;&amp;y",
     );
     expect(readdirSync(dir).sort()).toEqual(
-      [
-        path.slice(dir.length + 1),
-        recent.slice(dir.length + 1),
-        "sessions.json",
-      ].sort(),
+      [path.slice(dir.length + 1), live, "sessions.json"].sort(),
     );
+    // A dashboard that starts or stops deletes every one, and nothing else.
+    sweepRedirectFiles(dir, Infinity);
+    expect(readdirSync(dir)).toEqual(["sessions.json"]);
+  });
+
+  it("writes no redirect file on Linux with no display", async () => {
+    const dir = folder();
+    await openBrowser(URL, {
+      note: PRINTED_LINK_NOTE,
+      log: vi.fn(),
+      spawn: fakeSpawn(0),
+      platform: "linux",
+      env: {},
+      find,
+      redirectFolder: dir,
+    });
+    expect(readdirSync(dir)).toEqual([]);
   });
 });

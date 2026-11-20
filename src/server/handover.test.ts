@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  askHandover,
   createLock,
   handoverProof,
   lockPath,
@@ -286,6 +287,24 @@ describe("requestHandover's checks on the answer", () => {
       body: JSON.stringify({ loginUrl: url, proof: "PROOF" }),
     };
     expect(await ask()).toBe(url);
+  });
+
+  it("tells a dashboard's refusal from no proper answer, so a running one keeps its lock (BUG-41)", async () => {
+    const result = () =>
+      askHandover({ version: 1, pid: process.pid, port: fakePort, secret }, [
+        identity,
+      ]);
+    // How every version refuses, such as 0.4.x reading the new list as unknown fields.
+    answer = { status: 403, body: JSON.stringify({ message: "Forbidden" }) };
+    expect(await result()).toEqual({ kind: "refused" });
+    for (const other of [
+      { status: 403, body: "{}" },
+      { status: 404, body: JSON.stringify({ message: "Forbidden" }) },
+      { status: 500, body: "not json" },
+    ]) {
+      answer = other;
+      expect(await result()).toEqual({ kind: "no-answer" });
+    }
   });
 
   it("never sends the secret, so whatever answers on the port can't learn it", async () => {

@@ -119,10 +119,25 @@ export function removeStaleLock(directory: string): void {
  * protected too. Returns null if the instance doesn't answer correctly, which means its lock
  * is stale.
  */
-export function requestHandover(
+export async function requestHandover(
   lock: InstanceLock,
   identities: Identity[],
 ): Promise<string | null> {
+  const result = await askHandover(lock, identities);
+  return result.kind === "link" ? result.url : null;
+}
+
+/**
+ * What a hand-over got: a link; a refusal from a dashboard that answered, such as another
+ * version that reads the request differently (BUG-41); or no proper answer at all.
+ */
+export type HandoverResult =
+  { kind: "link"; url: string } | { kind: "refused" } | { kind: "no-answer" };
+
+export function askHandover(
+  lock: InstanceLock,
+  identities: Identity[],
+): Promise<HandoverResult> {
   const nonce = randomBytes(32).toString("hex");
   const body = JSON.stringify({
     nonce,
@@ -151,7 +166,19 @@ export function requestHandover(
         });
         res.on("end", () => {
           if (res.statusCode !== 200) {
-            resolve(null);
+            // The dashboard's own refusal, as every version words it.
+            let refused: boolean;
+            try {
+              const parsed: unknown = JSON.parse(text);
+              refused =
+                res.statusCode === 403 &&
+                typeof parsed === "object" &&
+                parsed !== null &&
+                (parsed as { message?: unknown }).message === "Forbidden";
+            } catch {
+              refused = false;
+            }
+            resolve(refused ? { kind: "refused" } : { kind: "no-answer" });
             return;
           }
           try {
@@ -167,21 +194,21 @@ export function requestHandover(
             // The link must be for the port in the lock, so a stale lock can't redirect us.
             resolve(
               url?.startsWith(`http://127.0.0.1:${String(lock.port)}/`) === true
-                ? url
-                : null,
+                ? { kind: "link", url }
+                : { kind: "no-answer" },
             );
           } catch {
-            resolve(null);
+            resolve({ kind: "no-answer" });
           }
         });
         res.on("error", () => {
-          resolve(null);
+          resolve({ kind: "no-answer" });
         });
       },
     );
     req.on("timeout", () => req.destroy());
     req.on("error", () => {
-      resolve(null);
+      resolve({ kind: "no-answer" });
     });
     req.end(body);
   });
