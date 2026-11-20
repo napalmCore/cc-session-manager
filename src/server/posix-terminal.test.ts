@@ -358,7 +358,8 @@ describe.runIf(process.platform !== "win32")("real terminals (C-22)", () => {
   });
 
   it("reports a real terminal still running as started, and one that exits as failed", async () => {
-    plant(bin, "xterm", "sleep 1");
+    // An absolute path: the PATH it gets holds only this folder.
+    plant(bin, "xterm", "exec /bin/sleep 1");
     const running = await openPosixTerminal(
       CLAUDE,
       ["attach", "abcdef12"],
