@@ -43,6 +43,8 @@ export interface ActionContext {
   protectedKeys: ReadonlySet<string>;
   /** Finished sessions whose folder has gone, so Resume would be refused. */
   missingFolderKeys?: ReadonlySet<string>;
+  /** On macOS and Linux, End isn't offered (FR-46). */
+  endWindowsOnly?: boolean;
 }
 
 export function actionContext(snapshot: Snapshot | null): ActionContext {
@@ -50,6 +52,7 @@ export function actionContext(snapshot: Snapshot | null): ActionContext {
     blocked: snapshot?.actionsBlocked ?? null,
     protectedKeys: new Set(snapshot?.protectedSessions ?? []),
     missingFolderKeys: new Set(snapshot?.missingFolders ?? []),
+    endWindowsOnly: snapshot?.endWindowsOnly === true,
   };
 }
 
@@ -90,7 +93,12 @@ export function availableActions(
   if (risky && session.kind === "background" && session.id !== undefined) {
     actions.push("stop", "delete");
   }
-  if (risky && isLiveInteractive(session) && session.pid !== undefined) {
+  if (
+    risky &&
+    context.endWindowsOnly !== true &&
+    isLiveInteractive(session) &&
+    session.pid !== undefined
+  ) {
     actions.push("end");
   }
   return actions;

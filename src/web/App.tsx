@@ -89,6 +89,7 @@ const styles = cssClasses as Record<
   | "marker"
   | "name"
   | "page"
+  | "platformNote"
   | "row"
   | "status"
   | "summary"
@@ -945,6 +946,11 @@ export function App() {
         warnings={snapshot?.warnings ?? []}
         actionsBlocked={snapshot?.actionsBlocked ?? null}
       />
+      {snapshot?.endWindowsOnly === true && (
+        <p className={styles.platformNote} data-testid="end-windows-only">
+          End, Force end, and End leftover programs are Windows-only for now.
+        </p>
+      )}
       {lastResultGone !== null && (
         <p
           className={styles.lastResult}
