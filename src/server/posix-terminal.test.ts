@@ -256,6 +256,28 @@ describe("Linux terminals (FR-43, 0032)", () => {
     ]);
   });
 
+  it("skips Konsole when Claude Code's path or an argument has a $, since Konsole expands it", async () => {
+    for (const [claude, args] of [
+      ["/opt/$x/claude", ["attach", "abcdef12"]],
+      [CLAUDE, ["--name=a $HOME", "--"]],
+    ] as const) {
+      const { spawn, calls } = fakeSpawn("running");
+      await openPosixTerminal(
+        claude,
+        [...args],
+        "/home/me/w",
+        {},
+        {
+          ...base,
+          spawn,
+          toolEnv: DISPLAY,
+          find: findOnly("konsole", "xterm"),
+        },
+      );
+      expect(calls.map((call) => call.file)).toEqual(["/usr/bin/xterm"]);
+    }
+  });
+
   it("stops after a terminal that started and exited at once, showing the command", async () => {
     for (const code of [0, 1]) {
       const { spawn, calls } = fakeSpawn(code, "running");

@@ -253,8 +253,14 @@ export async function openPosixTerminal(
   for (const terminal of order) {
     const program = find(terminal, env);
     if (program === null) continue;
-    // Konsole may expand $ in its arguments, so it's skipped for a Claude Code path with one.
-    if (terminal === "konsole" && claude.includes("$")) continue;
+    // Konsole expands $NAME in every -e argument, so it's skipped if Claude Code's path or any
+    // argument has a $. Names already refuse $ (0032); this keeps it so if that ever changes.
+    if (
+      terminal === "konsole" &&
+      [claude, ...args].some((word) => word.includes("$"))
+    ) {
+      continue;
+    }
     if (!(await deps.folderOk(folder))) {
       return {
         outcome: "refused",
