@@ -105,6 +105,8 @@ export interface Snapshot {
   leftovers?: LeftoverOffer[];
   /** True until a poll has succeeded, so the page doesn't call an empty list "no sessions". */
   notLoadedYet?: boolean;
+  /** True on macOS and Linux, where End, Force end, and End leftover programs aren't offered (FR-46). */
+  endWindowsOnly?: boolean;
 }
 
 export interface SnapshotMessage {

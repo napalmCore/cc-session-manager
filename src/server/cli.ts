@@ -4,7 +4,12 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { DEFAULT_PORT, POLL_INTERVAL_MS } from "../shared/constants.js";
 import { sessionKeys } from "../shared/notifications.js";
-import { createActionTracker, FRESHNESS_MS } from "./actions.js";
+import {
+  type ActionResult,
+  createActionTracker,
+  FRESHNESS_MS,
+  type LeftoverHooks,
+} from "./actions.js";
 import {
   CLOSE_WAIT_MS,
   createEndExecutors,
@@ -158,6 +163,8 @@ const publish = (snapshot: Snapshot) => {
   serverRef.current?.publish({
     ...snapshot,
     actionsBlocked: protection.blockedReason(),
+    // End, Force end, and End leftover programs are Windows-only for now (FR-46).
+    endWindowsOnly: process.platform !== "win32",
     seq: sequence,
     runId,
     ownActions: actionsRef.current?.ownActionSessions() ?? [],
@@ -313,6 +320,34 @@ const launcher = createLauncher({
   launch: launchDetached,
   watch: watchPoller(() => poller.state(), FAILURE_WATCH_MS),
 });
+// Stop and Delete record the session's programs first, with the same ownership check End uses.
+// A session with no process, such as a stopped one, has nothing new to record.
+const leftoverHooks: LeftoverHooks = {
+  record: async (session) => {
+    const { pid, startedAt } = session;
+    if (pid === undefined) return undefined;
+    // A process with no start time can't pass the ownership check, so it can't be recorded.
+    if (startedAt === undefined) return null;
+    if (!canRunHelper) return null;
+    const outcome = await runHelper({
+      action: "record",
+      pid,
+      startedAtMs: startedAt,
+      toolPid: process.pid,
+    });
+    if (outcome.kind !== "ok" || outcome.result.ok !== true) return null;
+    return parseRecord(outcome.result.record);
+  },
+  hold: (session, action, record, result) => {
+    leftovers.hold(session, action, record, result);
+  },
+  find: (key) => leftovers.find(key),
+  end: (key) => leftovers.end(key),
+};
+const END_WINDOWS_ONLY: ActionResult = {
+  outcome: "unavailable",
+  message: "End and Force end are Windows-only for now.",
+};
 actionsRef.current = createActionTracker({
   listing: () => poller.state(),
   freshListing: async () =>
@@ -324,8 +359,15 @@ actionsRef.current = createActionTracker({
     resume: (session) => openExecutors.resume(session),
     stop: (session) => stopDelete.stop(session),
     delete: (session) => stopDelete.delete(session),
-    end: (session) => endExecutors.end(session),
-    forceEnd: (session, record) => endExecutors.forceEnd(session, record),
+    // The page doesn't offer End on macOS or Linux, and the server refuses it too (FR-46).
+    end: (session) =>
+      process.platform === "win32"
+        ? endExecutors.end(session)
+        : Promise.resolve(END_WINDOWS_ONLY),
+    forceEnd: (session, record) =>
+      process.platform === "win32"
+        ? endExecutors.forceEnd(session, record)
+        : Promise.resolve(END_WINDOWS_ONLY),
   },
   isProtected: (session) => protection.isProtected(session),
   history: (page, listing) => history.page(page, listing),
@@ -353,30 +395,9 @@ actionsRef.current = createActionTracker({
   transcriptExists: (sessionId) => transcriptExists(sessionId),
   lastActivity: async (sessionId) =>
     (await history.find(sessionId))?.lastActivityAt ?? null,
-  leftovers: {
-    // Stop and Delete record the session's programs first, with the same ownership check End
-    // uses. A session with no process, such as a stopped one, has nothing new to record.
-    record: async (session) => {
-      const { pid, startedAt } = session;
-      if (pid === undefined) return undefined;
-      // A process with no start time can't pass the ownership check, so it can't be recorded.
-      if (startedAt === undefined) return null;
-      if (!canRunHelper) return null;
-      const outcome = await runHelper({
-        action: "record",
-        pid,
-        startedAtMs: startedAt,
-        toolPid: process.pid,
-      });
-      if (outcome.kind !== "ok" || outcome.result.ok !== true) return null;
-      return parseRecord(outcome.result.record);
-    },
-    hold: (session, action, record, result) => {
-      leftovers.hold(session, action, record, result);
-    },
-    find: (key) => leftovers.find(key),
-    end: (key) => leftovers.end(key),
-  },
+  // On macOS and Linux, Stop and Delete record no leftover programs and say nothing about them,
+  // and End leftover programs isn't offered (FR-46).
+  ...(process.platform === "win32" ? { leftovers: leftoverHooks } : {}),
 });
 poller.start();
 

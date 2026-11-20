@@ -58,6 +58,16 @@ describe("availableActions", () => {
     ]);
   });
 
+  it("doesn't offer End on macOS or Linux, and leaves the other actions alone (FR-46)", () => {
+    const posix: ActionContext = { ...open, endWindowsOnly: true };
+    expect(availableActions(live(4321), posix)).toEqual([]);
+    expect(availableActions(background(), posix)).toEqual([
+      "open",
+      "stop",
+      "delete",
+    ]);
+  });
+
   it("offers Resume for a finished interactive session", () => {
     expect(availableActions(ended(), open)).toEqual(["resume"]);
   });
@@ -117,7 +127,16 @@ describe("actionContext", () => {
       blocked: null,
       protectedKeys: new Set(),
       missingFolderKeys: new Set(),
+      endWindowsOnly: false,
     });
+  });
+
+  it("reads whether End is Windows-only (FR-46)", () => {
+    const snapshot = { sessions: [], error: null, warnings: [] };
+    expect(
+      actionContext({ ...snapshot, endWindowsOnly: true }).endWindowsOnly,
+    ).toBe(true);
+    expect(actionContext(snapshot).endWindowsOnly).toBe(false);
   });
 });
 

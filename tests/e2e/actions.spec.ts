@@ -643,6 +643,51 @@ test.describe("leftover programs (FR-27)", () => {
   });
 });
 
+test.describe("End on macOS and Linux (FR-46)", () => {
+  test("isn't offered, and one quiet line says it's Windows-only, while the other actions stay", async ({
+    page,
+  }) => {
+    await open(page, snapshot({ endWindowsOnly: true }));
+    const note = page.getByTestId("end-windows-only");
+    await expect(note).toHaveText(
+      "End, Force end, and End leftover programs are Windows-only for now.",
+    );
+    // A quiet line, not an alert.
+    await expect(note).not.toHaveAttribute("role", /.+/);
+    await expect(page.getByRole("button", { name: /^End/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Force end/ })).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByRole("button", { name: /^Stop/ }).first(),
+    ).toBeVisible();
+  });
+
+  test("says nothing on Windows", async ({ page }) => {
+    await open(page);
+    await expect(page.getByTestId("end-windows-only")).toHaveCount(0);
+    await expect(
+      actionsFor(page, /"editor"/).getByRole("button", { name: "End…" }),
+    ).toBeVisible();
+  });
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    test(`${colorScheme} theme has no automated WCAG violations with the note`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ colorScheme });
+      await open(page, snapshot({ endWindowsOnly: true }));
+      await expect(page.getByTestId("end-windows-only")).toBeVisible();
+      const { violations } = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+        .analyze();
+      expect(
+        violations.map(({ id, nodes }) => ({ id, count: nodes.length })),
+      ).toEqual([]);
+    });
+  }
+});
+
 test.describe("actions accessibility", () => {
   const scan = async (page: Page) => {
     const { violations } = await new AxeBuilder({ page })

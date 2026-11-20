@@ -256,6 +256,13 @@
   font-size: 0.875rem;
 }
 
+/* A quiet line, not a warning: End isn't offered on this system (FR-46). */
+.platformNote {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
 .result[data-outcome="succeeded"],
 .result[data-outcome="started"],
 .lastResult[data-outcome="succeeded"] {
