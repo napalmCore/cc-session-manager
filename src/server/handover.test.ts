@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   askHandover,
   createLock,
+  differentVersionMessage,
   handoverProof,
   lockPath,
   newHandoverSecret,
@@ -413,5 +414,17 @@ describe("instance lock", () => {
       JSON.stringify({ ...lock(), secret: "short" }),
     );
     expect(readLock(folder)).toBeNull();
+  });
+});
+
+describe("the message when a running dashboard refuses (BUG-41, review of #106)", () => {
+  it("names the dashboard and the lock file, so a stale lock can be cleared", () => {
+    const lock = join("data", "instance.json");
+    const message = differentVersionMessage(4780, lock);
+    expect(message).toContain("http://127.0.0.1:4780");
+    expect(message).toContain("Ctrl+C");
+    expect(message).toContain(
+      `If no dashboard of yours is running, delete ${lock}`,
+    );
   });
 });

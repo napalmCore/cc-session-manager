@@ -21,6 +21,8 @@ import {
   createLock,
   type InstanceLock,
   lockExists,
+  lockPath,
+  differentVersionMessage,
   newHandoverSecret,
   processAlive,
   readLock,
@@ -127,7 +129,7 @@ const handOver = async (): Promise<boolean> => {
     // start stops rather than run a second dashboard beside it (BUG-41).
     if (result.kind === "refused" && processAlive(existing.pid)) {
       console.error(
-        `A different version of cc-session-manager is running at http://127.0.0.1:${String(existing.port)}. Stop it with Ctrl+C in its terminal, then start again.`,
+        differentVersionMessage(existing.port, lockPath(dataFolder)),
       );
       process.exit(1);
     }
@@ -451,3 +453,5 @@ const shutdown = () => {
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+// Closing the terminal on macOS and Linux, so the lock isn't left behind (review of #106).
+if (process.platform !== "win32") process.on("SIGHUP", shutdown);
