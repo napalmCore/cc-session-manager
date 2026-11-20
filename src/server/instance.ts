@@ -54,6 +54,15 @@ export function newHandoverSecret(): string {
   return randomBytes(32).toString("hex");
 }
 
+/**
+ * What a start says when a running dashboard refused its hand-over (BUG-41). The lock may be
+ * stale, its process ID reused by something that answers the same way, so it says how to
+ * clear it too (review of #106).
+ */
+export function differentVersionMessage(port: number, lock: string): string {
+  return `A different version of cc-session-manager seems to be running at http://127.0.0.1:${String(port)}. Stop it with Ctrl+C in its terminal, then start again. If no dashboard of yours is running, delete ${lock} and start again.`;
+}
+
 export function lockPath(directory: string): string {
   return join(directory, FILE_NAME);
 }
