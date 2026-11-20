@@ -6,7 +6,7 @@ cc-session-manager is an independent, open-source tool. It isn't made, endorsed,
 
 ## Requirements
 
-- Windows. Other platforms aren't tested, and opening a terminal is Windows-only.
+- Windows, macOS, or Linux. End, Force end, and ending leftover programs are Windows-only for now. macOS and Linux are tested on CI, not yet on a real computer.
 - Git.
 - [Node.js](https://nodejs.org/) 24 or later.
 - [pnpm](https://pnpm.io/). On Node 24, running `corepack enable` once sets up the version this project uses. Later Node versions don't include corepack, so install it or pnpm first.
@@ -15,14 +15,14 @@ cc-session-manager is an independent, open-source tool. It isn't made, endorsed,
 ## Install and run
 
 ```
-git clone --branch v0.4.1 https://github.com/napalmCore/cc-session-manager.git
+git clone --branch v0.5.0 https://github.com/napalmCore/cc-session-manager.git
 cd cc-session-manager
 pnpm install
 pnpm build
 pnpm start
 ```
 
-The tool starts a server on `127.0.0.1` and opens the dashboard in your browser with a one-time sign-in link. If no browser opens, it prints the link instead, which works once, for 2 minutes. Press Ctrl+C in its terminal to stop it. Starting it again while it runs opens the running one instead.
+The tool starts a server on `127.0.0.1` and opens the dashboard in your browser with a one-time sign-in link. The link works once, for 2 minutes. If no browser opens, it prints the link instead; on macOS and Linux it always prints it. Press Ctrl+C in its terminal to stop it. Starting it again while it runs opens the running one instead.
 
 To use Stop, Delete, End, and Send on every session, start it from a normal terminal, not from inside a Claude Code session. A session that starts the dashboard is protected from those actions.
 
@@ -44,7 +44,7 @@ See the [release notes](docs/release-notes.md) for details, the safety rules for
 
 ## Privacy
 
-The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open, Resume, New session, Fork, and Send start Claude Code, which works as it normally does. It reads session transcripts for token counts, model, branch, folder, and times, never keeping message text. Only Search reads message text, when you search, and it keeps only its results, in memory, until the page fetches them or for at most 60 seconds. It saves finished sessions with their token counts, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager`. A damaged saved file is set aside with names removed, or deleted if it isn't JSON.
+The tool itself sends nothing off your computer. It runs `claude agents --json --all`, and Open, Resume, New session, Fork, and Send start Claude Code, which works as it normally does. It reads session transcripts for token counts, model, branch, folder, and times, never keeping message text. Only Search reads message text, when you search, and it keeps only its results, in memory, until the page fetches them or for at most 60 seconds. It saves finished sessions with their token counts, without their names or message text, in `%LOCALAPPDATA%\cc-session-manager` on Windows, `~/Library/Application Support/cc-session-manager` on macOS, and `~/.local/state/cc-session-manager` on Linux. A damaged saved file is set aside with names removed, or deleted if it isn't JSON.
 
 ## Development
 
